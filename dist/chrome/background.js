@@ -2894,8 +2894,8 @@
   const PUBLIC_KEY_JWK = {
     kty: 'EC',
     crv: 'P-256',
-    x: 'dAR-4Qdjs2zq0VFxBgyAimWA_TkwY3-pySuLXFnhp6c',
-    y: 'UoJ_C4deba9gBFfxJA534F0V0OnSbUGei7XNRDaJyIY',
+    x: "UZ33kOysXiijfF9rVCLCU6s0JHFtlRKx3xHer-0pDmE",
+    y: "3m66hI6NDl_cJb4vE_rLEIATjYMB_T3v2i3jLSPF2kc",
     ext: true,
     key_ops: ['verify'],
   };
@@ -3673,7 +3673,7 @@
    * actions (popup + panel + options all land here)
    * ================================================================== */
   async function handleAction(msg, sender) {
-    const tabId = sender.tab && sender.tab.id != null ? sender.tab.id : msg.tabId;
+    const tabId = sender.tab && sender.tab.id != null ? sender.tab.id : (msg.tabId != null ? msg.tabId : (msg.payload && msg.payload.tabId != null ? msg.payload.tabId : undefined));
     const st = await restore(tabId);
     if (!st) return { ok: false, reason: 'no tab' };
     switch (msg.name) {
@@ -3867,7 +3867,7 @@
     api.runtime.onMessage.addListener((msg, sender, respond) => {
       if (!msg || !msg.type) return;
       (async () => {
-        const tabId = sender.tab && sender.tab.id != null ? sender.tab.id : msg.tabId;
+        const tabId = sender.tab && sender.tab.id != null ? sender.tab.id : (msg.tabId != null ? msg.tabId : (msg.payload && msg.payload.tabId != null ? msg.payload.tabId : undefined));
         const st = getTab(tabId);
         switch (msg.type) {
           case 'page-event':

@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Stream Radar — Media Detector & WatchParty",
+  "name": "Stream Radar : Media Detector & WatchParty",
   "version": "1.0.0",
   "description": "7-layer video stream detector (HLS/DASH/MP4/blob) that beats IDM & Video DownloadHelper, cleans the movie title, auto-fetches Indonesian subtitles and opens a WatchParty room. No server, no tracking.",
   "homepage_url": "https://github.com/ryany5517-hash/Media-ex",
@@ -12,7 +12,7 @@
     "128": "icons/icon128.png"
   },
   "action": {
-    "default_title": "Stream Radar — detected media",
+    "default_title": "Stream Radar : detected media",
     "default_popup": "popup/popup.html",
     "default_icon": {
       "16": "icons/icon16.png",
@@ -127,12 +127,6 @@
         "default": "Alt+Shift+F"
       },
       "description": "Search Indonesian subtitles for this title now"
-    },
-    "_execute_action": {
-      "suggested_key": {
-        "mac": "Alt+Shift+A"
-      },
-      "description": "Open the Stream Radar popup"
     }
   },
   "short_name": "Stream Radar"

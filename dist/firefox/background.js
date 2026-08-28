@@ -3673,7 +3673,7 @@
    * actions (popup + panel + options all land here)
    * ================================================================== */
   async function handleAction(msg, sender) {
-    const tabId = sender.tab && sender.tab.id != null ? sender.tab.id : msg.tabId;
+    const tabId = sender.tab && sender.tab.id != null ? sender.tab.id : (msg.tabId != null ? msg.tabId : (msg.payload && msg.payload.tabId != null ? msg.payload.tabId : undefined));
     const st = await restore(tabId);
     if (!st) return { ok: false, reason: 'no tab' };
     switch (msg.name) {
@@ -3867,7 +3867,7 @@
     api.runtime.onMessage.addListener((msg, sender, respond) => {
       if (!msg || !msg.type) return;
       (async () => {
-        const tabId = sender.tab && sender.tab.id != null ? sender.tab.id : msg.tabId;
+        const tabId = sender.tab && sender.tab.id != null ? sender.tab.id : (msg.tabId != null ? msg.tabId : (msg.payload && msg.payload.tabId != null ? msg.payload.tabId : undefined));
         const st = getTab(tabId);
         switch (msg.type) {
           case 'page-event':
