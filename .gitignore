@@ -1,5 +1,8 @@
 node_modules/
-dist/
+dist/*.zip
+dist/*.xpi
+dist-live/
+.live-worktree/
 dist-live/
 .live-worktree/
 stream-radar-update-key.json
@@ -11,3 +14,8 @@ web-ext-artifacts/
 src/icons/preview*.png
 .idea/
 .vscode/
+
+# Build snapshot ikut dilacak: clone langsung bisa "Load unpacked".
+# Arsip tetap tidak dilacak; lihat .gitattributes (linguist-generated).
+!dist/chrome/**
+!dist/firefox/**

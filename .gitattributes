@@ -1,0 +1,6 @@
+# Generated artifacts: ready to use without a toolchain, never edit by hand.
+dist/** linguist-generated=true merge=binary
+userscript/stream-radar.user.js linguist-generated=true merge=binary
+src/shared/icons.js linguist-generated=true
+docs/preview/ui.html linguist-generated=true
+package-lock.json merge=binary
