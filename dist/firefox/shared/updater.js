@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Stream Radar â€” live rule packs + signed hot patches
  * ==================================================================
  * Goal: when something is broken (a new embed host, a new ad domain, a new SEO
