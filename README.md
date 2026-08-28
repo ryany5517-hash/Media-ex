@@ -5,7 +5,7 @@ Browser extension (Manifest V3) untuk **Chrome, Edge, Brave & Firefox desktop**,
 lewat `webRequest`, yang mustahil dilakukan Tampermonkey — itu sebabnya versi userscript kemarin gagal total di
 67movies (player-nya ada di iframe lintas-origin bertingkat).
 
-> **Status:** 61 test otomatis (unit, simulasi halaman 67movies end-to-end, audit 12 fitur lewat chrome.*
+> **Status:** 64 test otomatis (unit, simulasi halaman 67movies end-to-end, audit 12 fitur lewat chrome.*
 > runtime mock, render UI, boot userscript, verifier update), `web-ext lint` 0 error.
 > **Tidak perlu publikasi ke Chrome Web Store / AMO** — dimuat sebagai unpacked / temporary add-on, dan
 > perbaikan aturan deteksi turun sendiri lewat rule pack bertanda tangan (lihat `docs/AUTO-UPDATE.md`).
@@ -98,12 +98,15 @@ dan (kalau kamu aktifkan) patch script konten. Yang tetap perlu build ulang: per
 
 ```bash
 npm install
-npm test          # 61 test: rules, judul, SRT→VTT, unzip, provider, simulasi 67movies, audit 12 fitur, UI, userscript, update verifier
+npm test          # 64 test: rules, judul, SRT→VTT, unzip, provider, simulasi 67movies, audit 12 fitur, UI, userscript, update verifier
 npm run qa        # design QA: kontras WCAG, target sentuh, kelas yatim, kebijakan tanpa emoji/emdash
 npm run preview   # render panel UI dari modul aslinya → docs/preview/ui.html
 npm run lint      # web-ext lint (Firefox) → 0 errors
 npm run build     # dist/chrome, dist/firefox, dist/*.zip|*.xpi, userscript/
+npm run qa        # design QA: kontras WCAG, target sentuh, kelas yatim, kebijakan tanpa emoji/emdash
 npm run demo      # http://localhost:8088/demo/index.html → harus muncul 1 HLS (1080p/720p) + 1 MP4 + 1 blob
+npm run preview   # docs/preview/ui.html → panel UI dirender dari modul aslinya
+npm run test:demo # 3 test yang menjalankan server demo + pipeline deteksi lewat HTTP beneran
 ```
 
 CI siap pakai (opsional): `ci/github-actions-build.yml` — salin ke `.github/workflows/build.yml`
