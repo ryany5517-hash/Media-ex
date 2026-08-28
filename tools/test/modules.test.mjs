@@ -29,8 +29,8 @@ test('subtitles.js self-registers alone in an empty world and keeps providers', 
   runIn('shared/subtitles.js', world); // no util, no rules, nothing else
   assert.ok(world.SR && world.SR.subs, 'SR.subs must be created without other modules');
   assert.ok(Array.isArray(world.SR.subs.providers), 'providers array must exist');
-  assert.equal(world.SR.subs.providers.length, 3, 'three built-in providers registered');
-  for (const id of ['subdl', 'opensubtitles', 'yify']) {
+  assert.equal(world.SR.subs.providers.length, 4, 'four built-in providers registered');
+  for (const id of ['wyzie', 'subdl', 'opensubtitles', 'yify']) {
     assert.ok(world.SR.subs.providers.some(p => p.id === id), `provider ${id} registered`);
   }
 
@@ -40,7 +40,7 @@ test('subtitles.js self-registers alone in an empty world and keeps providers', 
   runIn('shared/subtitles.js', world);
   const ids = world.SR.subs.providers.map(p => p.id);
   assert.ok(ids.includes('external'), 'pre-existing external provider must not be wiped');
-  for (const id of ['subdl', 'opensubtitles', 'yify']) {
+  for (const id of ['wyzie', 'subdl', 'opensubtitles', 'yify']) {
     assert.equal(ids.filter(x => x === id).length, 1, `${id} registered exactly once after reload`);
   }
 });

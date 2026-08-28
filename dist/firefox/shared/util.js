@@ -407,7 +407,11 @@
     compactOnMobile: true,
     watchpartyAutoJoin: true,
     watchpartyName: '',
-    providers: { subdl: true, opensubtitles: true, yify: true },
+    providers: { wyzie: true, subdl: true, opensubtitles: true, yify: true },
+    // Wyzie Subs requires a per-user key. It must NEVER be committed: Wyzie's
+    // docs forbid shipping keys in browser extensions or public repos. The
+    // user pastes their own key in Options; it is stored only in chrome.storage.
+    wyzieApiKey: '',
     subdlApiKey: '',
     osApiKey: '',
     osUserAgent: 'StreamRadar/1.0 (media detector extension)',

@@ -83,15 +83,17 @@
 
       <section data-panel="subs" hidden>
         <h1>Subtitles &amp; API keys</h1>
-        <p class="lead">Two of the three providers need a free key. Stream Radar never uploads your watch history. The key is only sent to that provider.</p>
+        <p class="lead">Wyzie, SubDL and OpenSubtitles need a free key; YIFY works without one. Stream Radar never uploads your watch history, and a key is sent only to its own provider. Paste keys yourself; they are stored only in your browser and must never be shared.</p>
         <div class="card">
           <h2>Providers</h2>
           <label class="field switch"><input type="checkbox" data-key="autoSubtitle" /><span class="slider"></span><span>Search automatically when a title is recognised</span></label>
           <div class="grid three">
-            <label class="field switch"><input type="checkbox" data-key="providers.subdl" /><span class="slider"></span><span>SubDL <small>(best for Indonesian subs)</small></span></label>
+            <label class="field switch"><input type="checkbox" data-key="providers.wyzie" /><span class="slider"></span><span>Wyzie Subs <small>(best for Indonesian, needs IMDb/TMDB id)</small></span></label>
+            <label class="field switch"><input type="checkbox" data-key="providers.subdl" /><span class="slider"></span><span>SubDL</span></label>
             <label class="field switch"><input type="checkbox" data-key="providers.opensubtitles" /><span class="slider"></span><span>OpenSubtitles REST</span></label>
             <label class="field switch"><input type="checkbox" data-key="providers.yify" /><span class="slider"></span><span>YIFY <small>(no key, often offline)</small></span></label>
           </div>
+          <label class="field"><span>Wyzie Subs API key<div class="hint">Get a free key at store.wyzie.io/redeem and paste it below. Wyzie searches by IMDb/TMDB id, so it works best when the title is recognised. Without a key Wyzie is skipped. Wyzie asks that keys never be committed or shared.</div></span><input type="text" data-key="wyzieApiKey" placeholder="wyzie-..." autocomplete="off" spellcheck="false" /></label>
           <label class="field"><span>SubDL API key<div class="hint">subdl.com, then Account, then API. Paste the key below. Without it SubDL is skipped.</div></span><input type="text" data-key="subdlApiKey" placeholder="e.g. 1a2b3c…" autocomplete="off" spellcheck="false" /></label>
           <label class="field"><span>OpenSubtitles API key<div class="hint">api.opensubtitles.com, then Developers, then Create App. Send them the exact User-Agent below (they bind keys to it).</div></span><input type="text" data-key="osApiKey" placeholder="ApiKey …" autocomplete="off" spellcheck="false" /></label>
           <label class="field"><span>OpenSubtitles User-Agent</span><input type="text" data-key="osUserAgent" spellcheck="false" /></label>
