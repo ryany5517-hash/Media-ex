@@ -1,0 +1,693 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Stream Radar UI preview</title>
+<style>
+  body { min-height: 100vh; background: #0a0d18 url('https://picsum.photos/seed/cinema/1600/900') center/cover no-repeat; }
+  body::after { content: ""; position: fixed; inset: 0; background: rgba(6,8,16,.72); backdrop-filter: blur(2px); }
+  #stream-radar-host { position: fixed !important; inset: 0 !important; z-index: 999 !important; }
+  .cap { position: fixed; left: 18px; top: 16px; z-index: 1000; color: #cfd6ee; font: 12px/1.6 ui-sans-serif, system-ui; }
+  .cap b { color: #fff; }
+</style>
+</head>
+<body>
+<div class="cap"><b>Stream Radar, preview statis</b><br>
+Dihasilkan oleh <code>npm run preview</code> memakai modul UI asli (src/content/ui*.js).
+Panel dan tombolnya hidup, tapi aksi tidak terhubung ke browser: ini pratinjau desain.<br>
+Ganti tema lewat ikon bulan di header. Resize jendela ke <b>&le;720px</b> untuk melihat layout mobile.</div>
+<div id="stream-radar-host"><style>
+:host { all: initial; }
+*, *::before, *::after { box-sizing: border-box; }
+
+.srad-root {
+  /* palette */
+  --c-bg: rgba(255,255,255,.78);
+  --c-bg-2: rgba(12,16,28,.04);
+  --c-bg-3: #ffffff;
+  --c-fg: #101320;
+  --c-fg-2: rgba(16,19,32,.6);
+  --c-line: rgba(16,19,32,.12);
+  --c-line-2: rgba(16,19,32,.07);
+  --c-accent: #5b5bf0;
+  --c-accent-soft: rgba(91,91,240,.12);
+  --c-mint: #0f9e88;
+  --c-ok: #157f3d;
+  --c-warn: #99610a;
+  --c-err: #b42318;
+  --c-shadow: 0 24px 60px -12px rgba(9,12,25,.28), 0 4px 14px -6px rgba(9,12,25,.16);
+  --c-shadow-soft: 0 2px 10px -4px rgba(9,12,25,.18);
+  --c-inset-hi: inset 0 1px 0 rgba(255,255,255,.7);
+
+  /* geometry */
+  --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 22px;
+  --r-sm: 9px; --r-md: 14px; --r-lg: 20px; --r-pill: 999px;
+
+  /* motion */
+  --t-fast: 120ms; --t-mid: 190ms; --t-slow: 280ms;
+  --ease-out: cubic-bezier(.22,.72,.24,1);
+  --ease-spring: cubic-bezier(.2,.9,.28,1.24);
+
+  /* type */
+  --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+
+  position: fixed !important; inset: 0 !important; z-index: 2147483000 !important;
+  pointer-events: none; display: block;
+  font-family: var(--font); font-size: 14px; line-height: 1.45; color: var(--c-fg);
+  font-variant-numeric: tabular-nums; -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.srad-root[data-theme="dark"] {
+  --c-bg: rgba(20,23,36,.82);
+  --c-bg-2: rgba(255,255,255,.05);
+  --c-bg-3: #151a2b;
+  --c-fg: #e8ecf8;
+  --c-fg-2: rgba(232,236,248,.58);
+  --c-line: rgba(232,236,248,.13);
+  --c-line-2: rgba(232,236,248,.07);
+  --c-accent: #7d7bff;
+  --c-accent-soft: rgba(125,123,255,.16);
+  --c-mint: #34e0c0;
+  --c-ok: #46c96e;
+  --c-warn: #e5a53a;
+  --c-err: #ff6b62;
+  --c-shadow: 0 28px 70px -14px rgba(0,0,0,.62), 0 4px 16px -6px rgba(0,0,0,.45);
+  --c-shadow-soft: 0 2px 10px -4px rgba(0,0,0,.6);
+  --c-inset-hi: inset 0 1px 0 rgba(255,255,255,.06);
+}
+
+/* ── floating action button ─────────────────────────────── */
+.srad-fab {
+  pointer-events: auto; position: absolute; right: 20px; bottom: 20px;
+  width: 56px; height: 56px; border-radius: 19px; border: 1px solid var(--c-line);
+  background: var(--c-bg-3); color: var(--c-fg);
+  box-shadow: var(--c-shadow-soft), var(--c-inset-hi);
+  display: grid; place-items: center; cursor: pointer; touch-action: none;
+  user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent;
+  transition: box-shadow var(--t-mid) var(--ease-out), background var(--t-mid) var(--ease-out), border-color var(--t-mid);
+  backdrop-filter: saturate(1.4) blur(20px); -webkit-backdrop-filter: saturate(1.4) blur(20px);
+  isolation: isolate;
+}
+.srad-fab::before {
+  content: ""; position: absolute; inset: 0; border-radius: inherit; opacity: 0;
+  background: radial-gradient(120% 120% at 20% 0%, var(--c-accent-soft), transparent 60%);
+  transition: opacity var(--t-mid) var(--ease-out);
+}
+.srad-fab:hover { border-color: var(--c-accent); box-shadow: var(--c-shadow), var(--c-inset-hi); }
+.srad-fab:hover::before { opacity: 1; }
+.srad-fab:focus-visible { outline: 2px solid var(--c-accent); outline-offset: 3px; }
+.srad-fab svg { width: 24px; height: 24px; position: relative; color: var(--c-fg); }
+.srad-fab[data-live="1"] svg { color: var(--c-accent); }
+.srad-fab[data-dragging="1"] { cursor: grabbing; box-shadow: var(--c-shadow); }
+.srad-fab[data-dragging="1"]::after { opacity: 0; }
+.srad-fab::after {
+  content: ""; position: absolute; inset: -3px; border-radius: 22px; border: 1.5px solid var(--c-accent);
+  opacity: 0; pointer-events: none;
+}
+.srad-fab[data-pulse="1"]::after { animation: srad-ring 1.5s var(--ease-out) 2; }
+@keyframes srad-ring { 0% { opacity: .55; transform: scale(.9); } 100% { opacity: 0; transform: scale(1.28); } }
+.srad-badge {
+  position: absolute; top: -6px; right: -6px; min-width: 21px; height: 21px; padding: 0 6px;
+  border-radius: var(--r-pill); background: var(--c-accent); color: #fff;
+  font-size: 11.5px; font-weight: 700; line-height: 21px; text-align: center;
+  border: 2px solid var(--c-bg-3); transform: scale(0); transition: transform var(--t-mid) var(--ease-spring);
+}
+.srad-badge[data-show="1"] { transform: scale(1); }
+.srad-badge[data-empty="1"] { background: var(--c-fg-2); }
+
+/* ── panel shell ────────────────────────────────────────── */
+.srad-panel {
+  pointer-events: auto; position: absolute; right: 20px; bottom: 88px;
+  width: min(444px, calc(100vw - 28px)); max-height: min(78vh, 760px);
+  display: flex; flex-direction: column; overflow: hidden;
+  background: var(--c-bg); border: 1px solid var(--c-line); border-radius: var(--r-lg);
+  box-shadow: var(--c-shadow); color: var(--c-fg);
+  backdrop-filter: saturate(1.6) blur(22px); -webkit-backdrop-filter: saturate(1.6) blur(22px);
+  transform-origin: bottom right; visibility: hidden; opacity: 0;
+  transition: opacity var(--t-mid) var(--ease-out), transform var(--t-slow) var(--ease-spring), visibility var(--t-mid);
+}
+.srad-panel[data-open="1"] { opacity: 1; visibility: visible; transform: none; }
+.srad-panel[data-anchor="tr"] { top: 88px; bottom: auto; transform-origin: top right; }
+.srad-panel[data-anchor="tl"] { right: auto; left: 20px; top: 88px; bottom: auto; transform-origin: top left; }
+.srad-panel[data-anchor="bl"] { right: auto; left: 20px; bottom: 88px; transform-origin: bottom left; }
+
+.srad-head { display: flex; align-items: center; gap: var(--sp-2); padding: 10px 10px 10px 14px; border-bottom: 1px solid var(--c-line-2); }
+.srad-brand { display: flex; align-items: center; gap: 9px; min-width: 0; flex: 1 1 auto; cursor: grab; }
+.srad-head[data-drag="1"] .srad-brand { cursor: grabbing; }
+.srad-mark { width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center; flex: none;
+  background: linear-gradient(150deg, var(--c-accent), #3d3ac9 62%, var(--c-mint)); color: #fff;
+  box-shadow: 0 4px 14px -4px var(--c-accent); }
+.srad-mark svg { width: 15px; height: 15px; }
+.srad-headtxt { min-width: 0; }
+.srad-headtxt b { display: block; font-size: 13px; font-weight: 650; letter-spacing: .01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 210px; }
+.srad-headtxt small { display: block; font-size: 11px; color: var(--c-fg-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 210px; }
+.srad-spacer { flex: 1 1 auto; min-width: 0; }
+
+.srad-iconbtn {
+  pointer-events: auto; position: relative; overflow: hidden; flex: none;
+  width: 40px; height: 40px; display: grid; place-items: center; padding: 0;
+  border: 1px solid transparent; border-radius: var(--r-sm); background: transparent; color: var(--c-fg-2);
+  cursor: pointer; -webkit-tap-highlight-color: transparent;
+  transition: background var(--t-fast) var(--ease-out), color var(--t-fast), border-color var(--t-fast), transform var(--t-fast);
+}
+.srad-iconbtn:hover { background: var(--c-bg-2); color: var(--c-fg); }
+.srad-iconbtn:active { transform: scale(.93); }
+.srad-iconbtn:focus-visible { outline: 2px solid var(--c-accent); outline-offset: 1px; }
+.srad-iconbtn svg { width: 18px; height: 18px; }
+.srad-iconbtn[data-on="1"] { color: var(--c-accent); border-color: var(--c-line); background: var(--c-accent-soft); }
+
+/* ── tabs ───────────────────────────────────────────────── */
+.srad-tabs { display: flex; gap: 2px; padding: 0 10px; border-bottom: 1px solid var(--c-line-2); }
+.srad-tab {
+  position: relative; border: 0; background: transparent; color: var(--c-fg-2); cursor: pointer;
+  font: 600 12.5px/1 var(--font); padding: 10px 11px; min-height: 38px; border-radius: 8px 8px 0 0;
+  display: inline-flex; align-items: center; gap: 6px; -webkit-tap-highlight-color: transparent;
+}
+.srad-tab svg { width: 15px; height: 15px; }
+.srad-tab:hover { color: var(--c-fg); }
+.srad-tab[aria-selected="true"] { color: var(--c-fg); }
+.srad-tab[aria-selected="true"]::after { content: ""; position: absolute; left: 10px; right: 10px; bottom: -1px; height: 2px; border-radius: 2px; background: var(--c-accent); }
+.srad-tab:focus-visible { outline: 2px solid var(--c-accent); outline-offset: -2px; }
+.srad-tab i { font-style: normal; font-size: 11px; font-weight: 700; color: var(--c-fg-2); background: var(--c-bg-2); border-radius: var(--r-pill); padding: 1px 6px; }
+
+/* ── meta strip ─────────────────────────────────────────── */
+.srad-meta { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 14px 0; }
+.srad-meta:empty { display: none; }
+.srad-chip {
+  display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 600;
+  padding: 3px 9px; border-radius: var(--r-pill); background: var(--c-bg-2);
+  border: 1px solid var(--c-line-2); color: var(--c-fg-2); max-width: 100%;
+}
+.srad-chip svg { width: 12px; height: 12px; }
+.srad-chip[data-kind="ep"], .srad-chip[data-kind="year"] { color: var(--c-accent); background: var(--c-accent-soft); border-color: transparent; }
+.srad-chip[data-kind="warn"] { color: var(--c-warn); }
+.srad-chip[data-kind="err"] { color: var(--c-err); }
+.srad-chip[data-kind="ok"] { color: var(--c-ok); }
+
+/* ── list ───────────────────────────────────────────────── */
+.srad-body { flex: 1 1 auto; overflow: auto; overscroll-behavior: contain; padding: var(--sp-2) 10px 4px; scrollbar-width: thin; }
+.srad-body::-webkit-scrollbar { width: 10px; }
+.srad-body::-webkit-scrollbar-thumb { background: var(--c-line); border-radius: 8px; border: 3px solid transparent; background-clip: content-box; }
+.srad-pane[hidden] { display: none; }
+
+.srad-empty { text-align: center; color: var(--c-fg-2); padding: 30px 22px 34px; }
+.srad-empty svg { width: 26px; height: 26px; opacity: .55; margin-bottom: 10px; animation: srad-spin 2.4s linear infinite; }
+.srad-empty b { display: block; color: var(--c-fg); font-size: 14px; margin-bottom: 5px; }
+.srad-empty p { margin: 0; font-size: 12.5px; }
+@keyframes srad-spin { to { transform: rotate(360deg); } }
+
+.srad-item {
+  position: relative; display: grid; grid-template-columns: 50px minmax(0,1fr); gap: 10px;
+  padding: 10px; margin-bottom: var(--sp-2); border-radius: var(--r-md);
+  background: var(--c-bg-3); border: 1px solid var(--c-line-2); box-shadow: var(--c-shadow-soft);
+  transition: border-color var(--t-fast) var(--ease-out), transform var(--t-fast) var(--ease-out), box-shadow var(--t-mid);
+  will-change: transform;
+}
+.srad-item:hover { border-color: var(--c-line); }
+.srad-item:focus-visible, .srad-item[data-active="1"] { outline: 2px solid var(--c-accent); outline-offset: 1px; border-color: transparent; }
+.srad-item[data-ad="1"] { opacity: .78; }
+.srad-thumb {
+  width: 50px; height: 50px; border-radius: 11px; overflow: hidden; position: relative; flex: none;
+  display: grid; place-items: center; background: var(--c-bg-2); color: #fff;
+  font-size: 10px; font-weight: 800; letter-spacing: .04em;
+}
+.srad-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.srad-thumb svg { width: 20px; height: 20px; opacity: .95; }
+.srad-thumb[data-cat="hls"] { background: linear-gradient(145deg,#f97316,#b83a08); }
+.srad-thumb[data-cat="dash"] { background: linear-gradient(145deg,#0ea5e9,#1746b8); }
+.srad-thumb[data-cat="mp4"] { background: linear-gradient(145deg,#22c55e,#0c6b63); }
+.srad-thumb[data-cat="webm"] { background: linear-gradient(145deg,#a855f7,#5b21b6); }
+.srad-thumb[data-cat="blob"] { background: linear-gradient(145deg,#64748b,#2c3547); }
+.srad-thumb[data-cat="segment"] { background: linear-gradient(145deg,#eab308,#8a5a06); }
+.srad-thumb[data-cat="texttrack"] { background: linear-gradient(145deg,#14b8a6,#0f6b63); }
+.srad-main { min-width: 0; }
+.srad-row1 { display: flex; align-items: baseline; gap: 8px; }
+.srad-name { flex: 1 1 auto; min-width: 0; font-size: 13px; font-weight: 640; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.srad-conf { flex: none; display: inline-flex; gap: 3px; align-items: center; }
+.srad-conf i { width: 5px; height: 5px; border-radius: 50%; background: var(--c-line); }
+.srad-conf i[data-on="1"] { background: var(--c-mint); }
+.srad-url { margin-top: 2px; font: 10.5px/1.4 var(--mono); color: var(--c-fg-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.srad-tags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
+.srad-tag {
+  font-size: 10.5px; font-weight: 650; padding: 2px 7px; border-radius: 7px;
+  background: var(--c-bg-2); border: 1px solid var(--c-line-2); color: var(--c-fg-2);
+  display: inline-flex; align-items: center; gap: 4px;
+}
+.srad-tag svg { width: 11px; height: 11px; }
+.srad-tag[data-tone="q"] { color: var(--c-accent); background: var(--c-accent-soft); border-color: transparent; }
+.srad-tag[data-tone="ok"] { color: var(--c-ok); }
+.srad-tag[data-tone="warn"] { color: var(--c-warn); }
+.srad-tag[data-tone="err"] { color: var(--c-err); }
+.srad-tag[data-busy="1"] { color: var(--c-accent); }
+.srad-tag[data-busy="1"] svg { animation: srad-spin 1.1s linear infinite; }
+
+.srad-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
+.srad-btn {
+  position: relative; overflow: hidden; pointer-events: auto; -webkit-tap-highlight-color: transparent;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  min-height: 34px; padding: 0 11px; border-radius: 10px; cursor: pointer;
+  border: 1px solid var(--c-line); background: transparent; color: var(--c-fg);
+  font: 620 12px/1 var(--font); transition: background var(--t-fast) var(--ease-out), border-color var(--t-fast), transform var(--t-fast), color var(--t-fast);
+}
+.srad-btn svg { width: 15px; height: 15px; flex: none; }
+.srad-btn:hover { background: var(--c-bg-2); border-color: var(--c-accent); }
+.srad-btn:active { transform: scale(.96); }
+.srad-btn:focus-visible { outline: 2px solid var(--c-accent); outline-offset: 2px; }
+.srad-btn[data-primary="1"] { color: #fff; border-color: transparent; background: linear-gradient(150deg, var(--c-accent), #3d3ac9); box-shadow: 0 6px 18px -8px var(--c-accent); }
+.srad-btn[data-primary="1"]:hover { filter: brightness(1.07); }
+.srad-btn[data-done="1"] { color: var(--c-ok); border-color: var(--c-ok); background: transparent; }
+.srad-btn[disabled] { opacity: .55; cursor: progress; }
+.srad-ripple { position: absolute; border-radius: 50%; transform: scale(0); background: currentColor; opacity: .22; pointer-events: none; }
+
+.srad-variants { display: none; margin-top: 9px; padding-top: 8px; border-top: 1px dashed var(--c-line); }
+.srad-item[data-expanded="1"] .srad-variants { display: block; }
+.srad-variant { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--c-fg-2); padding: 3px 2px; }
+.srad-variant b { color: var(--c-fg); font-weight: 620; }
+.srad-vq { min-width: 48px; font-weight: 700; color: var(--c-fg); }
+.srad-variant .srad-btn { margin-left: auto; min-height: 32px; }
+.srad-note { margin-top: 8px; font-size: 11.5px; color: var(--c-fg-2); display: flex; gap: 6px; align-items: flex-start; }
+.srad-note svg { width: 13px; height: 13px; flex: none; margin-top: 2px; }
+
+/* ── subtitles pane ─────────────────────────────────────── */
+.srad-sub-card { padding: 10px 12px; border-radius: var(--r-md); background: var(--c-bg-3); border: 1px solid var(--c-line-2); margin-bottom: var(--sp-2); }
+.srad-sub-head { display: flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 640; }
+.srad-sub-head .srad-state { margin-left: auto; font-size: 11px; font-weight: 700; color: var(--c-fg-2); display: inline-flex; align-items: center; gap: 5px; }
+.srad-sub-head .srad-state[data-s="found"] { color: var(--c-ok); }
+.srad-sub-head .srad-state[data-s="error"], .srad-sub-head .srad-state[data-s="none"] { color: var(--c-warn); }
+.srad-sub-head .srad-state[data-s="searching"] { color: var(--c-accent); }
+.srad-sub-head .srad-state[data-s="searching"] svg { width: 12px; height: 12px; animation: srad-spin 1.1s linear infinite; }
+.srad-providers { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 8px; }
+.srad-pv { font-size: 10.5px; padding: 2px 7px; border-radius: 7px; border: 1px solid var(--c-line-2); color: var(--c-fg-2); }
+.srad-pv[data-s="ok"] { color: var(--c-ok); border-color: var(--c-ok); }
+.srad-pv[data-s="error"], .srad-pv[data-s="skipped"] { color: var(--c-warn); border-color: var(--c-warn); }
+.srad-sub-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 12px; padding: 6px 8px; border-radius: 10px; background: var(--c-bg-2); }
+.srad-sub-row span { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.srad-sub-row em { font-style: normal; color: var(--c-fg-2); font-size: 11px; }
+.srad-sub-row[data-picked="1"] { outline: 1px solid var(--c-accent); }
+.srad-sub-actions { display: flex; gap: 6px; margin-top: 9px; flex-wrap: wrap; }
+
+/* ── settings sheet ─────────────────────────────────────── */
+.srad-pop {
+  position: absolute; inset: 0; z-index: 3; display: flex; flex-direction: column;
+  background: var(--c-bg-3); color: var(--c-fg); transform: translateY(101%);
+  transition: transform var(--t-slow) var(--ease-out);
+}
+.srad-pop[data-open="1"] { transform: none; }
+.srad-popbody { overflow: auto; padding: 4px 14px 16px; }
+.srad-field { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--c-line-2); min-height: 46px; }
+.srad-field > label, .srad-field > .lab { flex: 1 1 auto; font-size: 12.5px; font-weight: 600; }
+.srad-field .hint { display: block; color: var(--c-fg-2); font-weight: 400; font-size: 11.5px; margin-top: 1px; }
+.srad-seg { display: inline-flex; background: var(--c-bg-2); border: 1px solid var(--c-line-2); border-radius: 10px; padding: 2px; gap: 2px; }
+.srad-seg button { border: 0; background: transparent; color: var(--c-fg-2); font: 600 11.5px/1 var(--font); padding: 7px 10px; min-height: 32px; border-radius: 8px; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.srad-seg button[data-on="1"] { background: var(--c-accent); color: #fff; }
+.srad-switch { position: relative; display: inline-flex; align-items: center; flex: none; width: 40px; height: 24px; border-radius: var(--r-pill); background: var(--c-line); border: 0; cursor: pointer; padding: 0; transition: background var(--t-mid) var(--ease-out); }
+.srad-switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.32); transition: transform var(--t-mid) var(--ease-spring); }
+.srad-switch[aria-checked="true"] { background: var(--c-accent); }
+.srad-switch[aria-checked="true"]::after { transform: translateX(16px); }
+.srad-switch:focus-visible { outline: 2px solid var(--c-accent); outline-offset: 2px; }
+
+/* ── footer ─────────────────────────────────────────────── */
+.srad-foot { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-top: 1px solid var(--c-line-2); background: var(--c-bg-2); flex-wrap: wrap; }
+.srad-count { font-size: 11.5px; color: var(--c-fg-2); font-weight: 600; }
+
+/* ── toasts ─────────────────────────────────────────────── */
+.srad-toasts { pointer-events: none; position: absolute; top: 14px; right: 14px; display: flex; flex-direction: column; gap: 8px; align-items: flex-end; width: min(360px, calc(100vw - 28px)); }
+.srad-toast {
+  pointer-events: auto; position: relative; overflow: hidden; display: flex; align-items: center; gap: 9px;
+  max-width: 100%; padding: 10px 12px; border-radius: var(--r-md);
+  background: var(--c-bg); border: 1px solid var(--c-line); box-shadow: var(--c-shadow); color: var(--c-fg);
+  backdrop-filter: saturate(1.5) blur(18px); -webkit-backdrop-filter: saturate(1.5) blur(18px);
+  font-size: 12.5px; font-weight: 550;
+}
+.srad-toast .srad-tico { width: 22px; height: 22px; flex: none; display: grid; place-items: center; border-radius: 7px; background: var(--c-accent-soft); color: var(--c-accent); }
+.srad-toast .srad-tico svg { width: 13px; height: 13px; }
+.srad-toast[data-kind="ok"] .srad-tico { background: rgba(21,127,61,.14); color: var(--c-ok); }
+.srad-toast[data-kind="warn"] .srad-tico { background: rgba(153,97,10,.14); color: var(--c-warn); }
+.srad-toast[data-kind="err"] .srad-tico { background: rgba(180,35,24,.12); color: var(--c-err); }
+.srad-toast > span:nth-child(2) { flex: 1 1 auto; min-width: 0; }
+.srad-toast button { flex: none; border: 1px solid var(--c-line); background: transparent; color: var(--c-fg); border-radius: 8px; font: 650 11.5px var(--font); padding: 5px 8px; cursor: pointer; min-height: 32px; }
+.srad-toast .srad-tbar { position: absolute; left: 0; bottom: 0; height: 2px; width: 100%; background: var(--c-accent); transform-origin: left; opacity: .85; }
+
+.srad-sr { position: absolute !important; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* ── responsive / touch ─────────────────────────────────── */
+@media (max-width: 720px), (pointer: coarse) and (max-width: 900px) {
+  .srad-fab { width: 52px; height: 52px; right: 12px; bottom: 12px; border-radius: 17px; }
+  .srad-panel {
+    right: 0 !important; left: 0 !important; top: auto !important; bottom: 0 !important;
+    width: 100vw; max-width: 100vw; max-height: 84vh; border-radius: var(--r-lg) var(--r-lg) 0 0;
+    border-bottom: 0; transform-origin: bottom center; padding-bottom: env(safe-area-inset-bottom, 0);
+  }
+  .srad-panel::before { content: ""; position: absolute; top: 6px; left: 50%; transform: translateX(-50%); width: 38px; height: 4px; border-radius: 2px; background: var(--c-line); }
+  .srad-iconbtn, .srad-btn, .srad-variant .srad-btn, .srad-toast button, .srad-tab { min-height: 44px; }
+  .srad-btn { flex: 1 1 auto; }
+  .srad-toasts { top: 8px; left: 8px; right: 8px; width: auto; align-items: stretch; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .srad-root *, .srad-root *::before, .srad-root *::after { animation-duration: 1ms !important; transition-duration: 1ms !important; }
+}
+@media (prefers-contrast: more) {
+  .srad-root { --c-line: currentColor; --c-bg: ButtonFace; --c-bg-3: Canvas; --c-fg: CanvasText; }
+}
+</style><div class="srad-root" dir="ltr" data-theme="dark"><div class="srad-toasts" role="region" aria-live="polite" aria-label="Stream Radar notifications"></div><section class="srad-panel" role="dialog" aria-modal="false" aria-label="Detected media" data-open="1" data-anchor="tl"><header class="srad-head"><div class="srad-brand" data-el="grip"><span class="srad-mark"><svg class="" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M20.2 6 3 11l-.9-2.4c-.3-1.1.3-2.2 1.3-2.5l13.5-4c1.1-.3 2.2.3 2.5 1.3Z"></path> <path d="m6.2 5.3 3.1 3.9"></path> <path d="m12.4 3.4 3.1 4"></path> <path d="M3 11h18v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"></path></svg></span><span class="srad-headtxt"><span data-el="title"><b>Dune: Part Two (2024)</b><small>67movies.nl</small></span></span></div><span class="srad-spacer"></span><button class="srad-iconbtn" data-act="theme" title="Theme" aria-label="Theme"><svg class="" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="4"></circle> <path d="M12 2v2"></path> <path d="M12 20v2"></path> <path d="m4.93 4.93 1.41 1.41"></path> <path d="m17.66 17.66 1.41 1.41"></path> <path d="M2 12h2"></path> <path d="M20 12h2"></path> <path d="m6.34 17.66-1.41 1.41"></path> <path d="m19.07 4.93-1.41 1.41"></path></svg></button><button class="srad-iconbtn" data-act="refresh" title="Scan now" aria-label="Scan now"><svg class="" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M19.07 4.93A10 10 0 0 0 6.99 3.34"></path> <path d="M4 6h.01"></path> <path d="M2.29 9.62A10 10 0 1 0 21.31 8.35"></path> <path d="M16.24 7.76A6 6 0 1 0 8.23 16.67"></path> <path d="M12 18h.01"></path> <path d="M17.99 11.66A6 6 0 0 1 15.77 16.67"></path> <circle cx="12" cy="12" r="2"></circle> <path d="m13.41 10.59 5.66-5.66"></path></svg></button><button class="srad-iconbtn" data-act="settings" title="Settings" aria-label="Settings"><svg class="" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path> <circle cx="12" cy="12" r="3"></circle></svg></button><button class="srad-iconbtn" data-act="x" title="Close" aria-label="Close"><svg class="" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M18 6 6 18"></path> <path d="m6 6 12 12"></path></svg></button></header><div class="srad-tabs" role="tablist"><button class="srad-tab" role="tab" id="srad-tab-media" aria-controls="srad-pane-media" aria-selected="true" data-act="tab" data-tab="media"><svg class="" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5"></path> <rect x="2" y="6" width="14" height="12" rx="2"></rect></svg>Media<i>3</i></button><button class="srad-tab" role="tab" id="srad-tab-subs" aria-controls="srad-pane-subs" aria-selected="false" data-act="tab" data-tab="subs"><svg class="" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect width="18" height="14" x="3" y="5" rx="2" ry="2"></rect> <path d="M7 15h4M15 15h2M7 11h2M13 11h4"></path></svg>Subtitles<i>1</i></button><button class="srad-tab" role="tab" id="srad-tab-info" aria-controls="srad-pane-info" aria-selected="false" data-act="tab" data-tab="info"><svg class="" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="10"></circle> <path d="M12 16v-4"></path> <path d="M12 8h.01"></path></svg>Diagnostics</button></div><div class="srad-meta" data-el="meta"><span class="srad-chip" data-kind="year"><svg class="" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M19.07 4.93A10 10 0 0 0 6.99 3.34"></path> <path d="M4 6h.01"></path> <path d="M2.29 9.62A10 10 0 1 0 21.31 8.35"></path> <path d="M16.24 7.76A6 6 0 1 0 8.23 16.67"></path> <path d="M12 18h.01"></path> <path d="M17.99 11.66A6 6 0 0 1 15.77 16.67"></path> <circle cx="12" cy="12" r="2"></circle> <path d="m13.41 10.59 5.66-5.66"></path></svg>2024</span><span class="srad-chip"><svg class="" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3 6h18"></path> <path d="M7 12h10"></path> <path d="M10 18h4"></path></svg>5 of 5 layers active</span><span class="srad-chip"><svg class="" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"></path> <path d="M20 3v4"></path> <path d="M22 5h-4"></path> <path d="M4 17v2"></path> <path d="M5 18H3"></path></svg>Rule pack 2026082801</span></div><div class="srad-body" role="region" tabindex="-1" data-el="body"><div role="list" data-el="list"><article class="srad-item" role="listitem" tabindex="0" data-id="a" data-ad="0" aria-label="HLS master.m3u8"><div class="srad-thumb" data-cat="hls"><svg class="" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><polygon points="6 3 20 12 6 21 6 3"></polygon></svg></div><div class="srad-main"><div class="srad-row1"><span class="srad-name">master.m3u8</span><span class="srad-conf" aria-hidden="true"><i data-on="1"></i><i data-on="1"></i><i data-on="1"></i></span></div><div class="srad-url" title="https://cdn.master.film/hls/1516698/master.m3u8?token=7f2a91c4b0e5d2f1">https://cdn.master.film/hls/1516698/master.m3u8?token=7f2a91c4b0e5d2f1</div><div class="srad-tags"><span class="srad-tag" data-tone="q">1080p</span><span class="srad-tag" data-tone="warn"><svg class="" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"></path> <path d="m9 12 2 2 4-4"></path></svg>AES-128 key</span><span class="srad-tag" title="Detected by: fetch, performance, dom">3 sources</span><span class="srad-tag" data-tone="ok"><svg class="" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect width="18" height="14" x="3" y="5" rx="2" ry="2"></rect> <path d="M7 15h4M15 15h2M7 11h2M13 11h4"></path></svg>Dune.2024.1080p.ID.srt</span></div><div class="srad-actions"><button class="srad-btn" data-act="watchparty" data-primary="1"><svg class="" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path> <circle cx="9" cy="7" r="4"></circle> <path d="M22 21v-2a4 4 0 0 0-3-3.87"></path> <path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>Watch Party</button><button class="srad-btn" data-act="copy"><svg class="" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"></rect> <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></svg>Copy URL</button><button class="srad-btn" data-act="download"><svg class="" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path> <polyline points="7 10 12 15 17 10"></polyline> <line x1="12" x2="12" y1="15" y2="3"></line></svg>Save playlist</button><button class="srad-btn" data-act="subs"><svg class="" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect width="18" height="14" x="3" y="5" rx="2" ry="2"></rect> <path d="M7 15h4M15 15h2M7 11h2M13 11h4"></path></svg>Subtitles</button><button class="srad-btn" data-act="ffmpeg" title="Copy ffmpeg command" aria-label="Copy ffmpeg command"><svg class="" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M9 17H7A5 5 0 0 1 7 7h2"></path> <path d="M15 7h2a5 5 0 1 1 0 10h-2"></path> <line x1="8" x2="16" y1="12" y2="12"></line></svg></button><button class="srad-btn" data-act="toggle-expand" aria-expanded="false"><svg class="" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m6 9 6 6 6-6"></path></svg>3 qualities</button></div><div class="srad-variants"><div class="srad-variant"><span class="srad-vq">1080p</span><b>avc1.640028,mp4a.40.2</b><span>6.0 Mb/s</span><button class="srad-btn" data-act="variant" data-id="a" data-variant-id="0"><svg class="" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"></rect> <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></svg>Copy URL</button></div><div class="srad-variant"><span class="srad-vq">720p</span><b>HLS</b><span>2.2 Mb/s</span><button class="srad-btn" data-act="variant" data-id="a" data-variant-id="1"><svg class="" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"></rect> <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></svg>Copy URL</button></div><div class="srad-variant"><span class="srad-vq">480p</span><b>HLS</b><span>900 kb/s</span><button class="srad-btn" data-act="variant" data-id="a" data-variant-id="2"><svg class="" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"></rect> <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></svg>Copy URL</button></div></div></div></article><article class="srad-item" role="listitem" tabindex="0" data-id="b" data-ad="0" aria-label="MP4 movie-1080p.mp4"><div class="srad-thumb" data-cat="mp4"><svg class="" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5"></path> <rect x="2" y="6" width="14" height="12" rx="2"></rect></svg></div><div class="srad-main"><div class="srad-row1"><span class="srad-name">movie-1080p.mp4</span><span class="srad-conf" aria-hidden="true"><i data-on="1"></i><i data-on="1"></i><i data-on="1"></i></span></div><div class="srad-url" title="https://cdn.master.film/movie/movie-1080p.mp4">https://cdn.master.film/movie/movie-1080p.mp4</div><div class="srad-tags"><span class="srad-tag" data-tone="q">1080p</span><span class="srad-tag" title="Detected by: network">1 sources</span><span class="srad-tag" data-tone="q" data-busy="1"><svg class="" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 2v4"></path> <path d="m16.2 7.8 2.9-2.9"></path> <path d="M18 12h4"></path> <path d="m16.2 16.2 2.9 2.9"></path> <path d="M12 18v4"></path> <path d="m4.9 19.1 2.9-2.9"></path> <path d="M2 12h4"></path> <path d="m4.9 4.9 2.9 2.9"></path></svg>Searching subtitles…</span></div><div class="srad-actions"><button class="srad-btn" data-act="watchparty" data-primary="1"><svg class="" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path> <circle cx="9" cy="7" r="4"></circle> <path d="M22 21v-2a4 4 0 0 0-3-3.87"></path> <path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>Watch Party</button><button class="srad-btn" data-act="copy"><svg class="" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"></rect> <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></svg>Copy URL</button><button class="srad-btn" data-act="download"><svg class="" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path> <polyline points="7 10 12 15 17 10"></polyline> <line x1="12" x2="12" y1="15" y2="3"></line></svg>Download</button><button class="srad-btn" data-act="subs"><svg class="" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect width="18" height="14" x="3" y="5" rx="2" ry="2"></rect> <path d="M7 15h4M15 15h2M7 11h2M13 11h4"></path></svg>Subtitles</button><button class="srad-btn" data-act="ffmpeg" title="Copy ffmpeg command" aria-label="Copy ffmpeg command"><svg class="" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M9 17H7A5 5 0 0 1 7 7h2"></path> <path d="M15 7h2a5 5 0 1 1 0 10h-2"></path> <line x1="8" x2="16" y1="12" y2="12"></line></svg></button></div></div></article><article class="srad-item" role="listitem" tabindex="0" data-id="c" data-ad="0" aria-label="BLOB/MSE blob:8f2e"><div class="srad-thumb" data-cat="blob"><svg class="" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5"></path> <rect x="2" y="6" width="14" height="12" rx="2"></rect></svg></div><div class="srad-main"><div class="srad-row1"><span class="srad-name">blob:8f2e</span><span class="srad-conf" aria-hidden="true"><i data-on="1"></i><i data-on="0"></i><i data-on="0"></i></span></div><div class="srad-url" title="blob:https://player.film/8f2e-1a4b">blob:https://player.film/8f2e-1a4b</div><div class="srad-tags"><span class="srad-tag">75.0 MB buffered</span><span class="srad-tag" title="Detected by: mse-src">1 sources</span><span class="srad-tag" data-tone="warn"><svg class="" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect width="18" height="14" x="3" y="5" rx="2" ry="2"></rect> <path d="M7 15h4M15 15h2M7 11h2M13 11h4"></path></svg>Add an API key in Settings</span></div><div class="srad-actions"><button class="srad-btn" data-act="watchparty" data-primary="1"><svg class="" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path> <circle cx="9" cy="7" r="4"></circle> <path d="M22 21v-2a4 4 0 0 0-3-3.87"></path> <path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>Watch Party</button><button class="srad-btn" data-act="copy"><svg class="" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"></rect> <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></svg>Copy URL</button><button class="srad-btn" data-act="download"><svg class="" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path> <polyline points="7 10 12 15 17 10"></polyline> <line x1="12" x2="12" y1="15" y2="3"></line></svg>Download</button><button class="srad-btn" data-act="subs"><svg class="" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect width="18" height="14" x="3" y="5" rx="2" ry="2"></rect> <path d="M7 15h4M15 15h2M7 11h2M13 11h4"></path></svg>Subtitles</button><button class="srad-btn" data-act="ffmpeg" title="Copy ffmpeg command" aria-label="Copy ffmpeg command"><svg class="" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M9 17H7A5 5 0 0 1 7 7h2"></path> <path d="M15 7h2a5 5 0 1 1 0 10h-2"></path> <line x1="8" x2="16" y1="12" y2="12"></line></svg></button><button class="srad-btn" data-act="record"><svg class="" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="10"></circle></svg>Record buffer (beta)</button></div><div class="srad-note"><svg class="" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="10"></circle> <path d="M12 16v-4"></path> <path d="M12 8h.01"></path></svg><span>Blob streams cannot be downloaded directly, use Record buffer or open the source page.</span></div></div></article></div></div><div class="srad-foot"><span class="srad-count" data-el="count">3 streams</span><span class="srad-spacer"></span><button class="srad-btn" data-act="ads" data-el="ads" aria-label="Toggle ad and tracker requests" title="Toggle ad and tracker requests"><span data-el="adslabel">1 ad requests hidden</span></button><button class="srad-btn" data-act="clear"><svg class="" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3 6h18"></path> <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path> <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path> <line x1="10" x2="10" y1="11" y2="17"></line> <line x1="14" x2="14" y1="11" y2="17"></line></svg>Clear</button><button class="srad-btn" data-act="options" title="Open big panel"><svg class="" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M20 7h-9"></path> <path d="M14 17H5"></path> <circle cx="17" cy="17" r="3"></circle> <circle cx="7" cy="7" r="3"></circle></svg></button></div><div class="srad-pop" data-el="pop" role="region" aria-label="Settings"></div></section><div class="srad-fab" role="button" tabindex="0" aria-haspopup="dialog" aria-expanded="true" aria-label="Stream Radar: 3 media found" style="top: auto; left: auto;" data-live="1"><svg class="" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M19.07 4.93A10 10 0 0 0 6.99 3.34"></path> <path d="M4 6h.01"></path> <path d="M2.29 9.62A10 10 0 1 0 21.31 8.35"></path> <path d="M16.24 7.76A6 6 0 1 0 8.23 16.67"></path> <path d="M12 18h.01"></path> <path d="M17.99 11.66A6 6 0 0 1 15.77 16.67"></path> <circle cx="12" cy="12" r="2"></circle> <path d="m13.41 10.59 5.66-5.66"></path></svg><div class="srad-badge" data-empty="0" data-show="1" aria-hidden="true">3</div></div><div class="srad-sr" role="status" aria-live="polite" data-el="live"></div></div></div>
+<style>
+
+*, *::before, *::after { box-sizing: border-box; }
+
+.srad-root {
+  /* palette */
+  --c-bg: rgba(255,255,255,.78);
+  --c-bg-2: rgba(12,16,28,.04);
+  --c-bg-3: #ffffff;
+  --c-fg: #101320;
+  --c-fg-2: rgba(16,19,32,.6);
+  --c-line: rgba(16,19,32,.12);
+  --c-line-2: rgba(16,19,32,.07);
+  --c-accent: #5b5bf0;
+  --c-accent-soft: rgba(91,91,240,.12);
+  --c-mint: #0f9e88;
+  --c-ok: #157f3d;
+  --c-warn: #99610a;
+  --c-err: #b42318;
+  --c-shadow: 0 24px 60px -12px rgba(9,12,25,.28), 0 4px 14px -6px rgba(9,12,25,.16);
+  --c-shadow-soft: 0 2px 10px -4px rgba(9,12,25,.18);
+  --c-inset-hi: inset 0 1px 0 rgba(255,255,255,.7);
+
+  /* geometry */
+  --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 22px;
+  --r-sm: 9px; --r-md: 14px; --r-lg: 20px; --r-pill: 999px;
+
+  /* motion */
+  --t-fast: 120ms; --t-mid: 190ms; --t-slow: 280ms;
+  --ease-out: cubic-bezier(.22,.72,.24,1);
+  --ease-spring: cubic-bezier(.2,.9,.28,1.24);
+
+  /* type */
+  --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+
+  position: fixed !important; inset: 0 !important; z-index: 2147483000 !important;
+  pointer-events: none; display: block;
+  font-family: var(--font); font-size: 14px; line-height: 1.45; color: var(--c-fg);
+  font-variant-numeric: tabular-nums; -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.srad-root[data-theme="dark"] {
+  --c-bg: rgba(20,23,36,.82);
+  --c-bg-2: rgba(255,255,255,.05);
+  --c-bg-3: #151a2b;
+  --c-fg: #e8ecf8;
+  --c-fg-2: rgba(232,236,248,.58);
+  --c-line: rgba(232,236,248,.13);
+  --c-line-2: rgba(232,236,248,.07);
+  --c-accent: #7d7bff;
+  --c-accent-soft: rgba(125,123,255,.16);
+  --c-mint: #34e0c0;
+  --c-ok: #46c96e;
+  --c-warn: #e5a53a;
+  --c-err: #ff6b62;
+  --c-shadow: 0 28px 70px -14px rgba(0,0,0,.62), 0 4px 16px -6px rgba(0,0,0,.45);
+  --c-shadow-soft: 0 2px 10px -4px rgba(0,0,0,.6);
+  --c-inset-hi: inset 0 1px 0 rgba(255,255,255,.06);
+}
+
+/* ── floating action button ─────────────────────────────── */
+.srad-fab {
+  pointer-events: auto; position: absolute; right: 20px; bottom: 20px;
+  width: 56px; height: 56px; border-radius: 19px; border: 1px solid var(--c-line);
+  background: var(--c-bg-3); color: var(--c-fg);
+  box-shadow: var(--c-shadow-soft), var(--c-inset-hi);
+  display: grid; place-items: center; cursor: pointer; touch-action: none;
+  user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent;
+  transition: box-shadow var(--t-mid) var(--ease-out), background var(--t-mid) var(--ease-out), border-color var(--t-mid);
+  backdrop-filter: saturate(1.4) blur(20px); -webkit-backdrop-filter: saturate(1.4) blur(20px);
+  isolation: isolate;
+}
+.srad-fab::before {
+  content: ""; position: absolute; inset: 0; border-radius: inherit; opacity: 0;
+  background: radial-gradient(120% 120% at 20% 0%, var(--c-accent-soft), transparent 60%);
+  transition: opacity var(--t-mid) var(--ease-out);
+}
+.srad-fab:hover { border-color: var(--c-accent); box-shadow: var(--c-shadow), var(--c-inset-hi); }
+.srad-fab:hover::before { opacity: 1; }
+.srad-fab:focus-visible { outline: 2px solid var(--c-accent); outline-offset: 3px; }
+.srad-fab svg { width: 24px; height: 24px; position: relative; color: var(--c-fg); }
+.srad-fab[data-live="1"] svg { color: var(--c-accent); }
+.srad-fab[data-dragging="1"] { cursor: grabbing; box-shadow: var(--c-shadow); }
+.srad-fab[data-dragging="1"]::after { opacity: 0; }
+.srad-fab::after {
+  content: ""; position: absolute; inset: -3px; border-radius: 22px; border: 1.5px solid var(--c-accent);
+  opacity: 0; pointer-events: none;
+}
+.srad-fab[data-pulse="1"]::after { animation: srad-ring 1.5s var(--ease-out) 2; }
+@keyframes srad-ring { 0% { opacity: .55; transform: scale(.9); } 100% { opacity: 0; transform: scale(1.28); } }
+.srad-badge {
+  position: absolute; top: -6px; right: -6px; min-width: 21px; height: 21px; padding: 0 6px;
+  border-radius: var(--r-pill); background: var(--c-accent); color: #fff;
+  font-size: 11.5px; font-weight: 700; line-height: 21px; text-align: center;
+  border: 2px solid var(--c-bg-3); transform: scale(0); transition: transform var(--t-mid) var(--ease-spring);
+}
+.srad-badge[data-show="1"] { transform: scale(1); }
+.srad-badge[data-empty="1"] { background: var(--c-fg-2); }
+
+/* ── panel shell ────────────────────────────────────────── */
+.srad-panel {
+  pointer-events: auto; position: absolute; right: 20px; bottom: 88px;
+  width: min(444px, calc(100vw - 28px)); max-height: min(78vh, 760px);
+  display: flex; flex-direction: column; overflow: hidden;
+  background: var(--c-bg); border: 1px solid var(--c-line); border-radius: var(--r-lg);
+  box-shadow: var(--c-shadow); color: var(--c-fg);
+  backdrop-filter: saturate(1.6) blur(22px); -webkit-backdrop-filter: saturate(1.6) blur(22px);
+  transform-origin: bottom right; visibility: hidden; opacity: 0;
+  transition: opacity var(--t-mid) var(--ease-out), transform var(--t-slow) var(--ease-spring), visibility var(--t-mid);
+}
+.srad-panel[data-open="1"] { opacity: 1; visibility: visible; transform: none; }
+.srad-panel[data-anchor="tr"] { top: 88px; bottom: auto; transform-origin: top right; }
+.srad-panel[data-anchor="tl"] { right: auto; left: 20px; top: 88px; bottom: auto; transform-origin: top left; }
+.srad-panel[data-anchor="bl"] { right: auto; left: 20px; bottom: 88px; transform-origin: bottom left; }
+
+.srad-head { display: flex; align-items: center; gap: var(--sp-2); padding: 10px 10px 10px 14px; border-bottom: 1px solid var(--c-line-2); }
+.srad-brand { display: flex; align-items: center; gap: 9px; min-width: 0; flex: 1 1 auto; cursor: grab; }
+.srad-head[data-drag="1"] .srad-brand { cursor: grabbing; }
+.srad-mark { width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center; flex: none;
+  background: linear-gradient(150deg, var(--c-accent), #3d3ac9 62%, var(--c-mint)); color: #fff;
+  box-shadow: 0 4px 14px -4px var(--c-accent); }
+.srad-mark svg { width: 15px; height: 15px; }
+.srad-headtxt { min-width: 0; }
+.srad-headtxt b { display: block; font-size: 13px; font-weight: 650; letter-spacing: .01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 210px; }
+.srad-headtxt small { display: block; font-size: 11px; color: var(--c-fg-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 210px; }
+.srad-spacer { flex: 1 1 auto; min-width: 0; }
+
+.srad-iconbtn {
+  pointer-events: auto; position: relative; overflow: hidden; flex: none;
+  width: 40px; height: 40px; display: grid; place-items: center; padding: 0;
+  border: 1px solid transparent; border-radius: var(--r-sm); background: transparent; color: var(--c-fg-2);
+  cursor: pointer; -webkit-tap-highlight-color: transparent;
+  transition: background var(--t-fast) var(--ease-out), color var(--t-fast), border-color var(--t-fast), transform var(--t-fast);
+}
+.srad-iconbtn:hover { background: var(--c-bg-2); color: var(--c-fg); }
+.srad-iconbtn:active { transform: scale(.93); }
+.srad-iconbtn:focus-visible { outline: 2px solid var(--c-accent); outline-offset: 1px; }
+.srad-iconbtn svg { width: 18px; height: 18px; }
+.srad-iconbtn[data-on="1"] { color: var(--c-accent); border-color: var(--c-line); background: var(--c-accent-soft); }
+
+/* ── tabs ───────────────────────────────────────────────── */
+.srad-tabs { display: flex; gap: 2px; padding: 0 10px; border-bottom: 1px solid var(--c-line-2); }
+.srad-tab {
+  position: relative; border: 0; background: transparent; color: var(--c-fg-2); cursor: pointer;
+  font: 600 12.5px/1 var(--font); padding: 10px 11px; min-height: 38px; border-radius: 8px 8px 0 0;
+  display: inline-flex; align-items: center; gap: 6px; -webkit-tap-highlight-color: transparent;
+}
+.srad-tab svg { width: 15px; height: 15px; }
+.srad-tab:hover { color: var(--c-fg); }
+.srad-tab[aria-selected="true"] { color: var(--c-fg); }
+.srad-tab[aria-selected="true"]::after { content: ""; position: absolute; left: 10px; right: 10px; bottom: -1px; height: 2px; border-radius: 2px; background: var(--c-accent); }
+.srad-tab:focus-visible { outline: 2px solid var(--c-accent); outline-offset: -2px; }
+.srad-tab i { font-style: normal; font-size: 11px; font-weight: 700; color: var(--c-fg-2); background: var(--c-bg-2); border-radius: var(--r-pill); padding: 1px 6px; }
+
+/* ── meta strip ─────────────────────────────────────────── */
+.srad-meta { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 14px 0; }
+.srad-meta:empty { display: none; }
+.srad-chip {
+  display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 600;
+  padding: 3px 9px; border-radius: var(--r-pill); background: var(--c-bg-2);
+  border: 1px solid var(--c-line-2); color: var(--c-fg-2); max-width: 100%;
+}
+.srad-chip svg { width: 12px; height: 12px; }
+.srad-chip[data-kind="ep"], .srad-chip[data-kind="year"] { color: var(--c-accent); background: var(--c-accent-soft); border-color: transparent; }
+.srad-chip[data-kind="warn"] { color: var(--c-warn); }
+.srad-chip[data-kind="err"] { color: var(--c-err); }
+.srad-chip[data-kind="ok"] { color: var(--c-ok); }
+
+/* ── list ───────────────────────────────────────────────── */
+.srad-body { flex: 1 1 auto; overflow: auto; overscroll-behavior: contain; padding: var(--sp-2) 10px 4px; scrollbar-width: thin; }
+.srad-body::-webkit-scrollbar { width: 10px; }
+.srad-body::-webkit-scrollbar-thumb { background: var(--c-line); border-radius: 8px; border: 3px solid transparent; background-clip: content-box; }
+.srad-pane[hidden] { display: none; }
+
+.srad-empty { text-align: center; color: var(--c-fg-2); padding: 30px 22px 34px; }
+.srad-empty svg { width: 26px; height: 26px; opacity: .55; margin-bottom: 10px; animation: srad-spin 2.4s linear infinite; }
+.srad-empty b { display: block; color: var(--c-fg); font-size: 14px; margin-bottom: 5px; }
+.srad-empty p { margin: 0; font-size: 12.5px; }
+@keyframes srad-spin { to { transform: rotate(360deg); } }
+
+.srad-item {
+  position: relative; display: grid; grid-template-columns: 50px minmax(0,1fr); gap: 10px;
+  padding: 10px; margin-bottom: var(--sp-2); border-radius: var(--r-md);
+  background: var(--c-bg-3); border: 1px solid var(--c-line-2); box-shadow: var(--c-shadow-soft);
+  transition: border-color var(--t-fast) var(--ease-out), transform var(--t-fast) var(--ease-out), box-shadow var(--t-mid);
+  will-change: transform;
+}
+.srad-item:hover { border-color: var(--c-line); }
+.srad-item:focus-visible, .srad-item[data-active="1"] { outline: 2px solid var(--c-accent); outline-offset: 1px; border-color: transparent; }
+.srad-item[data-ad="1"] { opacity: .78; }
+.srad-thumb {
+  width: 50px; height: 50px; border-radius: 11px; overflow: hidden; position: relative; flex: none;
+  display: grid; place-items: center; background: var(--c-bg-2); color: #fff;
+  font-size: 10px; font-weight: 800; letter-spacing: .04em;
+}
+.srad-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.srad-thumb svg { width: 20px; height: 20px; opacity: .95; }
+.srad-thumb[data-cat="hls"] { background: linear-gradient(145deg,#f97316,#b83a08); }
+.srad-thumb[data-cat="dash"] { background: linear-gradient(145deg,#0ea5e9,#1746b8); }
+.srad-thumb[data-cat="mp4"] { background: linear-gradient(145deg,#22c55e,#0c6b63); }
+.srad-thumb[data-cat="webm"] { background: linear-gradient(145deg,#a855f7,#5b21b6); }
+.srad-thumb[data-cat="blob"] { background: linear-gradient(145deg,#64748b,#2c3547); }
+.srad-thumb[data-cat="segment"] { background: linear-gradient(145deg,#eab308,#8a5a06); }
+.srad-thumb[data-cat="texttrack"] { background: linear-gradient(145deg,#14b8a6,#0f6b63); }
+.srad-main { min-width: 0; }
+.srad-row1 { display: flex; align-items: baseline; gap: 8px; }
+.srad-name { flex: 1 1 auto; min-width: 0; font-size: 13px; font-weight: 640; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.srad-conf { flex: none; display: inline-flex; gap: 3px; align-items: center; }
+.srad-conf i { width: 5px; height: 5px; border-radius: 50%; background: var(--c-line); }
+.srad-conf i[data-on="1"] { background: var(--c-mint); }
+.srad-url { margin-top: 2px; font: 10.5px/1.4 var(--mono); color: var(--c-fg-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.srad-tags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
+.srad-tag {
+  font-size: 10.5px; font-weight: 650; padding: 2px 7px; border-radius: 7px;
+  background: var(--c-bg-2); border: 1px solid var(--c-line-2); color: var(--c-fg-2);
+  display: inline-flex; align-items: center; gap: 4px;
+}
+.srad-tag svg { width: 11px; height: 11px; }
+.srad-tag[data-tone="q"] { color: var(--c-accent); background: var(--c-accent-soft); border-color: transparent; }
+.srad-tag[data-tone="ok"] { color: var(--c-ok); }
+.srad-tag[data-tone="warn"] { color: var(--c-warn); }
+.srad-tag[data-tone="err"] { color: var(--c-err); }
+.srad-tag[data-busy="1"] { color: var(--c-accent); }
+.srad-tag[data-busy="1"] svg { animation: srad-spin 1.1s linear infinite; }
+
+.srad-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
+.srad-btn {
+  position: relative; overflow: hidden; pointer-events: auto; -webkit-tap-highlight-color: transparent;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  min-height: 34px; padding: 0 11px; border-radius: 10px; cursor: pointer;
+  border: 1px solid var(--c-line); background: transparent; color: var(--c-fg);
+  font: 620 12px/1 var(--font); transition: background var(--t-fast) var(--ease-out), border-color var(--t-fast), transform var(--t-fast), color var(--t-fast);
+}
+.srad-btn svg { width: 15px; height: 15px; flex: none; }
+.srad-btn:hover { background: var(--c-bg-2); border-color: var(--c-accent); }
+.srad-btn:active { transform: scale(.96); }
+.srad-btn:focus-visible { outline: 2px solid var(--c-accent); outline-offset: 2px; }
+.srad-btn[data-primary="1"] { color: #fff; border-color: transparent; background: linear-gradient(150deg, var(--c-accent), #3d3ac9); box-shadow: 0 6px 18px -8px var(--c-accent); }
+.srad-btn[data-primary="1"]:hover { filter: brightness(1.07); }
+.srad-btn[data-done="1"] { color: var(--c-ok); border-color: var(--c-ok); background: transparent; }
+.srad-btn[disabled] { opacity: .55; cursor: progress; }
+.srad-ripple { position: absolute; border-radius: 50%; transform: scale(0); background: currentColor; opacity: .22; pointer-events: none; }
+
+.srad-variants { display: none; margin-top: 9px; padding-top: 8px; border-top: 1px dashed var(--c-line); }
+.srad-item[data-expanded="1"] .srad-variants { display: block; }
+.srad-variant { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--c-fg-2); padding: 3px 2px; }
+.srad-variant b { color: var(--c-fg); font-weight: 620; }
+.srad-vq { min-width: 48px; font-weight: 700; color: var(--c-fg); }
+.srad-variant .srad-btn { margin-left: auto; min-height: 32px; }
+.srad-note { margin-top: 8px; font-size: 11.5px; color: var(--c-fg-2); display: flex; gap: 6px; align-items: flex-start; }
+.srad-note svg { width: 13px; height: 13px; flex: none; margin-top: 2px; }
+
+/* ── subtitles pane ─────────────────────────────────────── */
+.srad-sub-card { padding: 10px 12px; border-radius: var(--r-md); background: var(--c-bg-3); border: 1px solid var(--c-line-2); margin-bottom: var(--sp-2); }
+.srad-sub-head { display: flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 640; }
+.srad-sub-head .srad-state { margin-left: auto; font-size: 11px; font-weight: 700; color: var(--c-fg-2); display: inline-flex; align-items: center; gap: 5px; }
+.srad-sub-head .srad-state[data-s="found"] { color: var(--c-ok); }
+.srad-sub-head .srad-state[data-s="error"], .srad-sub-head .srad-state[data-s="none"] { color: var(--c-warn); }
+.srad-sub-head .srad-state[data-s="searching"] { color: var(--c-accent); }
+.srad-sub-head .srad-state[data-s="searching"] svg { width: 12px; height: 12px; animation: srad-spin 1.1s linear infinite; }
+.srad-providers { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 8px; }
+.srad-pv { font-size: 10.5px; padding: 2px 7px; border-radius: 7px; border: 1px solid var(--c-line-2); color: var(--c-fg-2); }
+.srad-pv[data-s="ok"] { color: var(--c-ok); border-color: var(--c-ok); }
+.srad-pv[data-s="error"], .srad-pv[data-s="skipped"] { color: var(--c-warn); border-color: var(--c-warn); }
+.srad-sub-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 12px; padding: 6px 8px; border-radius: 10px; background: var(--c-bg-2); }
+.srad-sub-row span { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.srad-sub-row em { font-style: normal; color: var(--c-fg-2); font-size: 11px; }
+.srad-sub-row[data-picked="1"] { outline: 1px solid var(--c-accent); }
+.srad-sub-actions { display: flex; gap: 6px; margin-top: 9px; flex-wrap: wrap; }
+
+/* ── settings sheet ─────────────────────────────────────── */
+.srad-pop {
+  position: absolute; inset: 0; z-index: 3; display: flex; flex-direction: column;
+  background: var(--c-bg-3); color: var(--c-fg); transform: translateY(101%);
+  transition: transform var(--t-slow) var(--ease-out);
+}
+.srad-pop[data-open="1"] { transform: none; }
+.srad-popbody { overflow: auto; padding: 4px 14px 16px; }
+.srad-field { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--c-line-2); min-height: 46px; }
+.srad-field > label, .srad-field > .lab { flex: 1 1 auto; font-size: 12.5px; font-weight: 600; }
+.srad-field .hint { display: block; color: var(--c-fg-2); font-weight: 400; font-size: 11.5px; margin-top: 1px; }
+.srad-seg { display: inline-flex; background: var(--c-bg-2); border: 1px solid var(--c-line-2); border-radius: 10px; padding: 2px; gap: 2px; }
+.srad-seg button { border: 0; background: transparent; color: var(--c-fg-2); font: 600 11.5px/1 var(--font); padding: 7px 10px; min-height: 32px; border-radius: 8px; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.srad-seg button[data-on="1"] { background: var(--c-accent); color: #fff; }
+.srad-switch { position: relative; display: inline-flex; align-items: center; flex: none; width: 40px; height: 24px; border-radius: var(--r-pill); background: var(--c-line); border: 0; cursor: pointer; padding: 0; transition: background var(--t-mid) var(--ease-out); }
+.srad-switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.32); transition: transform var(--t-mid) var(--ease-spring); }
+.srad-switch[aria-checked="true"] { background: var(--c-accent); }
+.srad-switch[aria-checked="true"]::after { transform: translateX(16px); }
+.srad-switch:focus-visible { outline: 2px solid var(--c-accent); outline-offset: 2px; }
+
+/* ── footer ─────────────────────────────────────────────── */
+.srad-foot { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-top: 1px solid var(--c-line-2); background: var(--c-bg-2); flex-wrap: wrap; }
+.srad-count { font-size: 11.5px; color: var(--c-fg-2); font-weight: 600; }
+
+/* ── toasts ─────────────────────────────────────────────── */
+.srad-toasts { pointer-events: none; position: absolute; top: 14px; right: 14px; display: flex; flex-direction: column; gap: 8px; align-items: flex-end; width: min(360px, calc(100vw - 28px)); }
+.srad-toast {
+  pointer-events: auto; position: relative; overflow: hidden; display: flex; align-items: center; gap: 9px;
+  max-width: 100%; padding: 10px 12px; border-radius: var(--r-md);
+  background: var(--c-bg); border: 1px solid var(--c-line); box-shadow: var(--c-shadow); color: var(--c-fg);
+  backdrop-filter: saturate(1.5) blur(18px); -webkit-backdrop-filter: saturate(1.5) blur(18px);
+  font-size: 12.5px; font-weight: 550;
+}
+.srad-toast .srad-tico { width: 22px; height: 22px; flex: none; display: grid; place-items: center; border-radius: 7px; background: var(--c-accent-soft); color: var(--c-accent); }
+.srad-toast .srad-tico svg { width: 13px; height: 13px; }
+.srad-toast[data-kind="ok"] .srad-tico { background: rgba(21,127,61,.14); color: var(--c-ok); }
+.srad-toast[data-kind="warn"] .srad-tico { background: rgba(153,97,10,.14); color: var(--c-warn); }
+.srad-toast[data-kind="err"] .srad-tico { background: rgba(180,35,24,.12); color: var(--c-err); }
+.srad-toast > span:nth-child(2) { flex: 1 1 auto; min-width: 0; }
+.srad-toast button { flex: none; border: 1px solid var(--c-line); background: transparent; color: var(--c-fg); border-radius: 8px; font: 650 11.5px var(--font); padding: 5px 8px; cursor: pointer; min-height: 32px; }
+.srad-toast .srad-tbar { position: absolute; left: 0; bottom: 0; height: 2px; width: 100%; background: var(--c-accent); transform-origin: left; opacity: .85; }
+
+.srad-sr { position: absolute !important; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* ── responsive / touch ─────────────────────────────────── */
+@media (max-width: 720px), (pointer: coarse) and (max-width: 900px) {
+  .srad-fab { width: 52px; height: 52px; right: 12px; bottom: 12px; border-radius: 17px; }
+  .srad-panel {
+    right: 0 !important; left: 0 !important; top: auto !important; bottom: 0 !important;
+    width: 100vw; max-width: 100vw; max-height: 84vh; border-radius: var(--r-lg) var(--r-lg) 0 0;
+    border-bottom: 0; transform-origin: bottom center; padding-bottom: env(safe-area-inset-bottom, 0);
+  }
+  .srad-panel::before { content: ""; position: absolute; top: 6px; left: 50%; transform: translateX(-50%); width: 38px; height: 4px; border-radius: 2px; background: var(--c-line); }
+  .srad-iconbtn, .srad-btn, .srad-variant .srad-btn, .srad-toast button, .srad-tab { min-height: 44px; }
+  .srad-btn { flex: 1 1 auto; }
+  .srad-toasts { top: 8px; left: 8px; right: 8px; width: auto; align-items: stretch; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .srad-root *, .srad-root *::before, .srad-root *::after { animation-duration: 1ms !important; transition-duration: 1ms !important; }
+}
+@media (prefers-contrast: more) {
+  .srad-root { --c-line: currentColor; --c-bg: ButtonFace; --c-bg-3: Canvas; --c-fg: CanvasText; }
+}
+</style>
+</body>
+</html>

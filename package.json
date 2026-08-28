@@ -1,0 +1,37 @@
+{
+  "name": "stream-radar",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Stream Radar \u2014 ultra media streaming detector + WatchParty + auto Indonesian subtitles, for Chrome & Firefox (Manifest V3). Not published to any store: load it unpacked.",
+  "type": "module",
+  "scripts": {
+    "test": "node --test --test-force-exit --test-concurrency=1 tools/test/core.test.mjs tools/test/demo.test.mjs tools/test/design.test.mjs tools/test/features.test.mjs tools/test/integration.test.mjs tools/test/ui.test.mjs tools/test/updater.test.mjs tools/test/userscript.test.mjs",
+    "test:core": "node --test tools/test/core.test.mjs",
+    "lint": "web-ext lint --source-dir dist/firefox --no-input --self-hosted",
+    "build": "node tools/build.mjs",
+    "build:chrome": "node tools/build.mjs --chrome",
+    "build:firefox": "node tools/build.mjs --firefox",
+    "userscript": "node tools/build-userscript.mjs",
+    "demo": "node tools/serve-demo.mjs",
+    "package": "node tools/build.mjs",
+    "test:integration": "node --test --test-force-exit tools/test/integration.test.mjs",
+    "keygen": "node tools/keygen.mjs",
+    "sign": "node tools/sign.mjs",
+    "live": "node tools/publish-live.mjs",
+    "live:push": "node tools/publish-live.mjs --push",
+    "preview": "node tools/render-preview.mjs",
+    "qa": "node tools/design-qa.mjs --strict",
+    "test:demo": "node --test --test-force-exit tools/test/demo.test.mjs",
+    "test:unit": "node --test --test-force-exit tools/test/core.test.mjs tools/test/design.test.mjs",
+    "test:e2e": "node --test --test-force-exit --test-concurrency=1 tools/test/integration.test.mjs tools/test/features.test.mjs tools/test/demo.test.mjs"
+  },
+  "devDependencies": {
+    "jsdom": "^26.0.0",
+    "lucide-static": "^0.469.0",
+    "web-ext": "^8.0.0"
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  }
+}
