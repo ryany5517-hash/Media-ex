@@ -1,0 +1,44 @@
+<!doctype html>
+<!--
+  Simulated 3rd-party embed player (vidlove / filemoon / vidlink style).
+  Load demo/index.html with the extension installed: this frame is cross-page,
+  so it exercises exactly the path that killed the userscript version.
+-->
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Player</title>
+  </head>
+  <body style="background:#05070f;margin:0">
+    <video id="p" controls style="width:100%;aspect-ratio:16/9"></video>
+    <script>
+      // 1) the manifest is fetched with fetch() and never appears in the markup
+      fetch('master.m3u8')
+        .then(function (r) { return r.text(); })
+        .then(function (text) {
+          document.title = 'Dune: Part Two — 1080p (server 1)';
+          document.getElementById('status').textContent = 'playlist loaded: ' + text.split('\n').length + ' lines';
+        })
+        .catch(function (e) { document.getElementById('status').textContent = 'fetch failed: ' + e; });
+
+      // 2) a backup source only travels through XHR
+      var x = new XMLHttpRequest();
+      x.open('GET', 'backup/movie-720p.mp4');
+      x.send();
+
+      // 3) MSE playback: the visible <video> gets a blob: URL, so a plain DOM
+      //    scanner that only reads video.src would report something useless.
+      var mime = 'video/mp4;codecs="avc1.640028,mp4a.40.2"';
+      if (window.MediaSource && MediaSource.isTypeSupported(mime)) {
+        var ms = new MediaSource();
+        document.getElementById('p').src = URL.createObjectURL(ms);
+        ms.addEventListener('sourceopen', function () {
+          try { ms.addSourceBuffer(mime); document.getElementById('status').textContent += ' · MSE ready'; } catch (e) {}
+        });
+      } else {
+        document.getElementById('p').src = 'backup/movie-720p.mp4';
+      }
+    </script>
+    <p id="status" style="color:#8b7cff;font:12px system-ui;padding:8px"></p>
+  </body>
+</html>

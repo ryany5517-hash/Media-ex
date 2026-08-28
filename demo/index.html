@@ -1,0 +1,62 @@
+<!doctype html>
+<!--
+  Stream Radar self-test page.
+  Serves the shape of a real streaming site: SEO-spam title, JSON-LD, nested
+  iframe embed whose player fetches the manifest by itself.
+
+    npm run demo        → http://localhost:8088/demo/index.html
+    expected result: 1 HLS entry (+ its 1080p/720p qualities and the AES-128 key),
+                     1 MP4 (XHR), 1 blob/MSE entry, title "Dune: Part Two".
+-->
+<html lang="id">
+  <head>
+    <meta charset="utf-8" />
+    <title>Nonton Dune: Part Two (2024) Subtitle Indonesia | DemoMovies — Watch Movies &amp; TV Shows in HD Online</title>
+    <meta property="og:title" content="Nonton Dune: Part Two (2024) Sub Indo - DemoMovies" />
+    <meta property="og:image" content="https://picsum.photos/seed/dune/400/600" />
+    <meta property="og:video" content="https://demo.localhost/hls/master.m3u8" />
+    <link rel="canonical" href="https://localhost:8088/demo/index.html" />
+    <script type="application/ld+json">
+      { "@context": "https://schema.org", "@type": "Movie", "name": "Dune: Part Two", "datePublished": "2024-02-28",
+        "image": "https://picsum.photos/seed/dune/400/600", "sameAs": ["https://www.imdb.com/title/tt15239678/"] }
+    </script>
+    <style>
+      body { margin: 0; background: #0a0d18; color: #e9edf7; font: 15px/1.6 system-ui, sans-serif; }
+      .wrap { max-width: 980px; margin: 0 auto; padding: 28px 20px 120px; }
+      h1 { font-size: 22px; margin: 0 0 4px; }
+      .sub { color: #97a0c0; font-size: 13px; margin-bottom: 18px; }
+      iframe { width: 100%; aspect-ratio: 16/9; border: 0; border-radius: 14px; background: #000; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5); }
+      .servers { display: flex; gap: 8px; flex-wrap: wrap; margin: 14px 0; }
+      .servers button { background: #171b2c; color: #e9edf7; border: 1px solid #262c45; border-radius: 10px; padding: 9px 13px; cursor: pointer; font: 600 13px system-ui; min-height: 44px; }
+      .servers button.on { background: #6d5efc; border-color: #6d5efc; }
+      .check { background: #171b2c; border: 1px solid #262c45; border-radius: 14px; padding: 14px 16px; margin-top: 22px; }
+      .check li { margin: 4px 0; font-size: 13.5px; }
+      code { background: #0d1120; padding: 1px 6px; border-radius: 6px; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>Dune: Part Two</h1>
+      <div class="sub">2024 · 2j 46m · DemoMovies — halaman uji deteksi</div>
+      <div class="servers">
+        <button class="on">vidlove — paling stabil</button>
+        <button>111movies — tanpa iklan</button>
+        <button>vidup — cadangan</button>
+      </div>
+      <iframe id="embed" src="embed.html" allowfullscreen></iframe>
+      <div class="check">
+        <b>Yang harus terdeteksi</b>
+        <ol>
+          <li>HLS <code>master.m3u8</code> + kualitas 1080p / 720p + kunci AES-128 (Layer 1 <code>fetch</code> + <code>performance</code>)</li>
+          <li>MP4 <code>backup/movie-720p.mp4</code> (Layer 1 <code>XHR</code>)</li>
+          <li>1 entri <code>blob:</code> / MediaSource (Layer 3) — ditandai “tidak bisa diunduh langsung”</li>
+          <li>Judul bersih <b>“Dune: Part Two” (2024)</b> dari JSON-LD, bukan dari title SEO (Part 2)</li>
+        </ol>
+        <p style="color:#97a0c0;font-size:12.5px">Video tidak akan berputar (file .ts memang tidak ada) — yang diuji di sini <i>deteksinya</i>, bukan playback-nya.</p>
+      </div>
+    </div>
+    <script>
+      for (const b of document.querySelectorAll('.servers button')) b.onclick = () => document.querySelector('.servers .on')?.classList.remove('on', b), b.classList.add('on');
+    </script>
+  </body>
+</html>

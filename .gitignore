@@ -1,0 +1,9 @@
+node_modules/
+dist/
+*.log
+.DS_Store
+.web-ext-artifacts/
+web-ext-artifacts/
+src/icons/preview*.png
+.idea/
+.vscode/

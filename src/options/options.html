@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Stream Radar — Settings</title>
+    <link rel="stylesheet" href="options.css" />
+  </head>
+  <body data-theme="dark">
+    <aside class="side">
+      <div class="logo"><span class="ico"></span><b>Stream Radar</b><small>v1.0.0</small></div>
+      <nav id="tabs" aria-label="Settings sections">
+        <button data-tab="general" class="on">General</button>
+        <button data-tab="layers">Detection layers</button>
+        <button data-tab="subs">Subtitles &amp; API keys</button>
+        <button data-tab="advanced">Advanced</button>
+        <button data-tab="help">Help</button>
+      </nav>
+      <div class="side-foot">
+        <button id="saveBtn" class="primary">Save</button>
+        <span id="saveState" role="status"></span>
+      </div>
+    </aside>
+
+    <main id="content">
+      <section data-panel="general">
+        <h1 id="optTitle">Stream Radar settings</h1>
+        <p class="lead" id="optLead">Everything is stored locally in your browser. No account, no tracking.</p>
+
+        <div class="card">
+          <h2>Interface</h2>
+          <div class="grid">
+            <label class="field"><span>Theme</span>
+              <div class="seg" data-key="theme">
+                <button data-v="system">System</button><button data-v="dark">Dark</button><button data-v="light">Light</button>
+              </div>
+            </label>
+            <label class="field"><span>Language</span>
+              <div class="seg" data-key="lang"><button data-v="auto">Auto</button><button data-v="en">English</button><button data-v="id">Bahasa Indonesia</button></div>
+            </label>
+            <label class="field switch"><input type="checkbox" data-key="notify" /><span class="slider"></span><span>Toast + desktop notifications</span></label>
+            <label class="field switch"><input type="checkbox" data-key="fabVisible" /><span class="slider"></span><span>Show the floating button on pages</span></label>
+            <label class="field switch"><input type="checkbox" data-key="showAds" /><span class="slider"></span><span>List ad/tracker video requests too (VAST, pre-roll)</span></label>
+            <label class="field"><span>Floating button position<div class="hint">Drag the button on any page; it is remembered per browser.</div></span>
+              <span class="row"><button class="ghost" id="resetFab">Reset to bottom-right</button><code id="fabPosLabel">default</code></span>
+            </label>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Detection</h2>
+          <div class="grid">
+            <label class="field switch"><input type="checkbox" data-key="enabled" /><span class="slider"></span><span>Master switch — auto-detect on all sites</span></label>
+            <label class="field"><span>Maximum items kept per tab</span><input type="number" data-key="maxItems" min="10" max="400" step="10" /></label>
+            <div class="hint">Turning detection off here is different from “Disable on this site” in the popup: the master switch also stops the network observer.</div>
+          </div>
+        </div>
+      </section>
+
+      <section data-panel="layers" hidden>
+        <h1>Detection layers</h1>
+        <p class="lead">Five independent layers. Keep all of them on for maximum coverage; turn them off only if a site misbehaves.</p>
+        <div class="card">
+          <table class="layers">
+            <thead><tr><th>Layer</th><th>What it hooks</th><th>Needs</th><th>On</th></tr></thead>
+            <tbody>
+              <tr><td><b>1 · Network</b></td><td><code>fetch</code>, <code>XMLHttpRequest.open/send</code>, <code>WebSocket</code>, <code>EventSource</code> + browser-level <code>webRequest</code> (all frames, service workers, nested iframes)</td><td>host permission <code>&lt;all_urls&gt;</code></td><td><input type="checkbox" class="sw" data-key="layerNetwork" /></td></tr>
+              <tr><td><b>2 · DOM</b></td><td>MutationObserver + 2 s poll over <code>video / source / iframe / embed / object / link[preload] / a[download]</code>, recursive same-origin iframe walk</td><td>—</td><td><input type="checkbox" class="sw" data-key="layerDom" /></td></tr>
+              <tr><td><b>3 · MSE</b></td><td><code>MediaSource.addSourceBuffer</code>, <code>SourceBuffer.appendBuffer</code>, <code>URL.createObjectURL</code>, <code>HTMLMediaElement.src</code>, EME/<code>requestMediaKeySystemAccess</code></td><td>MAIN-world script</td><td><input type="checkbox" class="sw" data-key="layerMse" /></td></tr>
+              <tr><td><b>4 · SW &amp; Cache</b></td><td><code>caches.keys()/match()</code> scan for video responses, service-worker registration probe</td><td>same-origin page</td><td><input type="checkbox" class="sw" data-key="layerSw" /></td></tr>
+              <tr><td><b>5 · Heuristics</b></td><td>inline-script regex, <code>document.write</code>, <code>performance.getEntriesByType('resource')</code>, JWPlayer / Video.js / Plyr / HLS.js / DASH.js internals, <code>window</code> config objects</td><td>—</td><td><input type="checkbox" class="sw" data-key="layerHeuristic" /></td></tr>
+            </tbody>
+          </table>
+          <div class="grid">
+            <label class="field switch"><input type="checkbox" data-key="playerProbe" /><span class="slider"></span><span>Probe player instances (HLS.js levels, JWPlayer playlist, DASH source)</span></label>
+            <label class="field switch"><input type="checkbox" data-key="scanScripts" /><span class="slider"></span><span>Regex-scan scripts / JSON payloads for hidden stream URLs</span></label>
+            <label class="field switch"><input type="checkbox" data-key="recordMse" /><span class="slider"></span><span>Allow “Record MSE buffer” (beta) — copies fragmented media played via MediaSource into a file</span></label>
+            <label class="field"><span>Recording cap (MB)</span><input type="number" data-key="recordCapMB" min="16" max="4096" step="16" /></label>
+          </div>
+        </div>
+      </section>
+
+      <section data-panel="subs" hidden>
+        <h1>Subtitles &amp; API keys</h1>
+        <p class="lead">Two of the three providers need a free key. Stream Radar never uploads your watch history — the key is only sent to that provider.</p>
+        <div class="card">
+          <h2>Providers</h2>
+          <label class="field switch"><input type="checkbox" data-key="autoSubtitle" /><span class="slider"></span><span>Search automatically when a title is recognised</span></label>
+          <div class="grid three">
+            <label class="field switch"><input type="checkbox" data-key="providers.subdl" /><span class="slider"></span><span>SubDL <small>(best for Indonesian subs)</small></span></label>
+            <label class="field switch"><input type="checkbox" data-key="providers.opensubtitles" /><span class="slider"></span><span>OpenSubtitles REST</span></label>
+            <label class="field switch"><input type="checkbox" data-key="providers.yify" /><span class="slider"></span><span>YIFY <small>(no key, often offline)</small></span></label>
+          </div>
+          <label class="field"><span>SubDL API key<div class="hint">subdl.com → Account → API. Paste the key below. Without it SubDL is skipped.</div></span><input type="text" data-key="subdlApiKey" placeholder="e.g. 1a2b3c…" autocomplete="off" spellcheck="false" /></label>
+          <label class="field"><span>OpenSubtitles API key<div class="hint">api.opensubtitles.com → Developers → Create App. Send them the exact User-Agent below (they bind keys to it).</div></span><input type="text" data-key="osApiKey" placeholder="ApiKey …" autocomplete="off" spellcheck="false" /></label>
+          <label class="field"><span>OpenSubtitles User-Agent</span><input type="text" data-key="osUserAgent" spellcheck="false" /></label>
+          <label class="field"><span>Language filter</span>
+            <select data-key="subtitleLang"><option value="id">Indonesian only</option><option value="en">English</option><option value="all">All languages</option></select>
+          </label>
+        </div>
+
+        <div class="card">
+          <h2>Test the search</h2>
+          <div class="grid four">
+            <label class="field"><span>Title</span><input type="text" id="testTitle" placeholder="Dune Part Two" /></label>
+            <label class="field"><span>Year</span><input type="text" id="testYear" placeholder="2024" /></label>
+            <label class="field"><span>Season</span><input type="text" id="testSeason" placeholder="01" /></label>
+            <label class="field"><span>Episode</span><input type="text" id="testEpisode" placeholder="03" /></label>
+          </div>
+          <button class="primary" id="testBtn">Search now</button>
+          <pre id="testOut" aria-live="polite">—</pre>
+        </div>
+      </section>
+
+      <section data-panel="advanced" hidden>
+        <h1>Advanced</h1>
+        <div class="card">
+          <h2>Per-site opt-out</h2>
+          <p class="hint">Hosts listed here are fully skipped (no UI, no hooks, no network observer for their requests).</p>
+          <textarea id="blockedHosts" rows="4" spellcheck="false" placeholder="netflix.com&#10;disneyplus.com"></textarea>
+        </div>
+        <div class="card">
+          <h2>URL patterns</h2>
+          <div class="grid two">
+            <label class="field"><span>Always include (regex or host, one per line)</span><textarea data-key="allowPatterns" rows="5" spellcheck="false" placeholder="/\.m3u8$/i&#10;cdn.example.com"></textarea></label>
+            <label class="field"><span>Never include</span><textarea data-key="blockPatterns" rows="5" spellcheck="false" placeholder="/\.(js|css)($|\?)/i&#10;example.com/ads"></textarea></label>
+          </div>
+        </div>
+        <div class="card">
+          <h2>Backup</h2>
+          <div class="row">
+            <button id="exportBtn">Export settings</button>
+            <button id="importBtn">Import settings</button>
+            <input type="file" id="importFile" accept="application/json" hidden />
+            <button class="danger" id="resetBtn">Reset everything</button>
+            <label class="field switch"><input type="checkbox" data-key="debug" /><span class="slider"></span><span>Debug logging in the console</span></label>
+          </div>
+        </div>
+        <div class="card">
+          <h2>Storage</h2>
+          <div class="row"><span id="storageInfo" class="hint">…</span><button id="wipeHistory">Clear recent-streams list</button></div>
+        </div>
+      </section>
+
+      <section data-panel="help" hidden>
+        <h1>Help</h1>
+        <div class="card">
+          <h2>First-time setup (2 minutes)</h2>
+          <ol class="steps">
+            <li><b>Firefox desktop / Chrome:</b> load <code>dist/firefox</code> (or <code>dist/chrome</code>) as a temporary / unpacked extension — see <code>docs/INSTALL.md</code>.</li>
+            <li><b>Optional but recommended:</b> paste a free <b>SubDL API key</b> in <em>Subtitles &amp; API keys</em>. That alone enables automatic Indonesian subtitles.</li>
+            <li>Open a video site, press play, then click the <b>◉ button</b> at the bottom-right (or <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd>).</li>
+            <li>Click <b>Watch Party</b> on a stream: <code>watchparty.me</code> opens with your title as the room name and the stream as the media.</li>
+          </ol>
+          <h2>Why is a stream still missing?</h2>
+          <ul>
+            <li><b>DRM (Widevine/FairPlay/PlayReady)</b> — the manifest is not downloadable; Stream Radar labels it “DRM protected” instead of failing silently.</li>
+            <li><b>blob: + MSE</b> — the “URL” is a media pipeline, not a file. Use “Record buffer (beta)” after enabling it in Detection layers.</li>
+            <li><b>P2P players (WebTorrent, custom WASM)</b> — segments never cross HTTP, so nothing is captured.</li>
+            <li><b>Strict CSP + browser without <code>world:MAIN</code></b> — Layer 1 page hooks may be blocked; LAYERS 1b/2/4/5 still work because the network observer runs outside the page.</li>
+            <li>The site is on the per-site opt-out list, or the master switch is off.</li>
+          </ul>
+          <h2>Shortcuts</h2>
+          <p><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> panel · <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>D</kbd> re-scan · <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd> search subtitles · <kbd>Esc</kbd> close panel</p>
+          <h2>Privacy</h2>
+          <p>Stream Radar runs entirely on your machine. It makes requests only to: the page you are on (network observer, read-only), the subtitle providers you enable, and watchparty.me when you click Watch Party. No analytics, no server of ours.</p>
+        </div>
+      </section>
+    </main>
+
+    <script src="../shared/util.js"></script>
+    <script src="../shared/rules.js"></script>
+    <script src="../shared/title-cleaner.js"></script>
+    <script src="../shared/subtitles.js"></script>
+    <script src="../shared/i18n.js"></script>
+    <script src="options.js"></script>
+  </body>
+</html>
