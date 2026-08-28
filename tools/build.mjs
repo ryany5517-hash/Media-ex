@@ -16,11 +16,12 @@
  *     the "did you actually try it before handing it over" check.
  */
 import { readdir, readFile, writeFile, mkdir, rm, stat, cp } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { zip } from './lib/zip.mjs';
+import { validateScriptOrder } from './lib/script-order.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..');
@@ -149,7 +150,12 @@ async function validate(target, dir, manifest) {
     if (!(top in defs) && !defaultsSrc.includes(top + ':')) fail(`${target}: options.html binds unknown setting "${k}"`);
   }
 
-  // 4. manifest JSON validity is implied by the parse above; check MV3 basics
+  // 4. injection order: SR.foo must not be consumed before a js entry provides
+  // it, and every manifest-listed file must exist in the build.
+  const { errors: orderErrors } = validateScriptOrder(manifest, dir, rel => readFileSync(path.join(dir, rel), 'utf8'));
+  for (const e of orderErrors) fail(`${target}: ${e}`);
+
+  // 5. manifest JSON validity is implied by the parse above; check MV3 basics
   if (manifest.manifest_version !== 3) fail(`${target}: manifest_version must be 3`);
   if (!manifest.content_scripts?.length) fail(`${target}: no content scripts`);
   if (!(manifest.host_permissions || []).includes('<all_urls>')) warn(`${target}: <all_urls> host permission missing → detection will be crippled`);
