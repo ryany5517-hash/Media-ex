@@ -180,7 +180,7 @@
 
   async function testSearch() {
     const out = $('#testOut');
-    out.textContent = '…';
+    out.textContent = '...';
     const want = {
       title: $('#testTitle').value.trim() || 'Dune Part Two',
       year: $('#testYear').value.trim() || null,

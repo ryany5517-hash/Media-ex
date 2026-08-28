@@ -372,7 +372,7 @@
       }
       function shortenUrl(u) {
         u = String(u || '');
-        return u.length > 118 ? u.slice(0, 56) + '…' + u.slice(-46) : u;
+        return u.length > 118 ? u.slice(0, 56) + '...' + u.slice(-46) : u;
       }
       function urlName(u) {
         try {

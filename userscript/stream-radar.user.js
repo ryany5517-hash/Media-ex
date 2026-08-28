@@ -1718,7 +1718,7 @@
       'panel.title': 'Detected media',
       'panel.empty': 'No video found yet',
       'panel.emptyHint': 'Play the video, Stream Radar watches network, DOM, MSE, Service Worker and player internals at once.',
-      'panel.detecting': 'Watching…',
+      'panel.detecting': 'Watching...',
       'panel.paused': 'Auto-detect paused',
       'panel.ads': '{n} ad requests hidden',
       'panel.toggleAds': 'Toggle ad and tracker requests',
@@ -1730,7 +1730,7 @@
       'panel.openPanel': 'Open big panel',
       'panel.items': '{n} streams',
       'panel.subs.title': 'Indonesian subtitles',
-      'panel.subs.searching': 'Searching subtitles…',
+      'panel.subs.searching': 'Searching subtitles...',
       'panel.subs.found': 'Subtitle found',
       'panel.subs.none': 'No subtitle found',
       'panel.subs.error': 'Subtitle search failed',
@@ -1770,10 +1770,10 @@
       'toast.subsNone': 'No Indonesian subtitle found for {title}',
       'toast.copied': 'URL copied to clipboard',
       'toast.error': 'Error: {msg}',
-      'toast.watchparty': 'Opening WatchParty…',
+      'toast.watchparty': 'Opening WatchParty...',
       'toast.paused': 'Detection paused on this site',
       'toast.resumed': 'Detection resumed',
-      'toast.recording': 'Recording the MediaSource buffer…',
+      'toast.recording': 'Recording the MediaSource buffer...',
       'toast.recordSaved': 'Recording saved ({size})',
       'toast.recordEmpty': 'Nothing buffered yet, play the video first',
       'settings.title': 'Stream Radar settings',
@@ -1928,7 +1928,7 @@
       'panel.title': 'Media terdeteksi',
       'panel.empty': 'Belum ada video terdeteksi',
       'panel.emptyHint': 'Putar videonya, Stream Radar memantau jaringan, DOM, MSE, Service Worker dan internal player secara bersamaan.',
-      'panel.detecting': 'Mendeteksi…',
+      'panel.detecting': 'Mendeteksi...',
       'panel.paused': 'Deteksi otomatis dijeda',
       'panel.ads': '{n} request iklan disembunyikan',
       'panel.toggleAds': 'Tampilkan atau sembunyikan request iklan dan tracker',
@@ -1940,7 +1940,7 @@
       'panel.openPanel': 'Buka panel besar',
       'panel.items': '{n} stream',
       'panel.subs.title': 'Subtitle Indonesia',
-      'panel.subs.searching': 'Mencari subtitle…',
+      'panel.subs.searching': 'Mencari subtitle...',
       'panel.subs.found': 'Subtitle ditemukan',
       'panel.subs.none': 'Subtitle tidak ditemukan',
       'panel.subs.error': 'Pencarian subtitle gagal',
@@ -1980,10 +1980,10 @@
       'toast.subsNone': 'Subtitle Indonesia tidak ditemukan untuk {title}',
       'toast.copied': 'URL disalin ke clipboard',
       'toast.error': 'Error: {msg}',
-      'toast.watchparty': 'Membuka WatchParty…',
+      'toast.watchparty': 'Membuka WatchParty...',
       'toast.paused': 'Deteksi dijeda di situs ini',
       'toast.resumed': 'Deteksi dilanjutkan',
-      'toast.recording': 'Merekam buffer MediaSource…',
+      'toast.recording': 'Merekam buffer MediaSource...',
       'toast.recordSaved': 'Rekaman disimpan ({size})',
       'toast.recordEmpty': 'Belum ada buffer, putar dulu videonya',
       'settings.title': 'Pengaturan Stream Radar',
@@ -4989,7 +4989,7 @@
       }
       function shortenUrl(u) {
         u = String(u || '');
-        return u.length > 118 ? u.slice(0, 56) + '…' + u.slice(-46) : u;
+        return u.length > 118 ? u.slice(0, 56) + '...' + u.slice(-46) : u;
       }
       function urlName(u) {
         try {

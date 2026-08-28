@@ -510,7 +510,7 @@ try {
 
   function shorten(s, n) {
     s = String(s || '');
-    return s.length > (n || 42) ? s.slice(0, (n || 42) - 1) + '…' : s;
+    return s.length > (n || 42) ? s.slice(0, (n || 42) - 1) + '...' : s;
   }
 
   /* ================================================================== *

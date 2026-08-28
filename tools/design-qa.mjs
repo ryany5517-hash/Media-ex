@@ -148,6 +148,7 @@ const FORBIDDEN = {
   '\u2190': 'back arrow',
   '\u25b6': 'play triangle',
   '\u00b7': 'middle dot',
+  '\u2026': 'ellipsis glyph (use ASCII ...)',
   '\u201c': 'curly quote',
   '\u201d': 'curly quote',
   '\ufe0f': 'emoji variant selector',
