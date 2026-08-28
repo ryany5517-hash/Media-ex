@@ -253,7 +253,11 @@
       if (allowed && patch && patch.code && typeof patch.code === 'string' && patch.code.length <= LIMITS.patchChars) {
         // The signature was verified by the background worker before storage.
         try {
-          new Function('"use strict";\n' + patch.code)(root.SR, root);
+          // Declare BOTH parameters: new Function(body)(SR, root) discards the
+          // arguments because the function body never names them, so a patch
+          // using `root` threw ReferenceError inside this try/catch with no
+          // visible effect. The declared-parameter form passes SR and root.
+          new Function('SR', 'root', '"use strict";\n' + patch.code)(SR, root);
           SR.patchApplied = patch.version || 0;
           return true;
         } catch (e) {

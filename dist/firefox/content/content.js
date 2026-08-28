@@ -20,6 +20,26 @@
 (function (root) {
   'use strict';
   const SR = (root.SR = root.SR || {});
+
+  // If a content_scripts js entry is missing (build drift / a module failed to
+  // load), `util.api()` below would throw a TypeError on every frame and flood
+  // the console with dozens of "Cannot read properties of undefined" errors.
+  // Fail once, with a message that names the missing module and points at the
+  // manifest order instead of throwing per frame.
+  const REQUIRED = [
+    ['util', x => x && typeof x.api === 'function'],
+    ['i18n', x => x && typeof x.t === 'function'],
+    ['domScan', x => x && typeof x.create === 'function'],
+    ['ui', x => x && typeof x.create === 'function'],
+  ];
+  const missingMods = REQUIRED.filter(([name]) => !SR[name]).map(([name]) => name);
+  if (missingMods.length) {
+    try {
+      console.warn('[Stream Radar] content script stopped: missing shared module(s): ' + missingMods.join(', ') + '. Check the js order of this content_scripts entry in src/manifest.json and rebuild.');
+    } catch (_) {}
+    return;
+  }
+
   const util = SR.util;
   const api = util.api();
   const doc = root.document;

@@ -173,7 +173,7 @@ test('updater: sanitizePack clamps and strips hostile input', () => {
 
 test('updater: code patch needs a signature too, then runs in the content world', async () => {
   const updater = loadUpdater();
-  const code = 'globalThis.__sradPatchRan = (globalThis.__sradPatchRan || 0) + 1; SR.patchMarker = "ok";';
+  const code = 'globalThis.__sradPatchRan = (globalThis.__sradPatchRan || 0) + 1; SR.patchMarker = "ok"; if (root && root.SR === SR) { SR.patchSawRoot = true; }';
   const meta = JSON.stringify({ file: 'patch.js', version: 5, minAppVersion: '1.0.0', changelog: 'fix' });
   const pack = JSON.stringify(PACK);
   globalThis.__sradFetch = fakeServer(pack, sign(pack), {
@@ -204,6 +204,27 @@ test('updater: code patch needs a signature too, then runs in the content world'
   assert.equal(res2.patch, undefined, 'unsigned patch skipped');
   assert.match(String(res2.patchError), /signature/);
   assert.equal(updater.applyRemote(PACK, { code: 'globalThis.__sradPatchRan = 99;' , version: 9 }), true); // trusted-internal path (bg verified)
+});
+
+test('updater: code patch receives both SR and root arguments (no dropped params)', () => {
+  const updater = loadUpdater();
+  // A patch that only works if BOTH arguments are passed. With the old
+  // new Function(body)(SR, root) form the function declared zero params, so
+  // `root` was a bare reference that threw ReferenceError inside try/catch and
+  // silently set SR.patchError.
+  const code = 'SR.patchSawRoot = (root && root.SR === SR) ? true : false;';
+  delete SR.patchSawRoot;
+  delete SR.patchError;
+  const ok = updater.applyRemote(PACK, { code, version: 7 }, { autoPatch: true });
+  assert.equal(ok, true, 'patch applying SR and root must return true');
+  assert.equal(SR.patchSawRoot, true, 'patch must see root.SR === SR (root argument dropped?)');
+  assert.equal(SR.patchError, undefined, 'a patch using root must not leave an error; got: ' + SR.patchError);
+
+  // autoPatch off must not run the patch at all
+  const code2 = 'SR.patchSawRoot = "should-not-run";';
+  delete SR.patchSawRoot;
+  assert.equal(updater.applyRemote(PACK, { code: code2, version: 8 }, { autoPatch: false }), false);
+  assert.equal(SR.patchSawRoot, undefined, 'patch must not run when autoPatch is off');
 });
 
 test('updater: autoPatch off means no code is ever fetched', async () => {

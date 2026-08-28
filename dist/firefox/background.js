@@ -1642,7 +1642,10 @@
   const ID_LANGS = new Set(['id', 'ind', 'indonesia', 'indonesian', 'bahasa indonesia', 'bahasa-indonesia']);
   const ID_RE = /(?:^|[\s._\-[(])(id|ind|indonesia|indonesian|bahasa[-_ ]?indonesia|sub[-_ ]?indo|subid)(?:$|[\s._\-)\]])/i;
 
-  const subs = (SR.subs = {});
+  // Self-registering: never assume another module ran, and never clobber a
+  // namespace a previous load (or another provider script) already built.
+  const subs = (SR.subs = SR.subs || {});
+  subs.providers = Array.isArray(subs.providers) ? subs.providers : [];
 
   /* ---------------------------------------------------------------- *
    * Decoding / unpacking
@@ -2095,7 +2098,11 @@
     },
   };
 
-  subs.providers = [subs.subdl, subs.opensubtitles, subs.yify];
+  // Register built-ins additively so a re-load neither wipes an externally
+  // added provider nor pushes the same built-in twice.
+  for (const p of [subs.subdl, subs.opensubtitles, subs.yify]) {
+    if (p && !subs.providers.some(x => x && x.id === p.id)) subs.providers.push(p);
+  }
 
   /* ---------------------------------------------------------------- *
    * Orchestration
@@ -3115,7 +3122,11 @@
       if (allowed && patch && patch.code && typeof patch.code === 'string' && patch.code.length <= LIMITS.patchChars) {
         // The signature was verified by the background worker before storage.
         try {
-          new Function('"use strict";\n' + patch.code)(root.SR, root);
+          // Declare BOTH parameters: new Function(body)(SR, root) discards the
+          // arguments because the function body never names them, so a patch
+          // using `root` threw ReferenceError inside this try/catch with no
+          // visible effect. The declared-parameter form passes SR and root.
+          new Function('SR', 'root', '"use strict";\n' + patch.code)(SR, root);
           SR.patchApplied = patch.version || 0;
           return true;
         } catch (e) {

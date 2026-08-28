@@ -18,7 +18,10 @@
   const ID_LANGS = new Set(['id', 'ind', 'indonesia', 'indonesian', 'bahasa indonesia', 'bahasa-indonesia']);
   const ID_RE = /(?:^|[\s._\-[(])(id|ind|indonesia|indonesian|bahasa[-_ ]?indonesia|sub[-_ ]?indo|subid)(?:$|[\s._\-)\]])/i;
 
-  const subs = (SR.subs = {});
+  // Self-registering: never assume another module ran, and never clobber a
+  // namespace a previous load (or another provider script) already built.
+  const subs = (SR.subs = SR.subs || {});
+  subs.providers = Array.isArray(subs.providers) ? subs.providers : [];
 
   /* ---------------------------------------------------------------- *
    * Decoding / unpacking
@@ -471,7 +474,11 @@
     },
   };
 
-  subs.providers = [subs.subdl, subs.opensubtitles, subs.yify];
+  // Register built-ins additively so a re-load neither wipes an externally
+  // added provider nor pushes the same built-in twice.
+  for (const p of [subs.subdl, subs.opensubtitles, subs.yify]) {
+    if (p && !subs.providers.some(x => x && x.id === p.id)) subs.providers.push(p);
+  }
 
   /* ---------------------------------------------------------------- *
    * Orchestration
