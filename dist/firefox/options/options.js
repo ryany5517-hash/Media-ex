@@ -47,10 +47,9 @@
     const hosts = Object.keys(settings.blockedHosts || {}).filter((h) => settings.blockedHosts[h]);
     $('#blockedHosts').value = hosts.join('\n');
     $('#fabPosLabel').textContent = settings.fabPos ? settings.fabPos.x + ', ' + settings.fabPos.y : 'default';
-    const lang = settings.lang === 'id' ? 'id' : settings.lang === 'en' ? 'en' : util.detect ? 'en' : SR.i18n.detect(navigator);
     SR.i18n.set(settings.lang && settings.lang !== 'auto' ? settings.lang : SR.i18n.detect(navigator));
-    $('#optTitle').textContent = SR.i18n.t('settings.title');
-    $('#optLead').textContent = SR.i18n.t('settings.subtitle');
+    // translate every data-i18n* hook (nav, headings, fields, buttons, title)
+    SR.i18n.apply(document);
   }
 
   async function save(patch, silent) {

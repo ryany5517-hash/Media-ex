@@ -38,6 +38,8 @@
   function render() {
     const s = state.settings || {};
     showAds = !!s.showAds;
+    // language follows settings (auto = browser locale), then static labels
+    SR.i18n.set(resolvedLang(s.lang));
     document.body.setAttribute('data-theme', resolvedTheme(s.theme));
     $('#brandIco').innerHTML = ico('radar');
     $('#themeBtn').innerHTML = ico('moon');
@@ -52,6 +54,13 @@
     const enable = $('#enableSite');
     enable.checked = !s.blockedHosts || !s.blockedHosts[util.host((state.title && state.title.url) || location.host)] ? true : false;
     $('#enableLabel').textContent = s.enabled === false ? t('popup.disabled') : t('popup.tabMedia');
+    // static labels last, so every dynamic node above is translated too
+    SR.i18n.apply(document);
+  }
+
+  function resolvedLang(pref) {
+    if (pref === 'en' || pref === 'id') return pref;
+    return SR.i18n.detect(navigator);
   }
 
   function resolvedTheme(pref) {

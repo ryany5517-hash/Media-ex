@@ -83,6 +83,7 @@
       'common.tab': 'Tab',
       'common.search': 'Search',
       'popup.title': 'Stream Radar',
+      'popup.history': 'Recent streams in this browser',
       'popup.tabMedia': 'Media in this tab',
       'popup.empty': 'Nothing detected yet in this tab.',
       'popup.disabled': 'Detection is disabled for this site',
@@ -133,14 +134,64 @@
       'settings.reset': 'Reset position',
       'settings.openOptions': 'Full settings',
       'privacy.note': 'Detection stays on your device. Nothing is uploaded to us.',
-      'label.type': 'Type',
-      'action.recordStop': 'Stop and save recording',
-      'update.hint': 'Signed, data-only rule packs.',
       'options.tabGeneral': 'General',
       'options.tabDetection': 'Detection layers',
       'options.tabSubs': 'Subtitles & API keys',
       'options.tabAdvanced': 'Advanced',
       'options.tabHelp': 'Help',
+      'common.all': 'All',
+      'options.interface': 'Interface',
+      'options.langAuto': 'Auto',
+      'options.showFab': 'Show the floating button on pages',
+      'options.showAds': 'List ad and tracker video requests too',
+      'options.detection': 'Detection',
+      'options.maxItems': 'Maximum items kept per tab',
+      'options.layersLead': 'Five independent layers. Keep all on for maximum coverage.',
+      'options.colLayer': 'Layer',
+      'options.colHooks': 'What it hooks',
+      'options.colNeeds': 'Needs',
+      'options.layer1': '1. Network',
+      'options.layer2': '2. DOM',
+      'options.layer3': '3. MSE',
+      'options.layer4': '4. Service worker',
+      'options.layer5': '5. Heuristics',
+      'options.scanScripts': 'Regex-scan scripts and JSON for hidden stream URLs',
+      'options.recordCap': 'Recording cap (MB)',
+      'options.subsLead': 'Wyzie, SubDL and OpenSubtitles need a free key; YIFY works without one. Keys stay in your browser.',
+      'options.providers': 'Providers',
+      'options.wyzieNote': '(Indonesian, needs IMDb/TMDB id)',
+      'options.yifyNote': '(no key, often offline)',
+      'options.wyzieHint': 'Free key at store.wyzie.io/redeem. Paste it below; never commit or share it.',
+      'options.subdlHint': 'subdl.com then Account then API. Paste the key below.',
+      'options.osHint': 'api.opensubtitles.com, Developers, Create App.',
+      'options.langFilter': 'Language filter',
+      'options.langIdOnly': 'Indonesian only',
+      'options.langEn': 'English',
+      'options.testSearch': 'Test the search',
+      'options.fTitle': 'Title',
+      'options.fYear': 'Year',
+      'options.fSeason': 'Season',
+      'options.fEpisode': 'Episode',
+      'options.updateAuto': 'Fetch the rule pack automatically',
+      'options.updatePatch': 'Allow signed code patches (advanced)',
+      'options.updateUrl': 'Update source',
+      'options.updateHours': 'Check every (hours)',
+      'options.perSiteOpt': 'Per-site opt-out',
+      'options.perSiteHint': 'Hosts listed here are fully skipped.',
+      'options.export': 'Export settings',
+      'options.import': 'Import settings',
+      'options.resetAll': 'Reset everything',
+      'options.debugLog': 'Debug logging in the console',
+      'options.storage': 'Storage',
+      'options.wipeHistory': 'Clear recent-streams list',
+      'options.setupTitle': 'First-time setup',
+      'options.help1': 'Load <code>dist/chrome</code> or <code>dist/firefox</code> as unpacked or temporary add-on.',
+      'options.help2': 'Paste a free <b>Wyzie</b> or <b>SubDL</b> key in <em>Subtitles and API keys</em>.',
+      'options.help3': 'Open a video, press play, then use the floating button or <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd>.',
+      'options.help4': 'Click <b>Watch Party</b> on a stream to open watchparty.me with your title as the room name.',
+      'options.shortcuts': 'Shortcuts',
+      'options.shortcutList': '<kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> panel, <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>D</kbd> re-scan, <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd> subtitles, <kbd>Esc</kbd> close panel',
+      'options.privacy': 'Privacy',
     },
     id: {
       'app.name': 'Stream Radar',
@@ -218,6 +269,7 @@
       'common.tab': 'Tab',
       'common.search': 'Cari',
       'popup.title': 'Stream Radar',
+      'popup.history': 'Stream terbaru di browser ini',
       'popup.tabMedia': 'Media di tab ini',
       'popup.empty': 'Belum ada yang terdeteksi di tab ini.',
       'popup.disabled': 'Deteksi dimatikan untuk situs ini',
@@ -268,17 +320,77 @@
       'settings.reset': 'Reset posisi',
       'settings.openOptions': 'Pengaturan lengkap',
       'privacy.note': 'Deteksi hanya terjadi di perangkatmu. Tidak ada yang diunggah ke kami.',
-      'action.recordStop': 'Hentikan dan simpan rekaman',
-      'update.hint': 'Paket rule bertanda tangan, hanya data.',
       'options.tabGeneral': 'Umum',
       'options.tabDetection': 'Layer deteksi',
       'options.tabSubs': 'Subtitle & API key',
       'options.tabAdvanced': 'Lanjutan',
       'options.tabHelp': 'Bantuan',
+      'common.all': 'Semua',
+      'options.interface': 'Antarmuka',
+      'options.langAuto': 'Otomatis',
+      'options.showFab': 'Tampilkan tombol mengambang di halaman',
+      'options.showAds': 'Tampilkan juga request video iklan dan tracker',
+      'options.detection': 'Deteksi',
+      'options.maxItems': 'Maksimal item yang disimpan per tab',
+      'options.layersLead': 'Lima layer terpisah. Biarkan semua aktif untuk jangkauan maksimal.',
+      'options.colLayer': 'Layer',
+      'options.colHooks': 'Yang di-hook',
+      'options.colNeeds': 'Butuh',
+      'options.layer1': '1. Jaringan',
+      'options.layer2': '2. DOM',
+      'options.layer3': '3. MSE',
+      'options.layer4': '4. Service worker',
+      'options.layer5': '5. Heuristik',
+      'options.scanScripts': 'Pindai script dan JSON dengan regex untuk URL stream tersembunyi',
+      'options.recordCap': 'Batas rekam (MB)',
+      'options.subsLead': 'Wyzie, SubDL dan OpenSubtitles butuh kunci gratis; YIFY tanpa kunci. Kunci hanya tersimpan di browsermu.',
+      'options.providers': 'Penyedia',
+      'options.wyzieNote': '(Indonesia, butuh id IMDb/TMDB)',
+      'options.yifyNote': '(tanpa kunci, sering mati)',
+      'options.wyzieHint': 'Kunci gratis di store.wyzie.io/redeem. Tempel di bawah; jangan di-commit atau dibagikan.',
+      'options.subdlHint': 'subdl.com lalu Account lalu API. Tempel kuncinya di bawah.',
+      'options.osHint': 'api.opensubtitles.com, Developers, Create App.',
+      'options.langFilter': 'Filter bahasa',
+      'options.langIdOnly': 'Hanya Indonesia',
+      'options.langEn': 'Inggris',
+      'options.testSearch': 'Uji pencarian',
+      'options.fTitle': 'Judul',
+      'options.fYear': 'Tahun',
+      'options.fSeason': 'Musim',
+      'options.fEpisode': 'Episode',
+      'options.updateAuto': 'Ambil paket aturan otomatis',
+      'options.updatePatch': 'Izinkan code patch bertanda tangan (lanjutan)',
+      'options.updateUrl': 'Sumber update',
+      'options.updateHours': 'Cek tiap (jam)',
+      'options.perSiteOpt': 'Opt-out per situs',
+      'options.perSiteHint': 'Host di sini dilewati total.',
+      'options.export': 'Ekspor pengaturan',
+      'options.import': 'Impor pengaturan',
+      'options.resetAll': 'Reset semua',
+      'options.debugLog': 'Log debug di konsol',
+      'options.storage': 'Penyimpanan',
+      'options.wipeHistory': 'Hapus daftar stream terbaru',
+      'options.setupTitle': 'Persiapan pertama',
+      'options.help1': 'Muat <code>dist/chrome</code> atau <code>dist/firefox</code> sebagai ekstensi unpacked atau add-on sementara.',
+      'options.help2': 'Tempel kunci <b>Wyzie</b> atau <b>SubDL</b> gratis di <em>Subtitle dan API key</em>.',
+      'options.help3': 'Buka video, putar, lalu pakai tombol mengambang atau <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd>.',
+      'options.help4': 'Klik <b>Nonton Bareng</b> pada stream untuk membuka watchparty.me dengan judulmu sebagai nama room.',
+      'options.shortcuts': 'Pintasan',
+      'options.shortcutList': '<kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> panel, <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>D</kbd> scan ulang, <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd> subtitle, <kbd>Esc</kbd> tutup panel',
+      'options.privacy': 'Privasi',
     },
   };
 
   let lang = 'en';
+
+  function safeParse(s) {
+    try {
+      return JSON.parse(s) || {};
+    } catch (_) {
+      return {};
+    }
+  }
+
   SR.i18n = {
     set(l) {
       lang = DICT[l] ? l : 'en';
@@ -297,6 +409,43 @@
         s = String(s).replace(/\{(\w+)\}/g, (m, k) => (vars[k] != null ? vars[k] : m));
       }
       return s;
+    },
+
+    /**
+     * Translate all data-i18n* hooks under `rootEl` (defaults to the document).
+     * Call AFTER dynamic render finishes so injected nodes are translated too.
+     * Supported attributes (no fifth mechanism):
+     *   data-i18n        -> textContent
+     *   data-i18n-title  -> title attribute
+     *   data-i18n-aria   -> aria-label attribute
+     *   data-i18n-html   -> innerHTML, ONLY for dictionary strings containing
+     *                       <kbd>/<code>; the value always comes from our dict.
+     * Vars may be supplied via data-i18n-vars as JSON; otherwise {}.
+     * Document title follows the key in data-i18n-title on <title> or the
+     * settings.title key.
+     */
+    apply(rootEl, vars) {
+      const scope = rootEl || (typeof document !== 'undefined' ? document : null);
+      if (!scope) return;;
+      const v = vars || {};
+      const set = (el, key, attr) => {
+        if (!key) return;
+        const val = this.t(key, el.dataset && el.dataset.i18nVars ? safeParse(el.dataset.i18nVars) : v);
+        if (attr === 'html') el.innerHTML = val;
+        else if (attr) el.setAttribute(attr, val);
+        else el.textContent = val;
+      };
+      scope.querySelectorAll('[data-i18n]').forEach(el => set(el, el.getAttribute('data-i18n')));
+      scope.querySelectorAll('[data-i18n-title]').forEach(el => set(el, el.getAttribute('data-i18n-title'), 'title'));
+      scope.querySelectorAll('[data-i18n-aria]').forEach(el => set(el, el.getAttribute('data-i18n-aria'), 'aria-label'));
+      scope.querySelectorAll('[data-i18n-html]').forEach(el => set(el, el.getAttribute('data-i18n-html'), 'html'));
+      if (typeof scope.title === 'string' || scope.querySelector) {
+        const titleEl = scope.querySelector ? scope.querySelector('title[data-i18n-title], title[data-i18n]') : null;
+        if (titleEl) {
+          const k = titleEl.getAttribute('data-i18n-title') || titleEl.getAttribute('data-i18n');
+          scope.title = this.t(k, v);
+        }
+      }
     },
     dict: DICT,
   };
