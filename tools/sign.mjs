@@ -34,7 +34,7 @@ const data = readFileSync(target);
 const der = createSign('SHA256').update(data).sign(key);
 const sig = derToRaw(der);
 const out = target + '.sig';
-writeFileSync(out, sig);
+writeFileSync(out, Buffer.from(sig).toString('base64url'));
 console.log('✓ signed → ' + out + ' (' + sig.length + ' bytes, raw r||s)');
 
 function b64u(s) {
