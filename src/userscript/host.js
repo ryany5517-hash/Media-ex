@@ -192,7 +192,7 @@
         toast(t('toast.newmedia', { type: label }) + (item.quality ? ', ' + item.quality : ''), 'ok');
         if (settings.notify && (typeof GM_notification === 'function' || GM.notification)) {
           try {
-            (GM_notification || GM.notification)({ title: 'Stream Radar, ' + label, text: (state.title && state.title.title ? state.title.title + ' — ' : '') + (item.url || '').slice(0, 90) });
+            (GM_notification || GM.notification)({ title: 'Stream Radar, ' + label, text: (state.title && state.title.title ? state.title.title + ': ' : '') + (item.url || '').slice(0, 90) });
           } catch (_) {}
         }
       }
@@ -474,7 +474,7 @@
       <label>Theme (system|dark|light)</label><input id="theme" value="${esc(settings.theme)}">
       <label>Block patterns (one per line)</label><textarea id="block" rows="4">${esc(settings.blockPatterns)}</textarea>
       <button id="save">Save</button>
-      <p style="opacity:.7;margin-top:22px">Toggles available from the panel: auto-detect (master), layers, subtitles, notifications — use the ⚙ icon on the floating panel.</p>
+      <p style="opacity:.7;margin-top:22px">Toggles available from the panel: auto-detect (master), layers, subtitles, notifications. Use the gear icon on the floating panel.</p>
       <script>document.getElementById('save').onclick=()=>{const v=(id)=>document.getElementById(id).value;GM_setValue('settings',JSON.stringify(Object.assign({},JSON.parse(GM_getValue('settings','{}')||'{}'),{subdlApiKey:v('subdl'),osApiKey:v('os'),osUserAgent:v('ua'),theme:v('theme'),blockPatterns:v('block')})));close();};<\/script>
       </body></html>`;
     try {

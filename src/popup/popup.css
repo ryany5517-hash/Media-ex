@@ -116,7 +116,7 @@ body {
 .btn:hover { border-color: var(--accent); }
 .btn:active { transform: scale(.97); }
 .btn[data-primary="1"] { background: linear-gradient(150deg, var(--accent), #4b3ff0); color: #fff; border-color: transparent; }
-.btn.tiny { min-height: 26px; font-size: 11px; padding: 0 8px; }
+.btn.tiny { min-height: 32px; font-size: 11px; padding: 0 8px; }
 .btn[disabled] { opacity: .55; }
 
 .history { padding: 4px 12px 0; }

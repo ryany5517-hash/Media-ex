@@ -5,7 +5,7 @@ Browser extension (Manifest V3) untuk **Chrome, Edge, Brave & Firefox desktop**,
 lewat `webRequest`, yang mustahil dilakukan Tampermonkey — itu sebabnya versi userscript kemarin gagal total di
 67movies (player-nya ada di iframe lintas-origin bertingkat).
 
-> **Status:** 59 test otomatis (unit, simulasi halaman 67movies end-to-end, audit 12 fitur lewat chrome.*
+> **Status:** 61 test otomatis (unit, simulasi halaman 67movies end-to-end, audit 12 fitur lewat chrome.*
 > runtime mock, render UI, boot userscript, verifier update), `web-ext lint` 0 error.
 > **Tidak perlu publikasi ke Chrome Web Store / AMO** — dimuat sebagai unpacked / temporary add-on, dan
 > perbaikan aturan deteksi turun sendiri lewat rule pack bertanda tangan (lihat `docs/AUTO-UPDATE.md`).
@@ -98,7 +98,8 @@ dan (kalau kamu aktifkan) patch script konten. Yang tetap perlu build ulang: per
 
 ```bash
 npm install
-npm test          # 59 test: rules, judul, SRT→VTT, unzip, provider, simulasi 67movies, audit 12 fitur, UI, userscript
+npm test          # 61 test: rules, judul, SRT→VTT, unzip, provider, simulasi 67movies, audit 12 fitur, UI, userscript, update verifier
+npm run qa        # design QA: kontras WCAG, target sentuh, kelas yatim, kebijakan tanpa emoji/emdash
 npm run preview   # render panel UI dari modul aslinya → docs/preview/ui.html
 npm run lint      # web-ext lint (Firefox) → 0 errors
 npm run build     # dist/chrome, dist/firefox, dist/*.zip|*.xpi, userscript/
@@ -146,7 +147,10 @@ rules/live-rules.json          sumber rule pack; terbit ke branch `live` lewat n
 src/userscript/host.js         host untuk build userscript (Tampermonkey/Violentmonkey)
 tools/build.mjs                bundling prelude, tweak manifest per browser, validasi, zip/xpi
 tools/build-userscript.mjs     generate userscript/stream-radar.user.js (+header @grant dll.)
-tools/test/*.test.mjs          41 test (node:test)
+tools/test/*.test.mjs          61 test (node:test): unit, integrasi, audit fitur, UI, design QA, updater
+tools/design-qa.mjs            audit desain terprogramm (kontras, target sentuh, simbol)
+tools/render-preview.mjs       render panel ke docs/preview/ui.html (lihat desain tanpa install)
+tools/{keygen,sign,publish-live}.mjs  kanal update otomatis (rule pack bertanda tangan)
 demo/                          halaman uji deteksi
 ```
 

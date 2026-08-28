@@ -182,7 +182,7 @@
           </ol>
           <h2>Why is a stream still missing?</h2>
           <ul>
-            <li><b>DRM (Widevine/FairPlay/PlayReady)</b> — the manifest is not downloadable. Stream Radar labels it "DRM protected" instead of failing silently.</li>
+            <li><b>DRM (Widevine/FairPlay/PlayReady)</b>: the manifest is not downloadable. Stream Radar labels it "DRM protected" instead of failing silently.</li>
             <li><b>blob: + MSE</b> - the "URL" is a media pipeline, not a file. Use "Record buffer (beta)" after enabling it in Detection layers.</li>
             <li><b>P2P players (WebTorrent, custom WASM)</b> - segments never cross HTTP, so nothing is captured.</li>
             <li><b>Strict CSP + browser without <code>world:MAIN</code></b> - Layer 1 page hooks may be blocked; LAYERS 1b/2/4/5 still work because the network observer runs outside the page.</li>

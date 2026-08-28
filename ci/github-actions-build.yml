@@ -33,6 +33,9 @@ jobs:
           npm run build
           node tools/render-preview.mjs
 
+      - name: Design QA
+        run: npm run qa
+
       - name: Validate Firefox package with web-ext
         run: npx web-ext lint --source-dir dist/firefox --no-input --self-hosted
 

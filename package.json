@@ -5,7 +5,7 @@
   "description": "Stream Radar \u2014 ultra media streaming detector + WatchParty + auto Indonesian subtitles, for Chrome & Firefox (Manifest V3). Not published to any store: load it unpacked.",
   "type": "module",
   "scripts": {
-    "test": "node --test --test-force-exit tools/test/core.test.mjs tools/test/integration.test.mjs tools/test/userscript.test.mjs tools/test/ui.test.mjs tools/test/updater.test.mjs tools/test/features.test.mjs",
+    "test": "node --test --test-force-exit tools/test/core.test.mjs tools/test/integration.test.mjs tools/test/userscript.test.mjs tools/test/ui.test.mjs tools/test/updater.test.mjs tools/test/features.test.mjs tools/test/design.test.mjs",
     "test:core": "node --test tools/test/core.test.mjs",
     "lint": "web-ext lint --source-dir dist/firefox --no-input --self-hosted",
     "build": "node tools/build.mjs",
@@ -19,7 +19,8 @@
     "sign": "node tools/sign.mjs",
     "live": "node tools/publish-live.mjs",
     "live:push": "node tools/publish-live.mjs --push",
-    "preview": "node tools/render-preview.mjs"
+    "preview": "node tools/render-preview.mjs",
+    "qa": "node tools/design-qa.mjs --strict"
   },
   "devDependencies": {
     "jsdom": "^26.0.0",

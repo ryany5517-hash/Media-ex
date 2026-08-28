@@ -46,6 +46,9 @@ win.eval(`
   window.__ui.setOpen(true);
 `);
 const host = win.document.getElementById('stream-radar-host');
+// the UI lives in a shadow root: serialise its inner tree, not the (empty) light DOM
+const inner = (host.shadowRoot || host).innerHTML;
+if (!inner.includes('srad-item')) throw new Error('preview render produced no media rows; check ui.js');
 const css = read('content/ui-styles.js').match(/SR\.uiCss = `([\s\S]*?)`;/)[1];
 const html = `<!doctype html>
 <html lang="en">
@@ -66,7 +69,7 @@ const html = `<!doctype html>
 Dihasilkan oleh <code>npm run preview</code> memakai modul UI asli (src/content/ui*.js).
 Panel dan tombolnya hidup, tapi aksi tidak terhubung ke browser: ini pratinjau desain.<br>
 Ganti tema lewat ikon bulan di header. Resize jendela ke <b>&le;720px</b> untuk melihat layout mobile.</div>
-<div id="stream-radar-host">${host.innerHTML}</div>
+<div id="stream-radar-host">${inner}</div>
 <style>${css.replace(/:host\s*{[^}]*}/, '')}</style>
 </body>
 </html>`;

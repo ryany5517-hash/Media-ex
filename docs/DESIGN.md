@@ -57,6 +57,16 @@ FAB `role="button"` + `aria-haspopup` + `aria-expanded`; panel `role="dialog"`; 
 Esc tutup, Tab dijebak selama panel terbuka); status toast lewat `role="status"`/`role="alert"` plus live
 region tersembunyi. Target sentuh minimal 44 px pada layar sentuh/lebar ≤ 720 px.
 
+## QA otomatis
+
+```bash
+npm run qa      # tools/design-qa.mjs --strict
+```
+Ia memeriksa rasio kontras setiap pasangan token (WCAG 2.1, floor 4.5:1 teks / 3:1 status), kelas yang
+dipancarkan JS tapi tidak pernah distili, floor target sentuh (32px desktop, 44px sentuh), ukuran font
+minimum, keberadaan `prefers-reduced-motion` / `focus-visible`, dan kebijakan tipografi (tidak ada emoji,
+emdash, panah, bulat tengah, atau tanda kutip keriting di kode yang menghadap UI). Nol masalah = lolos.
+
 ## Test tampilan
 
 `tools/test/ui.test.mjs` (render semua jenis baris, tidak melempar) dan `tools/test/features.test.mjs`

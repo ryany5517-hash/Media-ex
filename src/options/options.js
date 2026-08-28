@@ -219,7 +219,7 @@
       const st = await api.runtime.sendMessage({ type: 'action', payload: { name: 'update-status' } });
       const d = (st && st.dynamic) || {};
       $('#updateInfo').textContent =
-        'pack v' + (d.version || 0) + ', hosts +' + (d.embedHosts || 0) + ' ads +' + (d.adHosts || 0) + ', sign '+ (d.signed ? 'ok' : 'belum ada') + ' · patch v' + ((st && st.patch) || 0);
+        'pack v' + (d.version || 0) + ', hosts +' + (d.embedHosts || 0) + ' ads +' + (d.adHosts || 0) + ', sign '+ (d.signed ? 'ok' : 'belum ada') + ', patch v' + ((st && st.patch) || 0);
     } catch (_) {}
   }
 

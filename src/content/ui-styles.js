@@ -209,7 +209,7 @@
 .srad-thumb {
   width: 50px; height: 50px; border-radius: 11px; overflow: hidden; position: relative; flex: none;
   display: grid; place-items: center; background: var(--c-bg-2); color: #fff;
-  font-size: 9px; font-weight: 800; letter-spacing: .04em;
+  font-size: 10px; font-weight: 800; letter-spacing: .04em;
 }
 .srad-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .srad-thumb svg { width: 20px; height: 20px; opacity: .95; }
@@ -264,7 +264,7 @@
 .srad-variant { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--c-fg-2); padding: 3px 2px; }
 .srad-variant b { color: var(--c-fg); font-weight: 620; }
 .srad-vq { min-width: 48px; font-weight: 700; color: var(--c-fg); }
-.srad-variant .srad-btn { margin-left: auto; min-height: 28px; }
+.srad-variant .srad-btn { margin-left: auto; min-height: 32px; }
 .srad-note { margin-top: 8px; font-size: 11.5px; color: var(--c-fg-2); display: flex; gap: 6px; align-items: flex-start; }
 .srad-note svg { width: 13px; height: 13px; flex: none; margin-top: 2px; }
 
@@ -325,7 +325,7 @@
 .srad-toast[data-kind="warn"] .srad-tico { background: rgba(153,97,10,.14); color: var(--c-warn); }
 .srad-toast[data-kind="err"] .srad-tico { background: rgba(180,35,24,.12); color: var(--c-err); }
 .srad-toast > span:nth-child(2) { flex: 1 1 auto; min-width: 0; }
-.srad-toast button { flex: none; border: 1px solid var(--c-line); background: transparent; color: var(--c-fg); border-radius: 8px; font: 650 11.5px var(--font); padding: 5px 8px; cursor: pointer; min-height: 28px; }
+.srad-toast button { flex: none; border: 1px solid var(--c-line); background: transparent; color: var(--c-fg); border-radius: 8px; font: 650 11.5px var(--font); padding: 5px 8px; cursor: pointer; min-height: 32px; }
 .srad-toast .srad-tbar { position: absolute; left: 0; bottom: 0; height: 2px; width: 100%; background: var(--c-accent); transform-origin: left; opacity: .85; }
 
 .srad-sr { position: absolute !important; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
@@ -339,7 +339,7 @@
     border-bottom: 0; transform-origin: bottom center; padding-bottom: env(safe-area-inset-bottom, 0);
   }
   .srad-panel::before { content: ""; position: absolute; top: 6px; left: 50%; transform: translateX(-50%); width: 38px; height: 4px; border-radius: 2px; background: var(--c-line); }
-  .srad-iconbtn, .srad-btn { min-height: 44px; }
+  .srad-iconbtn, .srad-btn, .srad-variant .srad-btn, .srad-toast button, .srad-tab { min-height: 44px; }
   .srad-btn { flex: 1 1 auto; }
   .srad-toasts { top: 8px; left: 8px; right: 8px; width: auto; align-items: stretch; }
 }
