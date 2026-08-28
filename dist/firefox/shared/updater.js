@@ -32,8 +32,8 @@
   const PUBLIC_KEY_JWK = {
     kty: 'EC',
     crv: 'P-256',
-    x: 'dAR-4Qdjs2zq0VFxBgyAimWA_TkwY3-pySuLXFnhp6c',
-    y: 'UoJ_C4deba9gBFfxJA534F0V0OnSbUGei7XNRDaJyIY',
+    x: "UZ33kOysXiijfF9rVCLCU6s0JHFtlRKx3xHer-0pDmE",
+    y: "3m66hI6NDl_cJb4vE_rLEIATjYMB_T3v2i3jLSPF2kc",
     ext: true,
     key_ops: ['verify'],
   };
