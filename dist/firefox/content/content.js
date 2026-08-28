@@ -263,6 +263,20 @@
         toast(on ? t('toast.recording') : t('toast.recordSaved', { size: '' }), 'info');
         return;
       }
+      case 'watchparty': {
+        // disable 900ms so a double click cannot open two rooms
+        const btn = payload.button;
+        if (btn) {
+          if (btn.getAttribute('data-busy') === '1') return;
+          btn.setAttribute('data-busy', '1');
+          btn.setAttribute('disabled', '');
+          setTimeout(() => { btn.removeAttribute('data-busy'); btn.removeAttribute('disabled'); }, 900);
+        }
+        const it = findItem(payload.id);
+        if (it && it.category === 'blob') { toast(t('watchparty.noBlob'), 'warn'); return; }
+        // fire-and-forget; background reports failure back over 'party-status'
+        return void send('action', { name: 'watchparty', id: payload.id });
+      }
       case 'scan-now':
         postCmd('scan');
         scanner && scanner.scan('manual');

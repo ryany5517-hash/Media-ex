@@ -84,6 +84,14 @@ test('panel renders every item kind without throwing', () => {
   assert.ok(true, 'full interaction cycle survived');
 });
 
+test('blob rows show the no-party marker, not a Watch Party button', () => {
+  const src = readFileSync(path.join(path.dirname(new URL(import.meta.url).pathname), '../../src/content/ui.js'), 'utf8');
+  // the marker is rendered only for blob rows; streamable rows keep the button
+  assert.ok(src.includes('srad-no-party'), 'panel must define the blob no-party marker');
+  assert.ok(/cat === 'blob'[\s\S]{0,200}srad-no-party/.test(src), 'marker must be gated on the blob category');
+  assert.ok(src.includes('watchparty.noBlob'), 'marker must use the explanatory i18n key');
+});
+
 test('panel reflects settings changes (ads toggle, enabled switch, theme)', () => {
   const dom = boot();
   const win = dom.window;

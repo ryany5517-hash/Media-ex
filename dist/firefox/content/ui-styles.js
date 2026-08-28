@@ -298,10 +298,19 @@
 .srad-btn:hover { background: var(--sr-surface-2); border-color: var(--sr-accent); }
 .srad-btn:active { transform: scale(.96); }
 .srad-btn:focus-visible { outline: 2px solid var(--sr-accent); outline-offset: 2px; }
-.srad-btn[data-primary="1"] { color: #fff; border-color: transparent; background: linear-gradient(150deg, var(--sr-accent), #3d3ac9); box-shadow: 0 6px 18px -8px var(--sr-accent); }
-.srad-btn[data-primary="1"]:hover { filter: brightness(1.07); }
+.srad-btn[data-primary="1"] { color: var(--sr-accent-ink); border-color: transparent; background: var(--sr-brand-gradient); box-shadow: var(--sr-shadow-1); }
+.srad-btn[data-primary="1"]:hover { opacity: .93; }
 .srad-btn[data-done="1"] { color: var(--sr-ok); border-color: var(--sr-ok); background: transparent; }
-.srad-btn[disabled] { opacity: .55; cursor: progress; }
+.srad-btn[disabled] { opacity: .65; cursor: default; pointer-events: none; }
+.srad-btn[data-busy="1"] svg { animation: srad-spin .7s linear infinite; }
+@keyframes srad-spin { to { transform: rotate(360deg); } }
+/* blob rows have no shareable URL: reasoned marker instead of a party button */
+.srad-no-party {
+  display: inline-flex; align-items: center; gap: 6px; padding: 0 12px; min-height: 32px;
+  border: 1px dashed var(--sr-line); border-radius: var(--sr-r-pill); color: var(--sr-ink-3);
+  font-size: 10.5px; font-weight: 600; max-width: 100%;
+}
+.srad-no-party svg { width: 14px; height: 14px; flex: none; }
 .srad-ripple { position: absolute; border-radius: 50%; transform: scale(0); background: currentColor; opacity: .22; pointer-events: none; }
 
 .srad-variants { display: none; margin-top: 9px; padding-top: 8px; border-top: 1px dashed var(--sr-line); }

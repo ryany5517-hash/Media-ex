@@ -343,7 +343,9 @@
           '<div class="srad-url" title="' + esc(it.url) + '">' + esc(shortenUrl(it.url)) + '</div>' +
           '<div class="srad-tags">' + tags.join('') + '</div>' +
           '<div class="srad-actions">' +
-          '<button class="srad-btn" data-act="watchparty" data-primary="1">' + ico('users') + esc(t('action.watchparty')) + '</button>' +
+          (cat === 'blob'
+            ? '<span class="srad-no-party" title="' + esc(t('watchparty.noBlob')) + '">' + ico('info') + esc(t('watchparty.noBlob')) + '</span>'
+            : '<button class="srad-btn" data-act="watchparty" data-primary="1">' + ico('users') + esc(t('action.watchparty')) + '</button>') +
           '<button class="srad-btn" data-act="copy">' + ico('copy') + esc(t('action.copy')) + '</button>' +
           '<button class="srad-btn" data-act="download">' + ico('download') + esc(it.category === 'hls' || it.category === 'dash' ? t('action.downloadPlaylist') : t('action.download')) + '</button>' +
           '<button class="srad-btn" data-act="subs">' + ico('captions') + esc(t('action.subs')) + '</button>' +
@@ -641,7 +643,8 @@
             toggle.click();
           } else if (e.key === 'Enter') {
             e.preventDefault();
-            row.querySelector('[data-act="watchparty"]').click();
+            const wp = row.querySelector('[data-act="watchparty"]');
+            if (wp) wp.click();
           }
         }
         if (e.key === 'c') {

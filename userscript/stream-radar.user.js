@@ -1759,6 +1759,11 @@
       'label.aes': 'AES-128 key',
       'label.mse': 'MediaSource (blob)',
       'label.mseHint': 'Blob streams cannot be downloaded directly, use Record buffer or open the source page.',
+      'watchparty.noBlob': 'No Watch Party: blob stream has no shareable URL',
+      'watchparty.opening': 'Opening room',
+      'watchparty.fallback': 'The room could not open. The tab may not be ready yet. Try reloading the tab then press Watch Party again.',
+      'watchparty.reattach': 'Re-detect this tab',
+      'watchparty.reloadTab': 'Reload tab',
       'toast.found': '{n} media detected on this page',
       'toast.newmedia': 'New {type} stream detected',
       'toast.subs': 'Indonesian subtitle found: {name}',
@@ -1951,6 +1956,11 @@
       'label.aes': 'Kunci AES-128',
       'label.mse': 'MediaSource (blob)',
       'label.mseHint': 'Stream blob tidak bisa diunduh langsung, pakai Rekam buffer atau buka halaman sumbernya.',
+      'watchparty.noBlob': 'Tidak bisa Nonton Bareng: stream blob tidak punya URL yang bisa dibagikan',
+      'watchparty.opening': 'Membuka room',
+      'watchparty.fallback': 'Room gagal dibuka. Tab mungkin belum siap. Coba muat ulang tab lalu tekan Nonton Bareng lagi.',
+      'watchparty.reattach': 'Deteksi ulang tab ini',
+      'watchparty.reloadTab': 'Muat ulang tab',
       'toast.found': '{n} media terdeteksi di halaman ini',
       'toast.newmedia': 'Stream {type} baru terdeteksi',
       'toast.subs': 'Subtitle Indonesia ditemukan: {name}',
@@ -4470,10 +4480,19 @@
 .srad-btn:hover { background: var(--sr-surface-2); border-color: var(--sr-accent); }
 .srad-btn:active { transform: scale(.96); }
 .srad-btn:focus-visible { outline: 2px solid var(--sr-accent); outline-offset: 2px; }
-.srad-btn[data-primary="1"] { color: #fff; border-color: transparent; background: linear-gradient(150deg, var(--sr-accent), #3d3ac9); box-shadow: 0 6px 18px -8px var(--sr-accent); }
-.srad-btn[data-primary="1"]:hover { filter: brightness(1.07); }
+.srad-btn[data-primary="1"] { color: var(--sr-accent-ink); border-color: transparent; background: var(--sr-brand-gradient); box-shadow: var(--sr-shadow-1); }
+.srad-btn[data-primary="1"]:hover { opacity: .93; }
 .srad-btn[data-done="1"] { color: var(--sr-ok); border-color: var(--sr-ok); background: transparent; }
-.srad-btn[disabled] { opacity: .55; cursor: progress; }
+.srad-btn[disabled] { opacity: .65; cursor: default; pointer-events: none; }
+.srad-btn[data-busy="1"] svg { animation: srad-spin .7s linear infinite; }
+@keyframes srad-spin { to { transform: rotate(360deg); } }
+/* blob rows have no shareable URL: reasoned marker instead of a party button */
+.srad-no-party {
+  display: inline-flex; align-items: center; gap: 6px; padding: 0 12px; min-height: 32px;
+  border: 1px dashed var(--sr-line); border-radius: var(--sr-r-pill); color: var(--sr-ink-3);
+  font-size: 10.5px; font-weight: 600; max-width: 100%;
+}
+.srad-no-party svg { width: 14px; height: 14px; flex: none; }
 .srad-ripple { position: absolute; border-radius: 50%; transform: scale(0); background: currentColor; opacity: .22; pointer-events: none; }
 
 .srad-variants { display: none; margin-top: 9px; padding-top: 8px; border-top: 1px dashed var(--sr-line); }
@@ -4915,7 +4934,9 @@
           '<div class="srad-url" title="' + esc(it.url) + '">' + esc(shortenUrl(it.url)) + '</div>' +
           '<div class="srad-tags">' + tags.join('') + '</div>' +
           '<div class="srad-actions">' +
-          '<button class="srad-btn" data-act="watchparty" data-primary="1">' + ico('users') + esc(t('action.watchparty')) + '</button>' +
+          (cat === 'blob'
+            ? '<span class="srad-no-party" title="' + esc(t('watchparty.noBlob')) + '">' + ico('info') + esc(t('watchparty.noBlob')) + '</span>'
+            : '<button class="srad-btn" data-act="watchparty" data-primary="1">' + ico('users') + esc(t('action.watchparty')) + '</button>') +
           '<button class="srad-btn" data-act="copy">' + ico('copy') + esc(t('action.copy')) + '</button>' +
           '<button class="srad-btn" data-act="download">' + ico('download') + esc(it.category === 'hls' || it.category === 'dash' ? t('action.downloadPlaylist') : t('action.download')) + '</button>' +
           '<button class="srad-btn" data-act="subs">' + ico('captions') + esc(t('action.subs')) + '</button>' +
@@ -5213,7 +5234,8 @@
             toggle.click();
           } else if (e.key === 'Enter') {
             e.preventDefault();
-            row.querySelector('[data-act="watchparty"]').click();
+            const wp = row.querySelector('[data-act="watchparty"]');
+            if (wp) wp.click();
           }
         }
         if (e.key === 'c') {
