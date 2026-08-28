@@ -17,7 +17,7 @@ test('design QA reports no problems', () => {
 test('panel keeps its design contract', async () => {
   const { readFileSync } = await import('node:fs');
   const css = readFileSync('src/content/ui-styles.js', 'utf8');
-  for (const need of ['--c-accent', '--ease-spring', 'prefers-reduced-motion', 'focus-visible', 'min-height: 44px', 'backdrop-filter']) {
+  for (const need of ['--sr-accent', '--sr-spring', 'prefers-reduced-motion', 'focus-visible', 'min-height: 44px', 'backdrop-filter']) {
     assert.ok(css.includes(need), 'stylesheet must define ' + need);
   }
   const ui = readFileSync('src/content/ui.js', 'utf8');

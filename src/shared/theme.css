@@ -1,0 +1,134 @@
+/* Stream Radar design tokens - single source of truth.
+ * Popup and Options link this file; the shadow-DOM panel gets a copy injected
+ * into src/content/ui-styles.js by tools/sync-theme.mjs (never hand-edit there).
+ * Values are final (see design brief); contrast is verified by tools/contrast.mjs.
+ * Comments are ASCII only. */
+
+:root,
+:host {
+  /* light palette */
+  --sr-canvas: #f6f7fb;
+  --sr-surface: #ffffff;
+  --sr-surface-2: #f1f3f9;
+  --sr-surface-3: #e8ebf4;
+  --sr-glass: rgba(255, 255, 255, 0.82);
+  --sr-ink: #1b2130;
+  --sr-ink-2: #57607a;
+  --sr-ink-3: #8b93a8;
+  --sr-line: #dfe3ee;
+  --sr-line-2: #eceff7;
+  --sr-accent: #4f46e5;
+  --sr-accent-ink: #ffffff;
+  --sr-accent-soft: #eef0fe;
+  --sr-accent-line: #cfd3fb;
+  --sr-ok: #0f7b56;
+  --sr-ok-soft: #e7f6ee;
+  --sr-warn: #8a5b00;
+  --sr-warn-soft: #fdf3e2;
+  --sr-err: #b42318;
+  --sr-err-soft: #fdeceb;
+  --sr-info: #0f5f8a;
+  --sr-info-soft: #e8f3fa;
+  --sr-shadow-1: 0 1px 2px rgba(20, 26, 43, 0.06), 0 4px 12px -6px rgba(20, 26, 43, 0.14);
+  --sr-shadow-2: 0 24px 56px -14px rgba(20, 26, 43, 0.26), 0 4px 12px -6px rgba(20, 26, 43, 0.12);
+  --sr-inset: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+
+  /* spacing scale 4/8/12/16/22 */
+  --sr-sp-1: 4px;
+  --sr-sp-2: 8px;
+  --sr-sp-3: 12px;
+  --sr-sp-4: 16px;
+  --sr-sp-5: 22px;
+  /* radius 8/12/18/999 */
+  --sr-r-1: 8px;
+  --sr-r-2: 12px;
+  --sr-r-3: 18px;
+  --sr-r-pill: 999px;
+  /* motion 120/190/280 */
+  --sr-t-fast: 120ms;
+  --sr-t-mid: 190ms;
+  --sr-t-slow: 280ms;
+  --sr-ease: cubic-bezier(0.22, 0.72, 0.24, 1);
+  --sr-spring: cubic-bezier(0.2, 0.9, 0.28, 1.24);
+  /* type */
+  --sr-font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --sr-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  /* brand + media-type chips (vivid icon backgrounds with light glyph) */
+  --sr-brand-gradient: linear-gradient(150deg, var(--sr-accent), #4338ca);
+  --sr-cat-hls: linear-gradient(140deg, #f59e0b, #c2410c);
+  --sr-cat-dash: linear-gradient(140deg, #38bdf8, #1d4ed8);
+  --sr-cat-mp4: linear-gradient(140deg, #34d399, #0d7d63);
+  --sr-cat-webm: linear-gradient(140deg, #c084fc, #6d28d9);
+  --sr-cat-blob: linear-gradient(140deg, #94a3b8, #475569);
+  --sr-cat-seg: linear-gradient(140deg, #facc15, #a16207);
+  --sr-cat-text: linear-gradient(140deg, #2dd4bf, #0f766e);
+  --sr-glyph-on-color: #ffffff;
+
+  /* scrollbar */
+  --sr-scroll-thumb: var(--sr-ink-2);
+  --sr-scroll-thumb-hover: var(--sr-accent);
+  --sr-scroll-size: 10px;
+}
+
+[data-theme='dark'] {
+  --sr-canvas: #101420;
+  --sr-surface: #171c2a;
+  --sr-surface-2: #1c2233;
+  --sr-surface-3: #232a3d;
+  --sr-glass: rgba(19, 23, 35, 0.86);
+  --sr-ink: #e7ebf5;
+  --sr-ink-2: #9aa4bd;
+  --sr-ink-3: #6f7a94;
+  --sr-line: #262e44;
+  --sr-line-2: #1f2637;
+  --sr-accent: #8b93ff;
+  --sr-accent-ink: #10142a;
+  --sr-accent-soft: rgba(139, 147, 255, 0.14);
+  --sr-accent-line: rgba(139, 147, 255, 0.42);
+  --sr-ok: #5ad39f;
+  --sr-ok-soft: rgba(90, 211, 159, 0.14);
+  --sr-warn: #e6b455;
+  --sr-warn-soft: rgba(230, 180, 85, 0.14);
+  --sr-err: #ff8a80;
+  --sr-err-soft: rgba(255, 138, 128, 0.14);
+  --sr-info: #7cc8f2;
+  --sr-info-soft: rgba(124, 200, 242, 0.14);
+  --sr-shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 14px -6px rgba(0, 0, 0, 0.45);
+  --sr-shadow-2: 0 26px 60px -16px rgba(0, 0, 0, 0.66), 0 4px 14px -6px rgba(0, 0, 0, 0.5);
+  --sr-inset: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+/* ---- global scrollbar: hide default Chromium/Firefox bars, use tokens ---- */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--sr-scroll-thumb) transparent;
+}
+::-webkit-scrollbar {
+  width: var(--sr-scroll-size);
+  height: var(--sr-scroll-size);
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background-color: var(--sr-scroll-thumb);
+  background-clip: content-box;
+  border: 3px solid transparent;
+  border-radius: var(--sr-r-pill);
+  min-height: 34px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--sr-scroll-thumb-hover);
+  background-clip: content-box;
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+}

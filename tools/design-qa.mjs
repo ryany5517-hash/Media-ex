@@ -78,20 +78,20 @@ const cssText = css.slice(css.indexOf('`') + 1, css.lastIndexOf('`;'));
 for (const [theme, sel] of [['light', '.srad-root {'], ['dark', '.srad-root[data-theme="dark"] {']]) {
   const base = tokensFrom(cssText, '.srad-root {');
   const t = Object.assign({}, base, tokensFrom(cssText, sel));
-  const solid = parseColor(t['--c-bg-3']);
+  const solid = parseColor(t['--sr-surface']);
   const pairs = [
-    ['body text', '--c-fg'],
-    ['secondary text', '--c-fg-2'],
-    ['accent text', '--c-accent'],
+    ['body text', '--sr-ink'],
+    ['secondary text', '--sr-ink-2'],
+    ['accent text', '--sr-accent'],
   ];
   for (const [label, key] of pairs) {
     const fg = over(parseColor(t[key]), solid);
     const ratio = contrast(fg, solid);
-    const need = key === '--c-fg-2' ? 4.0 : 4.5;
+    const need = key === '--sr-ink-2' ? 4.0 : 4.5;
     info.push(`${theme} ${label.padEnd(15)} ${ratio.toFixed(2)}:1 (min ${need})`);
     if (ratio < need) problems.push(`${theme} theme: ${label} contrast ${ratio.toFixed(2)}:1 is below ${need}:1`);
   }
-  for (const key of ['--c-ok', '--c-warn', '--c-err']) {
+  for (const key of ['--sr-ok', '--sr-warn', '--sr-err']) {
     const r = contrast(over(parseColor(t[key]), solid), solid);
     info.push(`${theme} ${key.padEnd(15)} ${r.toFixed(2)}:1`);
     if (r < 3) problems.push(`${theme} theme: ${key} contrast ${r.toFixed(2)}:1 too low for a status colour`);

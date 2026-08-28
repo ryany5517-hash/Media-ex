@@ -42,7 +42,7 @@
     SR.i18n.set(resolvedLang(s.lang));
     document.body.setAttribute('data-theme', resolvedTheme(s.theme));
     $('#brandIco').innerHTML = ico('radar');
-    $('#themeBtn').innerHTML = ico('moon');
+    updateThemeBtn(s.theme);
     $('#refreshBtn').innerHTML = ico('refresh-cw');
     $('#optionsBtn').innerHTML = ico('settings');
     $('#brandSub').textContent = (state.title && state.title.title) || util.host((state.title && state.title.url) || '') || t('app.tagline');
@@ -70,6 +70,35 @@
     } catch (_) {
       return 'dark';
     }
+  }
+
+  // Smart theme cycle: the first click always changes something visible. From
+  // "system" jump to the opposite of what is currently shown; explicit light
+  // and dark just swap, so the cycle is system > opposite-in-effect > ... .
+  function nextTheme(pref) {
+    const effective = resolvedTheme(pref);
+    if (pref === 'system' || !pref) return effective === 'dark' ? 'light' : 'dark';
+    if (pref === 'dark') return 'light';
+    return 'system';
+  }
+  function prefIcon(pref) {
+    if (pref === 'dark') return 'moon';
+    if (pref === 'light') return 'sun';
+    return 'monitor-smartphone';
+  }
+  function updateThemeBtn(pref) {
+    const btn = $('#themeBtn');
+    if (!btn) return;
+    const p = pref || 'system';
+    const effective = resolvedTheme(p);
+    const nxt = nextTheme(p);
+    btn.innerHTML = ico(prefIcon(p));
+    btn.setAttribute('data-pref', p);
+    const effKey = effective === 'dark' ? 'theme.nowDark' : 'theme.nowLight';
+    const nextKey = nxt === 'dark' ? 'theme.nextDark' : nxt === 'light' ? 'theme.nextLight' : 'theme.nextSystem';
+    const label = t('theme.btnLabel', { pref: t('theme.' + p) || p, effective: t(effKey), next: t(nextKey) });
+    btn.setAttribute('title', label);
+    btn.setAttribute('aria-label', label);
   }
 
   function renderLayers() {
@@ -266,9 +295,12 @@
   $('#optionsBtn').addEventListener('click', () => api.runtime.sendMessage({ type: 'action', payload: { name: 'open-options', tabId: tabId } }).catch(() => {}));
   $('#themeBtn').addEventListener('click', () => {
     const cur = (state.settings || {}).theme || 'system';
-    const next = { system: 'dark', dark: 'light', light: 'system' }[cur];
-    act('set-setting', { key: 'theme', value: next });
+    act('set-setting', { key: 'theme', value: nextTheme(cur) });
   });
+  // re-render when the OS colour scheme flips while the popup is open
+  try {
+    matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => refresh().catch(() => {}));
+  } catch (_) {}
   $('#enableSite').addEventListener('change', (e) => act('toggle-site', { value: !e.target.checked }));
   $('#histToggle').addEventListener('click', (e) => {
     const box = $('#histList');
