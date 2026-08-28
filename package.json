@@ -23,7 +23,9 @@
     "qa": "node tools/design-qa.mjs --strict",
     "test:demo": "node --test --test-force-exit tools/test/demo.test.mjs",
     "test:unit": "node --test --test-force-exit tools/test/core.test.mjs tools/test/design.test.mjs",
-    "test:e2e": "node --test --test-force-exit --test-concurrency=1 tools/test/integration.test.mjs tools/test/features.test.mjs tools/test/demo.test.mjs"
+    "test:e2e": "node --test --test-force-exit --test-concurrency=1 tools/test/integration.test.mjs tools/test/features.test.mjs tools/test/demo.test.mjs",
+    "sync:dist": "node tools/build.mjs && git add -f dist/chrome dist/firefox userscript/stream-radar.user.js docs/preview/ui.html && git commit -m \"chore: refresh generated build snapshot\"",
+    "preview:render": "node tools/render-preview.mjs"
   },
   "devDependencies": {
     "jsdom": "^26.0.0",
