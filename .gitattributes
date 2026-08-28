@@ -7,3 +7,6 @@ package-lock.json merge=binary
 
 *.sig binary
 
+
+*.json binary
+
