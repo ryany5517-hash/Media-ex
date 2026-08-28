@@ -5,7 +5,7 @@ Browser extension (Manifest V3) untuk **Chrome, Edge, Brave & Firefox desktop**,
 lewat `webRequest`, yang mustahil dilakukan Tampermonkey — itu sebabnya versi userscript kemarin gagal total di
 67movies (player-nya ada di iframe lintas-origin bertingkat).
 
-> **Status:** lengkap, ada 39 test otomatis (termasuk simulasi halaman 67movies), `web-ext lint` 0 error.
+> **Status:** lengkap, ada 41 test otomatis (termasuk simulasi halaman 67movies), `web-ext lint` 0 error.
 > **Tidak perlu publikasi ke Chrome Web Store / AMO** — dimuat sebagai *unpacked / temporary add-on*.
 
 ```
@@ -78,7 +78,7 @@ demo        → demo/index.html   (npm run demo, buat verifikasi deteksi sendiri
 
 ```bash
 npm install
-npm test          # 39 test: rules, judul, SRT→VTT, unzip, provider, simulasi 67movies, boot userscript
+npm test          # 41 test: rules, judul, SRT→VTT, unzip, provider, simulasi 67movies, boot userscript
 npm run lint      # web-ext lint (Firefox) → 0 errors
 npm run build     # dist/chrome, dist/firefox, dist/*.zip|*.xpi, userscript/
 npm run demo      # http://localhost:8088/demo/index.html → harus muncul 1 HLS (1080p/720p) + 1 MP4 + 1 blob

@@ -8,7 +8,7 @@ tidak butuh akun developer berbayar (kecuali opsi “permanen di Firefox”, yan
 ```bash
 npm install
 npm run build          # → dist/chrome, dist/firefox, dist/stream-radar-*.zip|*.xpi, userscript/
-npm test               # 39 test, harus semua ✔
+npm test               # 41 test, harus semua ✔
 npm run lint           # web-ext lint → 0 errors (warning innerHTML itu normal, semua data sudah di-escape)
 ```
 
