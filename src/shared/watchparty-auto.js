@@ -166,7 +166,7 @@
             const track = doc.createElement('track');
             track.kind = 'subtitles';
             track.srclang = 'id';
-            track.label = (name || 'Indonesian') + ' · Stream Radar';
+            track.label = (name || 'Indonesian') + ' (Stream Radar)';
             track.default = true;
             track.setAttribute('data-srad', '1');
             track.src = url;
@@ -198,7 +198,7 @@
           const a = b.getAttribute('data-a');
           if (a === 'subs') {
             const n = attachTracks((p.subtitle || {}).vtt, (p.subtitle || {}).name, true);
-            status(n ? t('panel.subs.found') + ' ×' + n : t('panel.subs.none'), n ? 'ok' : 'warn');
+            status(n ? t('panel.subs.found') + ' x' + n : t('panel.subs.none'), n ? 'ok' : 'warn');
           } else if (a === 'copy') {
             try {
               navigator.clipboard.writeText(p.mediaUrl || '');

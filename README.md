@@ -5,8 +5,11 @@ Browser extension (Manifest V3) untuk **Chrome, Edge, Brave & Firefox desktop**,
 lewat `webRequest`, yang mustahil dilakukan Tampermonkey — itu sebabnya versi userscript kemarin gagal total di
 67movies (player-nya ada di iframe lintas-origin bertingkat).
 
-> **Status:** lengkap, ada 41 test otomatis (termasuk simulasi halaman 67movies), `web-ext lint` 0 error.
-> **Tidak perlu publikasi ke Chrome Web Store / AMO** — dimuat sebagai *unpacked / temporary add-on*.
+> **Status:** 59 test otomatis (unit, simulasi halaman 67movies end-to-end, audit 12 fitur lewat chrome.*
+> runtime mock, render UI, boot userscript, verifier update), `web-ext lint` 0 error.
+> **Tidak perlu publikasi ke Chrome Web Store / AMO** — dimuat sebagai unpacked / temporary add-on, dan
+> perbaikan aturan deteksi turun sendiri lewat rule pack bertanda tangan (lihat `docs/AUTO-UPDATE.md`).
+> **Pratinjau desain tanpa install:** `npm run preview` lalu buka `docs/preview/ui.html`.
 
 ```
 extension   → dist/chrome/   dist/firefox/   (siap load, ada zip & xpi di dist/)
@@ -28,6 +31,23 @@ demo        → demo/index.html   (npm run demo, buat verifikasi deteksi sendiri
 | Otomasi form WatchParty.me | sebagian | ✅ content script khusus |
 | Parse master `.m3u8` / `.mpd` → daftar kualitas + kunci AES-128 | ✅ (manual) | ✅ otomatis |
 | Keperluan install | 1 klik | 2 menit (unpacked) |
+
+## 1b. Aku mau pakai sekarang juga, tanpa nerbitin apa pun?
+
+Bisa. Ringkasnya:
+
+| Browser | Cara | Permanen? |
+|---|---|---|
+| Chrome / Edge / Brave | `chrome://extensions` → *Load unpacked* → `dist/chrome` | **ya**, sampai kamu hapus sendiri |
+| Firefox desktop | `about:debugging` → *Load Temporary Add-on* → `dist/firefox/manifest.json` | sampai browser ditutup |
+| Firefox desktop (permanen, tanpa listing publik) | Developer Edition/Nightly + `xpinstall.signatures.required=false`, install `dist/stream-radar-firefox-1.0.0.xpi` | **ya** |
+| Firefox desktop (stabil) | `web-ext sign` sebagai *unlisted* (akun AMO gratis, tidak masuk katalog) | **ya** |
+| Firefox Android | userscript (Violentmonkey) atau XPI unlisted | **ya** |
+
+Dan supaya kamu tidak perlu lepas-pasang lagi tiap ada perbaikan: [docs/AUTO-UPDATE.md](docs/AUTO-UPDATE.md).
+Intinya: push perubahan `rules/live-rules.json` ke GitHub → CI menandatangani → semua install menariknya dalam
+≤ 12 jam. Yang bisa ditambal tanpa install: domain embed/iklan baru, ekstensi media baru, kata sampah judul baru,
+dan (kalau kamu aktifkan) patch script konten. Yang tetap perlu build ulang: perubahan `background.js`.
 
 ## 2. Install (tidak perlu publish, tidak perlu akun developer)
 
@@ -78,7 +98,8 @@ demo        → demo/index.html   (npm run demo, buat verifikasi deteksi sendiri
 
 ```bash
 npm install
-npm test          # 41 test: rules, judul, SRT→VTT, unzip, provider, simulasi 67movies, boot userscript
+npm test          # 59 test: rules, judul, SRT→VTT, unzip, provider, simulasi 67movies, audit 12 fitur, UI, userscript
+npm run preview   # render panel UI dari modul aslinya → docs/preview/ui.html
 npm run lint      # web-ext lint (Firefox) → 0 errors
 npm run build     # dist/chrome, dist/firefox, dist/*.zip|*.xpi, userscript/
 npm run demo      # http://localhost:8088/demo/index.html → harus muncul 1 HLS (1080p/720p) + 1 MP4 + 1 blob
@@ -87,6 +108,7 @@ npm run demo      # http://localhost:8088/demo/index.html → harus muncul 1 HLS
 CI siap pakai (opsional): `ci/github-actions-build.yml` — salin ke `.github/workflows/build.yml`
 buat otomatis ngejalanin test + publish artifact `zip/xpi/userscript` di tiap push/release.
 
+Desain & motion: [docs/DESIGN.md](docs/DESIGN.md) · Update otomatis: [docs/AUTO-UPDATE.md](docs/AUTO-UPDATE.md)
 Detail: [docs/INSTALL.md](docs/INSTALL.md) · [docs/API-KEYS.md](docs/API-KEYS.md) · [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) · [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md)
 
 ## 6. Batasan jujur (bukan alasan, tapi fisika web)
@@ -116,7 +138,11 @@ src/popup/ · src/options/      toolbar popup & halaman pengaturan
 src/watchparty/watchparty.js   adapter WatchParty (payload dari background)
 src/shared/                    util · rules (klasifikasi) · title-cleaner · store (dedupe/rank) ·
                                subtitles (3 provider + SRT→VTT + unzip) · dom-scanner · i18n (en/id) ·
+                               icons (generate dari Lucide) · updater (rule pack + patch bertanda tangan) ·
                                watchparty-auto (otomasi form)
+src/vendor/                    motion.min.js (UMD, animasi) + catatan lisensi
+src/userscript/host.js         host untuk build userscript (Tampermonkey/Violentmonkey)
+rules/live-rules.json          sumber rule pack; terbit ke branch `live` lewat npm run live:push
 src/userscript/host.js         host untuk build userscript (Tampermonkey/Violentmonkey)
 tools/build.mjs                bundling prelude, tweak manifest per browser, validasi, zip/xpi
 tools/build-userscript.mjs     generate userscript/stream-radar.user.js (+header @grant dll.)

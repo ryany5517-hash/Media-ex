@@ -9,31 +9,23 @@
   <body data-theme="dark">
     <header class="p-head">
       <div class="brand">
-        <span class="brand-ico" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="2.5" y="4" width="19" height="16" rx="3" /><path d="M7 4v16M17 4v16M2.5 9.3h4.5M17 9.3h4.5" /></svg>
-        </span>
+        <span class="brand-ico" id="brandIco" aria-hidden="true"></span>
         <div class="brand-txt">
           <strong id="brandTitle">Stream Radar</strong>
           <small id="brandSub">…</small>
         </div>
       </div>
       <div class="head-actions">
-        <button id="themeBtn" class="ibtn" title="Theme / Tema" aria-label="Toggle theme">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4" /><path d="M12 2.6v2.2M12 19.2v2.2M2.6 12h2.2M19.2 12h2.2M5.4 5.4 7 7M17 17l1.6 1.6M18.6 5.4 17 7M7 17l-1.6 1.6" /></svg>
-        </button>
-        <button id="refreshBtn" class="ibtn" title="Scan now / Scan ulang" aria-label="Scan now">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M20.5 12a8.5 8.5 0 1 1-2.6-6.1" /><path d="M20.8 4.2v5h-5" /></svg>
-        </button>
-        <button id="optionsBtn" class="ibtn" title="Settings / Pengaturan" aria-label="Open settings">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="3.2" /><path d="M4 12h16M4 7h16M4 17h16" /></svg>
-        </button>
+        <button id="themeBtn" class="ibtn" title="Theme" aria-label="Toggle theme"></button>
+        <button id="refreshBtn" class="ibtn" title="Scan now" aria-label="Scan now"></button>
+        <button id="optionsBtn" class="ibtn" title="Settings" aria-label="Open settings"></button>
       </div>
     </header>
 
     <section class="layers" id="layers" aria-label="Detection layers"></section>
 
     <section class="meta">
-      <div class="meta-title" id="metaTitle">—</div>
+      <div class="meta-title" id="metaTitle">-</div>
       <div class="meta-chips" id="metaChips"></div>
     </section>
 
@@ -66,6 +58,7 @@
     <div class="toasts" id="toasts" aria-live="polite"></div>
 
     <script src="../shared/util.js"></script>
+    <script src="../shared/icons.js"></script>
     <script src="../shared/rules.js"></script>
     <script src="../shared/title-cleaner.js"></script>
     <script src="../shared/i18n.js"></script>

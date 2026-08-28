@@ -26,7 +26,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..');
 const SRC = path.join(ROOT, 'src');
 const DIST = path.join(ROOT, 'dist');
-const PRELUDE = ['shared/util.js', 'shared/rules.js', 'shared/title-cleaner.js', 'shared/subtitles.js', 'shared/i18n.js', 'shared/store.js'];
+const PRELUDE = ['shared/util.js', 'shared/rules.js', 'shared/title-cleaner.js', 'shared/subtitles.js', 'shared/i18n.js', 'shared/store.js', 'shared/updater.js'];
 
 const args = process.argv.slice(2);
 const only = args.includes('--chrome') ? 'chrome' : args.includes('--firefox') ? 'firefox' : null;

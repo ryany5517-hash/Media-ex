@@ -110,7 +110,10 @@
 
   function onPageMessage(ev) {
     const d = ev.data;
-    if (!d || d.srad !== 1 || ev.source !== root) return;
+    // The `srad:1` marker plus a strict shape check is the contract. We do NOT
+    // compare event.source: sandboxed/proxied windows (and jsdom) hand back a
+    // different object identity, which would silently disable Layer 1/3/5.
+    if (!d || d.srad !== 1 || d.to === 'page') return;
     if (d.kind === 'hello') {
       pageAlive = true;
       postCmd('config', publicConfig());
@@ -171,6 +174,10 @@
     if (ui || !isTop || !SR.ui) return ui;
     try {
       ui = SR.ui.create({
+        // shadow root stays closed in production; automated tests opt in to an
+        // open root so they can assert the generated markup.
+        shadowMode: root.__sradOpenShadow ? 'open' : 'closed',
+        testSeam: true,
         getSettings: () => settings,
         beforeOpen: () => send('ui-open', {}),
         onAction: onAction,
@@ -223,7 +230,7 @@
       case 'ffmpeg': {
         const it = findItem(payload.id);
         const cmd = buildFfmpeg(it);
-        return copyText(cmd).then(() => toast(cmd ? 'ffmpeg · ' + (it.name || 'stream') + ' → clipboard' : t('toast.error', { msg: 'no stream' }), 'ok'));
+        return copyText(cmd).then(() => toast(cmd ? 'ffmpeg command copied: ' + (it.name || 'stream') : t('toast.error', { msg: 'no stream' }), 'ok'));
       }
       case 'variant': {
         const it = findItem(payload.id);
@@ -250,7 +257,7 @@
         }
         postCmd('config', publicConfig());
         render();
-        return void send('action', { name: 'set-setting', key: payload.key, value: payload.value });
+        return void send('action', { payload: { name: 'set-setting', key: payload.key, value: payload.value } });
       }
       default:
         return void send('action', { name: action, id: payload.id, index: payload.index });
@@ -304,7 +311,7 @@
           if (video.querySelector('track[data-srad="1"]')) continue;
           const track = doc.createElement('track');
           track.kind = 'subtitles';
-          track.label = (name || 'Indonesian') + ' · Stream Radar';
+          track.label = (name || 'Indonesian') + ' (Stream Radar)';
           track.srclang = 'id';
           track.default = true;
           track.setAttribute('data-srad', '1');
@@ -350,6 +357,15 @@
           applyLang();
           render();
           postCmd('config', publicConfig());
+          return;
+        case 'rules':
+          // already signature-verified by the background worker
+          if (SR.updater) SR.updater.applyRemote(msg.payload && msg.payload.pack, msg.payload && msg.payload.patch, settings);
+          if (msg.payload && msg.payload.pack) {
+            scanner && scanner.reset();
+            send('action', { payload: { name: 'rescan' } });
+          }
+          render();
           return;
         case 'toast':
           toast(msg.text, msg.kind, msg.action);

@@ -8,7 +8,8 @@ tidak butuh akun developer berbayar (kecuali opsi “permanen di Firefox”, yan
 ```bash
 npm install
 npm run build          # → dist/chrome, dist/firefox, dist/stream-radar-*.zip|*.xpi, userscript/
-npm test               # 41 test, harus semua ✔
+npm test               # 59 test, harus semua ✔
+npm run preview        # docs/preview/ui.html → lihat desainnya tanpa install
 npm run lint           # web-ext lint → 0 errors (warning innerHTML itu normal, semua data sudah di-escape)
 ```
 
@@ -72,6 +73,24 @@ Yang harus muncul di panel:
 
 Kalau panel kosong: buka DevTools → Console → ketik `streamRadar.detected()` (userscript/MAIN world) atau
 cek `chrome.storage.local` key `srad:tab:<id>` (extension).
+
+## 4b. Supaya tidak perlu lepas-pasang lagi
+
+Perbaikan aturan deteksi (domain embed/iklan baru, kata sampah judul, ekstensi media) turun otomatis dari
+branch `live` repo ini, sudah diverifikasi tanda tangan. Aktif secara default, bisa dimatikan di
+Options tab Updates. Detail + cara menerbitkan: [AUTO-UPDATE.md](AUTO-UPDATE.md).
+
+Khusus Firefox "temporary add-on" memang hilang saat browser ditutup. Dua cara permanen tanpa store publik:
+
+```bash
+# A) Firefox Developer Edition / Nightly / ESR
+about:config → xpinstall.signatures.required = false
+about:addons  → ⚙ → Install Add-on From File → dist/stream-radar-firefox-1.0.0.xpi
+
+# B) sign sendiri sebagai unlisted (akun AMO gratis, tidak masuk katalog)
+npm i -g web-ext
+cd dist/firefox && web-ext sign --api-key "$AMO_KEY" --api-secret "$AMO_SECRET" --artifacts-dir ../../signed
+```
 
 ## 5. Uninstall / reset
 

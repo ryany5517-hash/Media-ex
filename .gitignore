@@ -1,5 +1,9 @@
 node_modules/
 dist/
+dist-live/
+.live-worktree/
+stream-radar-update-key.json
+
 *.log
 .DS_Store
 .web-ext-artifacts/

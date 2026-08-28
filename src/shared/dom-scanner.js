@@ -104,6 +104,7 @@
 
       function scan(reason) {
         if (o.enabled && !o.enabled()) return;
+        if (!doc || !doc.documentElement) return; // frame is being torn down
         const found = [];
         try {
           scanTree(doc, found, 0);
@@ -196,7 +197,8 @@
       /* -------- PART 2: title extraction -------- */
       let lastTitle = 0;
       function readTitle(force) {
-        if (!isTop || !doc || !SR.title) return null;
+        if (!isTop || !doc || !doc.documentElement || !SR.title) return null;
+        if (!win || !win.location) return null; // document is gone
         const now = Date.now();
         if (!force && now - lastTitle < 900) return null;
         lastTitle = now;
@@ -204,11 +206,14 @@
         try {
           info = SR.title.resolve(doc);
         } catch (_) {
-          return null;
+          return null; // frame detached / document replaced: never throw out of a timer
         }
         if (!info) return null;
-        info.host = util.host(win.location.href);
-        info.url = win.location.href;
+        if (!info) return null;
+        const href = (win && win.location && win.location.href) || (doc && doc.URL) || '';
+        info.host = util.host(href);
+        info.url = href;
+        if (!win || !win.location) return info;
         info.siteName = (doc.querySelector('meta[property="og:site_name"]') || {}).content || '';
         if (!info.poster) info.poster = (doc.querySelector('meta[property="og:image"]') || {}).content || '';
         if (!info.imdbId) {

@@ -23,7 +23,7 @@
  */
 /* ---8<--- prelude:start */
 try {
-  importScripts('shared/util.js', 'shared/rules.js', 'shared/title-cleaner.js', 'shared/subtitles.js', 'shared/i18n.js', 'shared/store.js');
+  importScripts('shared/util.js', 'shared/rules.js', 'shared/title-cleaner.js', 'shared/subtitles.js', 'shared/i18n.js', 'shared/store.js', 'shared/updater.js');
 } catch (_) {
   /* prelude already inlined by tools/build.mjs */
 }
@@ -88,7 +88,9 @@ try {
   function ingest(tabId, raw, origin) {
     const st = getTab(tabId);
     if (!st || !settings.enabled || !raw || !raw.url) return null;
-    if (isBlockedHost(raw.url)) return null;
+    // A muted site stays muted for every request it triggers, including the
+    // third-party CDN the iframe actually streams from.
+    if (isBlockedHost(raw.url) || (st.url && isBlockedHost(st.url))) return null;
     const via = raw.via || '';
     if (origin === 'network' && !settings.layerNetwork) return null;
     if (via.indexOf('dom') === 0 && !settings.layerDom) return null;
@@ -296,7 +298,7 @@ try {
     try {
       api.action.setBadgeBackgroundColor({ color: count ? '#6d5efc' : '#94a3b8' });
       api.action.setBadgeText({ tabId: tabId, text: count ? (count > 99 ? '99+' : String(count)) : '' });
-      api.action.setTitle({ tabId: tabId, title: count ? t('fab.label', { n: count }) : 'Stream Radar — ' + t('panel.empty') });
+      api.action.setTitle({ tabId: tabId, title: count ? t('fab.label', { n: count }) : 'Stream Radar: ' + t('panel.empty') });
     } catch (_) {}
   }
 
@@ -306,6 +308,61 @@ try {
       pushHistory(st);
     } catch (_) {}
   }, 1500);
+
+  /* ---------------- live rule packs / signed patches (no reinstall) ---------------- */
+  const RULES_KEY = 'srad:rules';
+  const PATCH_KEY = 'srad:patch';
+  let updateState = { status: 'idle', at: 0, version: 0, notes: '' };
+
+  async function loadRemote(packFromStorage) {
+    try {
+      const stored = packFromStorage || (await api.storage.local.get([RULES_KEY, PATCH_KEY]));
+      if (stored[RULES_KEY] && stored[RULES_KEY].pack) SR.updater.applyRemote(stored[RULES_KEY].pack, null);
+      return stored;
+    } catch (_) {
+      return {};
+    }
+  }
+
+  async function checkForUpdates(reason) {
+    const stored = await api.storage.local.get([RULES_KEY, PATCH_KEY]);
+    const res = await SR.updater.checkForUpdates({
+      settings: settings,
+      appVersion: SR.VERSION,
+      log: log,
+      persist: async (payload) => {
+        await api.storage.local.set({ [RULES_KEY]: payload });
+        settings = await SR.settings.save({ rulesVersion: payload.version, lastUpdateCheck: Date.now() });
+      },
+      persistPatch: async (patch) => {
+        await api.storage.local.set({ [PATCH_KEY]: patch });
+        settings = await SR.settings.save({ patchVersion: patch.version, lastUpdateCheck: Date.now() });
+      },
+    });
+    updateState = Object.assign({ reason: reason || 'manual' }, res);
+    if (res.status === 'updated') {
+      for (const st of tabs.values()) {
+        // a fresh ad-domain list can change how existing rows are classified
+        st.store.clear();
+        api.tabs.sendMessage(st.tabId, { type: 'rules', payload: { pack: storedPack(), patch: await storedPatch() } }).catch(() => {});
+        broadcast(st.tabId, 'rules');
+      }
+      toastToAll(SR.i18n.t('update.applied', { v: res.version }), 'ok');
+    } else if (reason === 'manual') {
+      toastToAll(res.status === 'current' ? SR.i18n.t('update.current') : res.status === 'disabled' ? SR.i18n.t('update.off') : SR.i18n.t('update.failed', { msg: res.error || res.status }), res.status === 'current' ? 'ok' : 'warn');
+    }
+    return updateState;
+  }
+
+  function storedPack() {
+    return api.storage.local.get(RULES_KEY).then((r) => (r[RULES_KEY] && r[RULES_KEY].pack) || null);
+  }
+  function storedPatch() {
+    return api.storage.local.get(PATCH_KEY).then((r) => r[PATCH_KEY] || null);
+  }
+  function toastToAll(text, kind) {
+    for (const id of tabs.keys()) toastTo(id, text, kind);
+  }
 
   async function restore(tabId) {
     const st = getTab(tabId);
@@ -330,7 +387,7 @@ try {
     try {
       api.storage.local.set({ [HISTORY_KEY]: historyQueue });
     } catch (_) {}
-  }, 4000);
+  }, 1500);
   function pushHistory(st) {
     const host = util.host(st.url || '');
     for (const e of st.store.serialize(6)) {
@@ -355,7 +412,7 @@ try {
     if (now - (st.lastNotify || 0) < 1200) return;
     st.lastNotify = now;
     const label = rules.CATEGORY_LABEL[item.category] || 'MEDIA';
-    const text = t('toast.newmedia', { type: label }) + (item.quality ? ' · ' + item.quality : '');
+    const text = t('toast.newmedia', { type: label }) + (item.quality ? ', ' + item.quality : '');
     toastTo(tabId, text, 'ok');
     if (!settings.notify) return;
     let focused = true;
@@ -367,8 +424,8 @@ try {
       api.notifications.create('srad-' + tabId + '-' + item.id, {
         type: 'basic',
         iconUrl: 'icons/icon128.png',
-        title: 'Stream Radar · ' + label,
-        message: text + (st.title && st.title.title ? ' — ' + st.title.title : ''),
+        title: 'Stream Radar, ' + label,
+        message: text + (st.title && st.title.title ? ', ' + st.title.title : ''),
         priority: 1,
       });
     } catch (_) {}
@@ -437,7 +494,7 @@ try {
         }
         if (settings.notify && api.notifications && api.notifications.create) {
           try {
-            api.notifications.create('srad-sub-' + tabId, { type: 'basic', iconUrl: 'icons/icon128.png', title: 'Stream Radar · subtitle', message: t('toast.subs', { name: shorten(best.name || best.filename) }) });
+            api.notifications.create('srad-sub-' + tabId, { type: 'basic', iconUrl: 'icons/icon128.png', title: 'Stream Radar, subtitle', message: t('toast.subs', { name: shorten(best.name || best.filename) }) });
           } catch (_) {}
         }
       } else {
@@ -464,7 +521,10 @@ try {
     const url = media && media.url;
     if (!url) return { ok: false, reason: t('panel.empty') };
     if (media.category === 'blob') return { ok: false, reason: t('label.mseHint') };
-    const roomName = String((st.title && (st.title.title || st.title.raw)) || util.domain(st.url) || 'Stream Radar room').slice(0, 90);
+    const ti = st.title || {};
+    const roomName = String(
+      ti.title ? ti.title + (ti.year ? ' (' + ti.year + ')' : '') + (ti.episode ? ' S' + (ti.season || '01') + 'E' + ti.episode : '') : ti.raw || util.domain(st.url) || 'Stream Radar room'
+    ).slice(0, 90);
     const payload = {
       mediaUrl: url,
       roomName: roomName,
@@ -501,7 +561,7 @@ try {
       case 'download': {
         const it = st.store.byId.get(msg.id);
         if (!it) return { ok: false, reason: 'not found' };
-        if (it.kind === 'segmentgroup') return { ok: false, reason: 'a segment group is not a single file — open the matching playlist instead' };
+        if (it.kind === 'segmentgroup') return { ok: false, reason: 'a segment group is not a single file. Open the matching playlist instead.' };
         const filename = downloadName(it, st);
         if (it.category === 'hls' || it.category === 'dash') {
           try {
@@ -548,7 +608,7 @@ try {
           const vtt = await SR.subs.resolve(it, settings, {});
           st.pendingSub = { vtt: vtt, name: it.filename || it.name, provider: it.provider };
           st.sub.chosen = { index: Number(msg.index || 0), name: it.name };
-          toastTo(tabId, t('panel.subs.found') + ' · ' + shorten(it.name || it.filename, 30), 'ok', { id: 'sub-attach', label: t('panel.subs.attach') });
+          toastTo(tabId, t('panel.subs.found') + ': ' + shorten(it.name || it.filename, 30), 'ok', { id: 'sub-attach', label: t('panel.subs.attach') });
           broadcast(tabId, 'sub');
           return { ok: true };
         } catch (e) {
@@ -590,6 +650,10 @@ try {
         return { ok: true, history: historyQueue.slice(0, 80) };
       case 'get-state':
         return { ok: true, state: publicState(st), history: historyQueue.slice(0, 80) };
+      case 'update-status':
+        return { ok: true, update: updateState, dynamic: SR.dynamic ? { version: SR.dynamic.version, embedHosts: SR.dynamic.embedHosts.length, adHosts: SR.dynamic.adHosts.length, signed: SR.dynamic.signatureOk } : null, patch: Number(settings.patchVersion || 0) };
+      case 'check-updates':
+        return await checkForUpdates('manual');
       case 'search-subtitles-manual':
         return { ok: true, res: await SR.subs.search({ title: msg.title, year: msg.year || null, season: msg.season || null, episode: msg.episode || null }, settings, {}) };
       default:
@@ -605,8 +669,13 @@ try {
     return sanitize(base + ep + tag) + '.' + ext;
   }
 
+  /** Filesystem-safe but still readable: "Dune: Part Two" → "Dune Part Two". */
   function sanitize(s) {
-    return String(s || 'stream').replace(/[\\/:*?"<>|]+/g, '.').replace(/\.{2,}/g, '.').replace(/^\.+|\.+$/g, '').slice(0, 110);
+    return String(s || 'stream')
+      .replace(/[\\/:*?"<>|]+/g, ' ')
+      .replace(/\s{2,}/g, ' ')
+      .replace(/^[ .]+|[ .]+$/g, '')
+      .slice(0, 110);
   }
 
   function isBlockedHost(url) {
@@ -655,7 +724,7 @@ try {
         toastTo(tabId, t('toast.recordSaved', { size: util.formatBytes(p.bytes) }), 'ok');
         return { ok: true };
       case 'record-error':
-        toastTo(tabId, t('toast.recordEmpty') + (p.reason ? ' — ' + p.reason : ''), 'warn');
+        toastTo(tabId, t('toast.recordEmpty') + (p.reason ? ': ' + p.reason : ''), 'warn');
         return { ok: true };
       case 'heuristic-hit':
       case 'scan-info':
@@ -718,13 +787,16 @@ try {
             }
             return { ok: true };
           case 'health':
-            if (st) st.health = msg.payload;
+            if (st) st.health = msg.payload || { kind: msg.kind, detail: msg.detail };
             return { ok: true };
           case 'ui-ready': {
             if (!st) return { ok: false };
             st.contentReady = true;
             st.url = st.url || sender.url || '';
             await restore(tabId);
+            // give the freshly injected frame the verified rule pack + patch
+            const [pk, pt] = await Promise.all([storedPack(), storedPatch()]);
+            if (pk || pt) api.tabs.sendMessage(tabId, { type: 'rules', payload: { pack: pk, patch: pt } }).catch(() => {});
             await broadcast(tabId, 'init');
             setTimeout(() => api.tabs.sendMessage(tabId, { type: 'state', payload: publicState(st), what: 'late' }).catch(() => {}), 2600);
             setTimeout(() => api.tabs.sendMessage(tabId, { type: 'get-title' }).catch(() => {}), 6500);
@@ -733,7 +805,9 @@ try {
           case 'wake':
             return { ok: true };
           case 'action':
-            return await handleAction(Object.assign({}, msg.payload || {}, { tabId: tabId }), sender);
+            // canonical: {type:'action', payload:{name,…}}; also accept the flat
+            // shape so an old content script in a stale tab never breaks silently.
+            return await handleAction(Object.assign({}, msg.payload || msg, { tabId: tabId }), sender);
           case 'get-party-payload': {
             const key = PARTY_PREFIX + tabId;
             const stored = await api.storage.local.get(key);
@@ -797,6 +871,8 @@ try {
   async function boot() {
     settings = await SR.settings.load(true);
     applySettings();
+    await loadRemote();
+    if (Date.now() - Number(settings.lastUpdateCheck || 0) > Math.max(1, Number(settings.updateCheckHours || 12)) * 3600000) checkForUpdates('startup').catch(() => {});
     try {
       const h = await api.storage.local.get(HISTORY_KEY);
       if (Array.isArray(h[HISTORY_KEY])) historyQueue.push(...h[HISTORY_KEY]);
@@ -806,6 +882,7 @@ try {
       api.runtime.onInstalled.addListener((d) => {
         buildContextMenus();
         if (d && d.reason === 'install') api.tabs.create({ url: api.runtime.getURL('options/options.html?welcome=1'), active: true });
+        checkForUpdates('install').catch(() => {});
       });
     }
     if (api.runtime.onStartup) api.runtime.onStartup.addListener(buildContextMenus);
@@ -883,8 +960,14 @@ try {
 
     if (api.alarms && api.alarms.create) {
       api.alarms.create('srad:prune', { periodInMinutes: 30 });
+      const every = Math.max(1, Number(settings.updateCheckHours || 12));
+      api.alarms.create('srad:update', { periodInMinutes: every * 60, delayInMinutes: 2 });
       if (api.alarms.onAlarm) {
         api.alarms.onAlarm.addListener(async (a) => {
+          if (a && a.name === 'srad:update') {
+            await checkForUpdates('scheduled');
+            return;
+          }
           if (!a || a.name !== 'srad:prune') return;
           const now = Date.now();
           for (const [k, v] of REPORTED) if (now - v > 120000) REPORTED.delete(k);

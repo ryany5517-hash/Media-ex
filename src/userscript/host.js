@@ -189,10 +189,10 @@
     if (isNew && !item.isAd) {
       if (isTop) {
         const label = rules.CATEGORY_LABEL[item.category] || 'MEDIA';
-        toast(t('toast.newmedia', { type: label }) + (item.quality ? ' · ' + item.quality : ''), 'ok');
+        toast(t('toast.newmedia', { type: label }) + (item.quality ? ', ' + item.quality : ''), 'ok');
         if (settings.notify && (typeof GM_notification === 'function' || GM.notification)) {
           try {
-            (GM_notification || GM.notification)({ title: 'Stream Radar · ' + label, text: (state.title && state.title.title ? state.title.title + ' — ' : '') + (item.url || '').slice(0, 90) });
+            (GM_notification || GM.notification)({ title: 'Stream Radar, ' + label, text: (state.title && state.title.title ? state.title.title + ' — ' : '') + (item.url || '').slice(0, 90) });
           } catch (_) {}
         }
       }
@@ -213,7 +213,7 @@
   root.addEventListener('message', (ev) => {
     const d = ev.data;
     if (!d || d.srad !== 1 || d.to === 'page') return;
-    if (ev.source !== root && ev.source !== W) return;
+    // no ev.source identity check: see the note in src/content/content.js
     switch (d.kind) {
       case 'hello':
         state.pageHooks = true;
@@ -296,7 +296,7 @@
     (doc.body || doc.documentElement).appendChild(a);
     a.click();
     a.remove();
-    toast('✓ ' + name, 'ok');
+    toast(name + ' saved', 'ok');
   }
 
   function attachHere() {
@@ -307,7 +307,7 @@
       const track = doc.createElement('track');
       track.kind = 'subtitles';
       track.srclang = 'id';
-      track.label = 'Indonesian · Stream Radar';
+      track.label = 'Indonesian (Stream Radar)';
       track.default = true;
       track.src = url;
       video.appendChild(track);
@@ -317,7 +317,7 @@
       } catch (_) {}
       n++;
     }
-    toast(n ? t('panel.subs.found') + ' ×' + n : 'no <video> element found on this frame', n ? 'ok' : 'warn');
+    toast(n ? t('panel.subs.found') + ' x' + n : 'no <video> element found on this frame', n ? 'ok' : 'warn');
   }
 
   /* ------------------------------------------------------------------ *
@@ -375,6 +375,7 @@
   function ensureUi() {
     if (ui || !isTop || !SR.ui) return;
     ui = SR.ui.create({
+      shadowMode: root.__sradOpenShadow ? 'open' : 'closed',
       getSettings: () => settings,
       onAction: (action, payload) => {
         const it = state.items.find((x) => x.id === payload.id) || state.ads.find((x) => x.id === payload.id) || {};
@@ -450,22 +451,22 @@
           (doc.body || doc.documentElement).appendChild(a);
           a.click();
           a.remove();
-          toast('✓ ' + a.download, 'ok');
+          toast(a.download + ' saved', 'ok');
         })
         .catch((e) => toast(t('toast.error', { msg: String((e && e.message) || e) }), 'err'));
       return;
     }
     const name = ((state.title && state.title.title) || it.name || 'stream').replace(/[\\/:*?"<>|]/g, '.') + '.' + (it.ext || 'mp4');
     try {
-      if (typeof GM_download === 'function') return GM_download({ url: it.url, name: name, onload: () => toast('✓ ' + name, 'ok'), onerror: (e) => toast(t('toast.error', { msg: e && e.error }), 'err') });
+      if (typeof GM_download === 'function') return GM_download({ url: it.url, name: name, onload: () => toast(name + ' saved', 'ok'), onerror: (e) => toast(t('toast.error', { msg: e && e.error }), 'err') });
       if (GM.download) return GM.download(it.url, name);
     } catch (_) {}
     root.open(it.url, '_blank');
   }
 
   function openSettingsHelp() {
-    const html = `<html><head><title>Stream Radar — settings</title><style>body{font:14px system-ui;background:#141726;color:#e9edf7;padding:26px;max-width:780px;margin:auto}input,textarea{width:100%;padding:9px;border-radius:8px;border:1px solid #333a55;background:#1d2236;color:#e9edf7;font-family:monospace}label{display:block;margin:14px 0 4px;font-weight:600}button{margin-top:16px;padding:10px 18px;border-radius:10px;border:0;background:#6d5efc;color:#fff;font-weight:700;cursor:pointer}.k{color:#2ee6c5}</style></head><body>
-      <h2>Stream Radar (userscript) — settings</h2>
+    const html = `<html><head><title>Stream Radar settings</title><style>body{font:14px system-ui;background:#141726;color:#e9edf7;padding:26px;max-width:780px;margin:auto}input,textarea{width:100%;padding:9px;border-radius:8px;border:1px solid #333a55;background:#1d2236;color:#e9edf7;font-family:monospace}label{display:block;margin:14px 0 4px;font-weight:600}button{margin-top:16px;padding:10px 18px;border-radius:10px;border:0;background:#6d5efc;color:#fff;font-weight:700;cursor:pointer}.k{color:#2ee6c5}</style></head><body>
+      <h2>Stream Radar settings (userscript)</h2>
       <p class="k">Saved with GM_setValue; applies after a page reload.</p>
       <label>SubDL API key</label><input id="subdl" value="${esc(settings.subdlApiKey)}" placeholder="from https://subdl.com/panel/api">
       <label>OpenSubtitles API key</label><input id="os" value="${esc(settings.osApiKey)}">
@@ -547,7 +548,7 @@
     postCmd('config', config());
     setTimeout(() => postCmd('scan'), 2500);
     setTimeout(() => {
-      if (!state.pageHooks) toast('Page hooks blocked by the site CSP — DOM/heuristic layers still active', 'warn');
+      if (!state.pageHooks) toast('Page hooks blocked by the site CSP. DOM and heuristic layers still run.', 'warn');
     }, 3000);
     if (typeof GM_registerMenuCommand === 'function') {
       GM_registerMenuCommand('Toggle panel', () => ui && ui.toggle());

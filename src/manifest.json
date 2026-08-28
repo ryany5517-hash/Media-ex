@@ -65,7 +65,10 @@
         "shared/rules.js",
         "shared/title-cleaner.js",
         "shared/i18n.js",
+        "shared/icons.js",
+        "shared/updater.js",
         "shared/dom-scanner.js",
+        "vendor/motion.min.js",
         "content/ui-styles.js",
         "content/ui.js",
         "content/content.js"
@@ -97,6 +100,7 @@
       "resources": [
         "page/inject.js",
         "shared/*.js",
+        "vendor/*.js",
         "icons/*.png",
         "watchparty/watchparty.js"
       ],

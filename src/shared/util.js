@@ -414,6 +414,13 @@
     subtitleLang: 'id',
     blockedHosts: {},
     allowPatterns: '',
+    updateEnabled: true, // hot rule packs (data only, signed)
+    updateUrl: 'https://raw.githubusercontent.com/ryany5517-hash/Media-ex/live/',
+    updateCheckHours: 12,
+    autoPatch: false, // opt-in: signed code patch for content-script fixes
+    rulesVersion: 0,
+    patchVersion: 0,
+    lastUpdateCheck: 0,
     blockPatterns: '',
     debug: false,
   };

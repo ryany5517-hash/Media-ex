@@ -46,7 +46,7 @@
     });
     const hosts = Object.keys(settings.blockedHosts || {}).filter((h) => settings.blockedHosts[h]);
     $('#blockedHosts').value = hosts.join('\n');
-    $('#fabPosLabel').textContent = settings.fabPos ? settings.fabPos.x + ' × ' + settings.fabPos.y : 'default';
+    $('#fabPosLabel').textContent = settings.fabPos ? settings.fabPos.x + ', ' + settings.fabPos.y : 'default';
     const lang = settings.lang === 'id' ? 'id' : settings.lang === 'en' ? 'en' : util.detect ? 'en' : SR.i18n.detect(navigator);
     SR.i18n.set(settings.lang && settings.lang !== 'auto' ? settings.lang : SR.i18n.detect(navigator));
     $('#optTitle').textContent = SR.i18n.t('settings.title');
@@ -98,6 +98,7 @@
       if (e.target.id === 'exportBtn') return exportJson();
       if (e.target.id === 'importBtn') return $('#importFile').click();
       if (e.target.id === 'testBtn') return testSearch();
+      if (e.target.id === 'checkUpdates') return checkUpdates();
       if (e.target.id === 'resetBtn') {
         if (!confirm('Reset all Stream Radar settings? API keys will be removed.')) return;
         return SR.settings.save(Object.assign({}, SR.defaults)).then(() => {
@@ -191,11 +192,35 @@
       const res = await SR.subs.search(want, settings, {});
       out.textContent =
         'query: ' + JSON.stringify(want) + '\nproviders: ' + JSON.stringify(res.providerInfo, null, 1) + '\nerrors: ' + (res.errors.join('; ') || 'none') +
-        '\n\n' + (res.results.length ? res.results.map((r) => `#${r.rank} [${r.providerLabel}] ${r.name} · ${r.langCode} · ${r.format} · score ${r.score}`).join('\n') : 'no results');
-      if (res.results[0]) out.textContent += '\n\nTip: click “Pick” in the popup to download + convert that one to WebVTT.';
+        '\n\n' + (res.results.length ? res.results.map((r) => `#${r.rank} [${r.providerLabel}] ${r.name} [${r.langCode}] ${r.format} score ${r.score}`).join('\n') : 'no results');
+      if (res.results[0]) out.textContent += '\n\nTip: use Pick in the popup to download and convert that one to WebVTT.';
     } catch (e) {
       out.textContent = 'failed: ' + ((e && e.stack) || e);
     }
+  }
+
+  async function checkUpdates() {
+    const out = $('#updateOut');
+    $('#updateInfo').textContent = 'memeriksa…';
+    out.hidden = false;
+    try {
+      const res = await api.runtime.sendMessage({ type: 'action', payload: { name: 'check-updates' } });
+      const st = await api.runtime.sendMessage({ type: 'action', payload: { name: 'update-status' } });
+      out.textContent = JSON.stringify({ check: res, status: st }, null, 1);
+      $('#updateInfo').textContent = (res && res.status) || 'error';
+    } catch (e) {
+      $('#updateInfo').textContent = 'error';
+      out.textContent = String((e && e.message) || e);
+    }
+  }
+
+  async function updateInfo() {
+    try {
+      const st = await api.runtime.sendMessage({ type: 'action', payload: { name: 'update-status' } });
+      const d = (st && st.dynamic) || {};
+      $('#updateInfo').textContent =
+        'pack v' + (d.version || 0) + ', hosts +' + (d.embedHosts || 0) + ' ads +' + (d.adHosts || 0) + ', sign '+ (d.signed ? 'ok' : 'belum ada') + ' · patch v' + ((st && st.patch) || 0);
+    } catch (_) {}
   }
 
   async function storageInfo() {
@@ -203,7 +228,7 @@
       const bytes = await (api.storage.local.getBytesInUse ? api.storage.local.getBytesInUse() : Promise.resolve(-1));
       const h = (await api.storage.local.get('srad:history'))['srad:history'] || [];
       $('#storageInfo').textContent =
-        (bytes > 0 ? util.formatBytes(bytes) + ' used · ' : '') + h.length + ' saved stream links · settings key: srad:settings';
+        (bytes > 0 ? util.formatBytes(bytes) + ' used, ' : '') + h.length + ' saved stream links, settings key: srad:settings';
     } catch (_) {
       $('#storageInfo').textContent = 'storage: ' + Object.keys(settings).length + ' keys';
     }
@@ -231,6 +256,7 @@
     fill();
     wire();
     storageInfo();
+    updateInfo();
   }
   boot();
 })();

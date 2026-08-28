@@ -1,58 +1,101 @@
 /**
- * Stream Radar — the whole UI (FAB + panel + toasts + settings popover).
+ * Stream Radar — the UI (FAB, panel, tabs, toasts, settings sheet)
  * ------------------------------------------------------------------
- * Rendered inside a *closed shadow root* on every frame's document, so the
- * page cannot restyle it and it cannot restyle the page.
- * Pure view: it never fetches anything itself, it calls `onAction()` and the
- * content script relays that to the background worker, then re-renders us.
+ * View only. It never fetches and never decides what counts as media; it renders
+ * `state` from the background worker and reports intent through `onAction`.
+ *
+ * Polish details, all deliberate:
+ *   • Motion (vendored, src/vendor/motion.min.js) drives entrance, exit, FLIP
+ *     list reordering and press springs; when it is unavailable (older browser,
+ *     userscript) every effect degrades to CSS and nothing breaks.
+ *   • pointerdown ripple on every button + optional haptic tick on touch devices,
+ *     so each click has a visible, immediate answer.
+ *   • Icons are Lucide SVG (src/shared/icons.js). No emoji, no decorative glyphs.
+ *   • Closed shadow root: the host page cannot restyle us and we cannot restyle it.
+ *   • Keyboard: Tab/Shift+Tab, Enter/Space on the FAB, ↑↓ between rows, E to
+ *     expand, Esc to close. Focus is trapped while the panel is open.
+ *   • All durations honour prefers-reduced-motion (see ui-styles.js).
  */
 (function (root) {
   'use strict';
   const SR = (root.SR = root.SR || {});
   const util = SR.util;
+  const ico = (n, cls) => (SR.icons ? SR.icons(n, cls) : '');
 
-  const ICONS = {
-    film: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="4" width="19" height="16" rx="3"/><path d="M7 4v16M17 4v16M2.5 9.3h4.5M2.5 14.7h4.5M17 9.3h4.5M17 14.7h4.5"/></svg>',
-    close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>',
-    gear: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-2.9 1.2V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-2.9-1.2l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15H4.5a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.2-2.9l-.06-.06A2 2 0 1 1 8.57 5.2l.06.06A1.7 1.7 0 0 0 10.5 4.6V4.5a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 2.9 1.2l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.1a1.7 1.7 0 0 0 1.57 1.04h.14a2 2 0 1 1 0 4H21a1.7 1.7 0 0 0-1.6 1.2z"/></svg>',
-    refresh: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M20.5 12a8.5 8.5 0 1 1-2.6-6.1"/><path d="M20.8 4.2v5h-5"/></svg>',
-    copy: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="9" y="9" width="11" height="11" rx="2.4"/><path d="M5 15.5A2.5 2.5 0 0 1 3.6 13V5.6A2.6 2.6 0 0 1 6.2 3h7.4A2.6 2.6 0 0 1 16 5.6"/></svg>',
-    download: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M12 3.6v11M7.4 10.2 12 14.8l4.6-4.6M4.5 19.4h15"/></svg>',
-    party: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 20.5 8 9l8.5 3.5z"/><path d="M14.5 4.2a3 3 0 0 1 5.6 2M17.6 2.5l.9 1.7M21.4 5.4l-1.9.7"/></svg>',
-    subs: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="2.6" y="4.6" width="18.8" height="14.8" rx="3"/><path d="M6.4 13.2h5M13.6 13.2h4M6.4 9.4h3.2M11.6 9.4h6"/></svg>',
-    open: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M14 4h6v6M20 4l-8.5 8.5"/><path d="M18 14.5V18a2.5 2.5 0 0 1-2.5 2.5H6A2.5 2.5 0 0 1 3.5 18V8.5A2.5 2.5 0 0 1 6 6h3.6"/></svg>',
-    sun: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2.6v2.2M12 19.2v2.2M2.6 12h2.2M19.2 12h2.2M5.4 5.4l1.6 1.6M17 17l1.6 1.6M18.6 5.4 17 7M7 17l-1.6 1.6"/></svg>',
-    moon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M20 14.4A8.4 8.4 0 0 1 9.6 4 8.6 8.6 0 1 0 20 14.4z"/></svg>',
-    play: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13l11-6.5z"/></svg>',
-    check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M4.5 12.5 9.5 17.5 20 6.5"/></svg>',
-    rec: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="6"/></svg>',
-    chevron: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 10.5 12 14.5 16 10.5"/></svg>',
+  /* ---------------- motion bridge (safe when Motion is missing) ---------------- */
+  const reduced = () => {
+    try {
+      return root.matchMedia && root.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    } catch (_) {
+      return false;
+    }
   };
+  function animate(el, frames, opts) {
+    if (!el || reduced()) return null;
+    const M = root.Motion;
+    try {
+      if (M && M.animate) return M.animate(el, frames, Object.assign({ duration: 0.24, easing: [0.22, 0.72, 0.24, 1] }, opts || {}));
+      if (el.animate) return el.animate(frames, { duration: ((opts && opts.duration) || 0.24) * 1000, easing: 'cubic-bezier(.22,.72,.24,1)', fill: 'both' });
+    } catch (_) {}
+    return null;
+  }
+  const spring = { duration: 0.34, easing: [0.2, 0.9, 0.28, 1.24] };
+  function vibrate(ms) {
+    try {
+      if (root.navigator && root.navigator.vibrate && matchMedia('(pointer: coarse)').matches) root.navigator.vibrate(ms);
+    } catch (_) {}
+  }
 
-  const t = (k, v) => SR.i18n.t(k, v);
+  /* ---------------- ripples ---------------- */
+  function attachRipples(shadow) {
+    shadow.addEventListener('pointerdown', (e) => {
+      const btn = e.target.closest && e.target.closest('.srad-btn, .srad-iconbtn, .srad-tab, .srad-switch');
+      if (!btn || reduced()) return;
+      const r = btn.getBoundingClientRect();
+      const size = Math.max(r.width, r.height) * 1.9;
+      const span = root.document.createElement('span');
+      span.className = 'srad-ripple';
+      span.style.cssText = `width:${size}px;height:${size}px;left:${e.clientX - r.left - size / 2}px;top:${e.clientY - r.top - size / 2}px`;
+      btn.appendChild(span);
+      const anim = animate(span, { transform: ['scale(0)', 'scale(1)'], opacity: [0.24, 0] }, { duration: 0.5 });
+      const kill = () => span.remove();
+      if (anim && anim.finished) anim.finished.then(kill, kill);
+      else setTimeout(kill, 480);
+    });
+  }
 
   SR.ui = {
-    /**
-     * @param {{onAction:Function, getSettings:Function, isTopFrame?:boolean}} opts
-     */
     create(opts) {
       const o = opts || {};
-      const api = { open: false, lastCount: 0, items: [], ads: [], settings: {}, state: null, theme: 'system' };
-      let host, shadow, rootEl, fab, badge, panel, listEl, toastsEl, popEl, liveEl;
-      let drag = null;
-      let mounted = false;
+      const t = (k, v) => SR.i18n.t(k, v);
+      const api = {
+        open: false,
+        tab: 'media',
+        lastCount: -1,
+        items: [],
+        ads: [],
+        showAds: false,
+        settings: {},
+        state: null,
+        popOpen: false,
+      };
+      let host, shadow, rootEl, fab, badge, panel, bodyEl, toastsEl, footEl, metaEl, tabsEl;
+      let drag = null,
+        moved = false,
+        lastFocused = null,
+        mounted = false,
+        rowRects = new Map();
 
-      /* ---------- mount ---------- */
+      /* ================= mount ================= */
       function mount() {
         if (mounted || !root.document || !root.document.documentElement) return false;
         mounted = true;
         host = root.document.createElement('div');
         host.id = 'stream-radar-host';
         host.setAttribute('data-srad', '1');
-        // `closed` by default so the host page can never reach our UI.
-        // (tests pass shadowMode:'open' to assert the generated markup)
-        shadow = host.attachShadow({ mode: o.shadowMode === 'open' ? 'open' : 'closed', delegatesFocus: false });
-
+        // closed by default: the page must not be able to read or poke our UI.
+        // Tests opt into an open root to assert generated markup (see content.js).
+        shadow = host.attachShadow({ mode: o.shadowMode === 'open' ? 'open' : 'closed' });
         const style = root.document.createElement('style');
         style.textContent = SR.uiCss;
         shadow.appendChild(style);
@@ -61,67 +104,409 @@
         rootEl.className = 'srad-root';
         rootEl.setAttribute('dir', 'ltr');
         rootEl.innerHTML =
-          '<div class="srad-toasts" part="toasts" aria-live="polite" aria-atomic="false"></div>' +
-          '<div class="srad-panel" role="dialog" aria-modal="false" aria-label="' + util.esc(t('panel.title')) + '" data-open="0"></div>' +
+          '<div class="srad-toasts" role="region" aria-live="polite" aria-label="' + esc(t('toast.title', {})) + '"></div>' +
+          '<section class="srad-panel" role="dialog" aria-modal="false" aria-label="' + esc(t('panel.title')) + '" data-open="0">' +
+          header() +
+          '<div class="srad-tabs" role="tablist"></div>' +
+          '<div class="srad-meta" data-el="meta"></div>' +
+          '<div class="srad-body" role="region" tabindex="-1" data-el="body"></div>' +
+          footer() +
+          '<div class="srad-pop" data-el="pop" role="region" aria-label="' + esc(t('panel.settings')) + '"></div>' +
+          '</section>' +
           '<div class="srad-fab" role="button" tabindex="0" aria-haspopup="dialog" aria-expanded="false"></div>' +
-          '<div class="srad-sr" aria-live="polite"></div>';
+          '<div class="srad-sr" role="status" aria-live="polite" data-el="live"></div>';
         shadow.appendChild(rootEl);
 
+        panel = rootEl.querySelector('.srad-panel');
+        bodyEl = panel.querySelector('[data-el="body"]');
+        metaEl = panel.querySelector('[data-el="meta"]');
+        tabsEl = panel.querySelector('.srad-tabs');
+        footEl = panel.querySelector('.srad-foot');
+        toastsEl = rootEl.querySelector('.srad-toasts');
         fab = rootEl.querySelector('.srad-fab');
         badge = root.document.createElement('div');
         badge.className = 'srad-badge';
+        badge.setAttribute('data-empty', '1');
+        badge.setAttribute('data-show', '0');
         badge.setAttribute('aria-hidden', 'true');
         fab.appendChild(badge);
-        fab.insertAdjacentHTML('afterbegin', ICONS.film);
-        panel = rootEl.querySelector('.srad-panel');
-        toastsEl = rootEl.querySelector('.srad-toasts');
-        liveEl = rootEl.querySelector('.srad-sr');
-        renderPanelShell();
-        wireEvents();
+        fab.insertAdjacentHTML('afterbegin', ico('radar'));
+        fab.setAttribute('aria-label', t('fab.label', { n: 0 }));
+
+        renderTabs();
+        renderBody();
+        renderFooter();
+        wire();
         applyFabPos((o.getSettings && o.getSettings().fabPos) || null);
         applyTheme();
         const attach = () => {
           const target = root.document.body || root.document.documentElement;
           if (target && host.parentNode !== target) target.appendChild(host);
+          animate(fab, { transform: ['scale(.6) translateY(14px)', 'scale(1) translateY(0)'], opacity: [0, 1] }, spring);
         };
         attach();
-        if (!root.document.body) {
-          root.document.addEventListener('DOMContentLoaded', attach, { once: true });
-        }
+        if (!root.document.body) root.document.addEventListener('DOMContentLoaded', attach, { once: true });
         return true;
       }
 
-      /* ---------- panel skeleton ---------- */
-      function renderPanelShell() {
-        panel.innerHTML =
-          '<div class="srad-head">' +
-          '<span class="srad-title"><span class="srad-dot"></span><span>' +
-          '<span data-el="title">' + util.esc(t('panel.title')) + '</span>' +
-          '<small data-el="subtitle">' + util.esc(t('app.tagline')) + '</small></span></span>' +
-          '<span class="srad-spacer"></span>' +
-          '<button class="srad-iconbtn" data-act="theme" title="theme" aria-label="' + util.esc(t('common.theme')) + '">' + ICONS.sun + '</button>' +
-          '<button class="srad-iconbtn" data-act="refresh" aria-label="' + util.esc(t('panel.refresh')) + '" title="' + util.esc(t('panel.refresh')) + '">' + ICONS.refresh + '</button>' +
-          '<button class="srad-iconbtn" data-act="settings" aria-label="' + util.esc(t('panel.settings')) + '" title="' + util.esc(t('panel.settings')) + '">' + ICONS.gear + '</button>' +
-          '<button class="srad-iconbtn" data-act="close" aria-label="' + util.esc(t('common.close')) + '" title="' + util.esc(t('common.close')) + '">' + ICONS.close + '</button>' +
+      function header() {
+        return (
+          '<header class="srad-head">' +
+          '<div class="srad-brand" data-el="grip">' +
+          '<span class="srad-mark">' + ico('clapperboard') + '</span>' +
+          '<span class="srad-headtxt"><span data-el="title"><b>' + esc(t('panel.title')) + '</b><small>' + esc(t('app.tagline')) + '</small></span></span>' +
           '</div>' +
-          '<div class="srad-meta" data-el="meta"></div>' +
-          '<div class="srad-list" role="list" tabindex="-1" data-el="list"></div>' +
+          '<span class="srad-spacer"></span>' +
+          iconBtn('theme', t('common.theme')) +
+          iconBtn('refresh', t('panel.refresh')) +
+          iconBtn('settings', t('panel.settings')) +
+          iconBtn('x', t('common.close')) +
+          '</header>'
+        );
+      }
+      function iconBtn(act, label) {
+        return '<button class="srad-iconbtn" data-act="' + act + '" title="' + esc(label) + '" aria-label="' + esc(label) + '">' + ico(act === 'x' ? 'x' : act === 'theme' ? 'moon' : act) + '</button>';
+      }
+      function footer() {
+        return (
           '<div class="srad-foot">' +
-          '<label class="srad-switch" title="' + util.esc(t('panel.detecting')) + '"><input type="checkbox" data-act="toggle-auto" checked><span class="srad-slider"></span><span>' + util.esc(t('panel.detecting')) + '</span></label>' +
+          '<span class="srad-count" data-el="count"></span>' +
           '<span class="srad-spacer"></span>' +
-          '<button class="srad-btn" data-act="ads"><span data-el="adslabel"></span></button>' +
-          '<button class="srad-btn" data-act="options" title="' + util.esc(t('panel.openPanel')) + '">' + ICONS.open + '<span>' + util.esc(t('panel.settings')) + '</span></button>' +
-          '<button class="srad-btn" data-act="clear">' + util.esc(t('panel.clear')) + '</button>' +
-          '</div>' +
-          '<div class="srad-pop" data-el="pop" role="region" aria-label="' + util.esc(t('panel.settings')) + '">' +
-          '<div class="srad-head"><span class="srad-title">' + util.esc(t('settings.title')) + '</span><span class="srad-spacer"></span>' +
-          '<button class="srad-iconbtn" data-act="popclose" aria-label="' + util.esc(t('common.close')) + '">' + ICONS.close + '</button></div>' +
-          '<div class="srad-popbody" data-el="popbody"></div></div>';
-        listEl = panel.querySelector('[data-el="list"]');
+          '<button class="srad-btn" data-act="ads" data-el="ads" aria-label="' + esc(t('panel.toggleAds')) + '" title="' + esc(t('panel.toggleAds')) + '"><span data-el="adslabel"></span></button>' +
+          '<button class="srad-btn" data-act="clear">' + ico('trash-2') + esc(t('panel.clear')) + '</button>' +
+          '<button class="srad-btn" data-act="options" title="' + esc(t('panel.openPanel')) + '">' + ico('settings-2') + '</button>' +
+          '</div>'
+        );
       }
 
-      /* ---------- events ---------- */
-      function wireEvents() {
+      function renderTabs() {
+        if (!tabsEl) return;
+        const sub = (api.state && api.state.sub) || {};
+        const badge = sub.status === 'found' ? (sub.items || []).length : 0;
+        tabsEl.innerHTML = [
+          ['media', t('panel.tabMedia'), 'video', ((api.state && api.state.items) || []).length],
+          ['subs', t('panel.tabSubs'), 'captions', badge],
+          ['info', t('panel.tabInfo'), 'info', 0],
+        ]
+          .map(
+            ([id, label, icon, count]) =>
+              '<button class="srad-tab" role="tab" id="srad-tab-' + id + '" aria-controls="srad-pane-' + id + '" aria-selected="' +
+              (api.tab === id ? 'true' : 'false') +
+              '" data-act="tab" data-tab="' + id + '">' + ico(icon) + esc(label) + (count ? '<i>' + count + '</i>' : '') + '</button>'
+          )
+          .join('');
+      }
+
+      /* ================= render ================= */
+      function render(state) {
+        if (!mounted && !mount()) return;
+        if (state) api.state = state;
+        const s = (api.state && api.state.settings) || api.settings || {};
+        api.settings = s;
+        applyTheme();
+        renderTabs();
+        renderMeta();
+        renderBody();
+        renderFooter();
+        updateBadge();
+      }
+
+      function updateBadge() {
+        const items = visible();
+        const n = items.length;
+        badge.textContent = n > 99 ? '99+' : String(n);
+        badge.setAttribute('data-show', n ? '1' : '0');
+        badge.setAttribute('data-empty', n ? '0' : '1');
+        fab.setAttribute('aria-label', t('fab.label', { n: n }));
+        fab.setAttribute('data-live', api.settings.enabled === false ? '0' : '1');
+        if (api.lastCount >= 0 && n > api.lastCount) pulse();
+        api.lastCount = n;
+      }
+
+      function pulse() {
+        fab.setAttribute('data-pulse', '1');
+        animate(fab, { transform: ['scale(1)', 'scale(1.12)', 'scale(1)'] }, spring);
+        setTimeout(() => fab.removeAttribute('data-pulse'), 3100);
+      }
+
+      function visible() {
+        const items = ((api.state && api.state.items) || []).slice();
+        if (api.showAds || (api.settings && api.settings.showAds)) items.push(...((api.state && api.state.ads) || []));
+        return items.sort(rankItems);
+      }
+      function rankItems(a, b) {
+        const w = (x) => (SR.rules && SR.rules.CATEGORY_WEIGHT[x.category]) || 0;
+        return (b.confidence || 0) - (a.confidence || 0) || w(b) - w(a) || (b.ts || 0) - (a.ts || 0);
+      }
+
+      function renderMeta() {
+        const st = api.state || {};
+        const info = st.title;
+        const titleEl = panel.querySelector('[data-el="title"]');
+        if (titleEl) {
+          titleEl.innerHTML =
+            '<b>' + esc(info && info.title ? info.title + (info.year ? ' (' + info.year + ')' : '') : t('panel.title')) + '</b>' +
+            '<small>' + esc(util.host((info && info.url) || root.location.href)) + '</small>';
+        }
+        const chips = [];
+        if (info && info.isJunk) chips.push(chip('warn', 'search', t('panel.noTitle')));
+        if (info && info.year) chips.push(chip('year', 'calendar', info.year));
+        const ep = info && SR.title && SR.title.episodeLabel ? SR.title.episodeLabel(info) : null;
+        if (ep) chips.push(chip('ep', 'captions', ep));
+        if (info && info.kind === 'episode') chips.push(chip('ep', 'monitor-smartphone', t('panel.series')));
+        if (st.drm) chips.push(chip('err', 'shield-check', t('label.drm') + ' ' + st.drm));
+        const layers = st.layers || {};
+        const on = Object.keys(layers).filter((k) => layers[k]).length;
+        if (on) chips.push(chip('', 'list-filter', t('panel.layers', { n: on })));
+        if (st.pagePaused) chips.push(chip('warn', 'eye', t('panel.paused')));
+        const dyn = st.rulesVersion ? chip('', 'sparkles', t('update.pack') + ' ' + st.rulesVersion) : '';
+        if (dyn) chips.push(dyn);
+        metaEl.innerHTML = chips.join('');
+      }
+      function chip(kind, icon, text) {
+        return '<span class="srad-chip"' + (kind ? ' data-kind="' + kind + '"' : '') + '>' + (icon ? ico(icon) : '') + esc(text) + '</span>';
+      }
+
+      function renderBody() {
+        if (!bodyEl) return;
+        if (api.tab === 'subs') return renderSubs();
+        if (api.tab === 'info') return renderInfo();
+        const items = visible();
+        const before = captureRects();
+        if (!items.length) {
+          bodyEl.innerHTML =
+            '<div class="srad-empty">' + ico('loader') + '<b>' + esc(t('panel.empty')) + '</b><p>' + esc(t('panel.emptyHint')) + '</p></div>';
+          rowRects = new Map();
+          return;
+        }
+        bodyEl.innerHTML = '<div role="list" data-el="list">' + items.map(itemHtml).join('') + '</div>';
+        flipRows(before);
+        const rows = [...bodyEl.querySelectorAll('.srad-item')];
+        rows.forEach((el, i) => {
+          if (i > 7) return;
+          animate(el, { opacity: [0, 1], transform: ['translateY(8px) scale(.99)', 'none'] }, { duration: 0.26, delay: i * 0.022 });
+        });
+      }
+
+      function captureRects() {
+        const map = new Map();
+        for (const el of bodyEl.querySelectorAll('.srad-item')) map.set(el.getAttribute('data-id'), el.getBoundingClientRect().top);
+        return map;
+      }
+      /** FLIP: when the ranking changes, rows glide instead of jumping. */
+      function flipRows(before) {
+        if (reduced() || !before.size) return;
+        for (const el of bodyEl.querySelectorAll('.srad-item')) {
+          const prev = before.get(el.getAttribute('data-id'));
+          if (prev == null) continue;
+          const dy = prev - el.getBoundingClientRect().top;
+          if (Math.abs(dy) > 1) animate(el, { transform: ['translateY(' + dy + 'px)', 'translateY(0)'] }, { duration: 0.3 });
+        }
+      }
+
+      function itemHtml(it) {
+        const cat = it.category || 'other';
+        const label = (SR.rules && SR.rules.CATEGORY_LABEL && SR.rules.CATEGORY_LABEL[cat]) || cat.toUpperCase();
+        const name = it.name || urlName(it.url);
+        const tags = [];
+        if (it.quality) tags.push('<span class="srad-tag" data-tone="q">' + esc(it.quality) + '</span>');
+        if (it.sizeLabel) tags.push('<span class="srad-tag">' + esc(it.sizeLabel) + '</span>');
+        if (it.durationLabel) tags.push('<span class="srad-tag">' + esc(it.durationLabel) + '</span>');
+        if (it.isLive) tags.push('<span class="srad-tag" data-tone="warn">' + esc(t('label.live')) + '</span>');
+        if (it.aes) tags.push('<span class="srad-tag" data-tone="warn">' + ico('shield-check') + esc(t('label.aes')) + '</span>');
+        if (it.drm) tags.push('<span class="srad-tag" data-tone="err">' + ico('shield-check') + esc(t('label.drm')) + '</span>');
+        if (it.segmentCount) tags.push('<span class="srad-tag">' + esc(t('label.segments', { n: it.segmentCount, size: it.segmentBytesLabel || '' })) + '</span>');
+        if (it.mseBytes) tags.push('<span class="srad-tag">' + esc(util.formatBytes(it.mseBytes)) + ' ' + esc(t('label.buffered')) + '</span>');
+        if (it.isAd) tags.push('<span class="srad-tag" data-tone="err">' + esc(t('label.ad')) + '</span>');
+        if (it.via && it.via.length) tags.push('<span class="srad-tag" title="' + esc(t('label.via') + ': ' + it.via.join(', ')) + '">' + it.via.length + ' ' + esc(t('label.sources')) + '</span>');
+        const subs = it.sub || {};
+        if (subs.status && subs.status !== 'idle') tags.push('<span class="srad-tag" data-tone="' + subTone(subs.status) + '"' + (subs.status === 'searching' ? ' data-busy="1"' : '') + '>' + (subs.status === 'searching' ? ico('loader') : ico('captions')) + esc(subLabel(subs)) + '</span>');
+
+        const via = [].concat(it.via || []);
+        const conf = Math.min(3, via.length + (it.size ? 1 : 0) + (it.quality ? 1 : 0));
+        const dots = [0, 1, 2].map((i) => '<i data-on="' + (i < conf ? 1 : 0) + '"></i>').join('');
+        const thumb = it.thumb ? '<img src="' + esc(it.thumb) + '" alt="" loading="lazy">' : ico(cat === 'segment' ? 'list-filter' : cat === 'blob' ? 'video' : cat === 'hls' ? 'play' : 'video');
+        const variants = (it.variants || [])
+          .slice(0, 14)
+          .map(
+            (v, i) =>
+              '<div class="srad-variant"><span class="srad-vq">' + esc(v.quality || (v.height ? util.qualityLabel(v.height) : '?')) + '</span><b>' + esc(v.codecs || label) + '</b>' +
+              '<span>' + esc(v.bandwidthLabel || '') + '</span><button class="srad-btn" data-act="variant" data-id="' + esc(it.id) + '" data-variant-id="' + i + '">' + ico('copy') + esc(t('action.copy')) + '</button></div>'
+          )
+          .join('');
+        const canRecord = cat === 'blob';
+        return (
+          '<article class="srad-item" role="listitem" tabindex="0" data-id="' + esc(it.id) + '" data-ad="' + (it.isAd ? 1 : 0) + '" aria-label="' + esc(label + ' ' + name) + '">' +
+          '<div class="srad-thumb" data-cat="' + esc(cat) + '">' + thumb + '</div>' +
+          '<div class="srad-main">' +
+          '<div class="srad-row1"><span class="srad-name">' + esc(name) + '</span><span class="srad-conf" aria-hidden="true">' + dots + '</span></div>' +
+          '<div class="srad-url" title="' + esc(it.url) + '">' + esc(shortenUrl(it.url)) + '</div>' +
+          '<div class="srad-tags">' + tags.join('') + '</div>' +
+          '<div class="srad-actions">' +
+          '<button class="srad-btn" data-act="watchparty" data-primary="1">' + ico('users') + esc(t('action.watchparty')) + '</button>' +
+          '<button class="srad-btn" data-act="copy">' + ico('copy') + esc(t('action.copy')) + '</button>' +
+          '<button class="srad-btn" data-act="download">' + ico('download') + esc(it.category === 'hls' || it.category === 'dash' ? t('action.downloadPlaylist') : t('action.download')) + '</button>' +
+          '<button class="srad-btn" data-act="subs">' + ico('captions') + esc(t('action.subs')) + '</button>' +
+          '<button class="srad-btn" data-act="ffmpeg" title="' + esc(t('action.ffmpeg')) + '" aria-label="' + esc(t('action.ffmpeg')) + '">' + ico('link-2') + '</button>' +
+          (variants ? '<button class="srad-btn" data-act="toggle-expand" aria-expanded="false">' + ico('chevron-down') + esc(t('action.variants', { n: (it.variants || []).length })) + '</button>' : '') +
+          (canRecord ? '<button class="srad-btn" data-act="record">' + ico('circle') + esc(t('action.record')) + '</button>' : '') +
+          '</div>' +
+          (variants ? '<div class="srad-variants">' + variants + '</div>' : '') +
+          (cat === 'blob' ? '<div class="srad-note">' + ico('info') + '<span>' + esc(t('label.mseHint')) + '</span></div>' : '') +
+          '</div></article>'
+        );
+      }
+
+      function subTone(s) {
+        return s === 'found' ? 'ok' : s === 'searching' ? 'q' : s === 'error' ? 'err' : 'warn';
+      }
+      function subLabel(subs) {
+        if (subs.status === 'found') return subs.name || t('panel.subs.found');
+        if (subs.status === 'searching') return t('panel.subs.searching');
+        if (subs.status === 'none') return t('panel.subs.none');
+        if (subs.status === 'error') return t('panel.subs.error');
+        if (subs.status === 'skipped') return t('panel.subs.skipped');
+        return '';
+      }
+      function shortenUrl(u) {
+        u = String(u || '');
+        return u.length > 118 ? u.slice(0, 56) + '…' + u.slice(-46) : u;
+      }
+      function urlName(u) {
+        try {
+          const p = new URL(u).pathname.split('/').filter(Boolean).pop() || util.host(u);
+          return decodeURIComponent(p).slice(0, 70);
+        } catch (_) {
+          return String(u).slice(0, 60);
+        }
+      }
+
+      /* ================= subtitles pane ================= */
+      function renderSubs() {
+        const sub = (api.state && api.state.sub) || { status: 'idle', items: [] };
+        const st = {
+          idle: t('action.subs'),
+          searching: t('panel.subs.searching'),
+          found: t('panel.subs.found'),
+          none: t('panel.subs.none'),
+          error: t('panel.subs.error'),
+          skipped: t('panel.subs.skipped'),
+        };
+        const providers = sub.providers || {};
+        bodyEl.innerHTML =
+          '<div class="srad-sub-card">' +
+          '<div class="srad-sub-head">' + ico('captions') + '<span>' + esc(t('panel.subs.title')) + '</span>' +
+          '<span class="srad-state" data-s="' + esc(sub.status) + '">' + (sub.status === 'searching' ? ico('loader') : '') + esc(st[sub.status] || sub.status) + '</span></div>' +
+          (sub.query ? '<div class="srad-url" style="margin-top:6px">' + esc(sub.query) + (sub.year ? ' (' + esc(String(sub.year)) + ')' : '') + '</div>' : '') +
+          '<div class="srad-providers">' +
+          Object.keys(providers)
+            .map((k) => '<span class="srad-pv" data-s="' + esc(providers[k].status || '') + '" title="' + esc(providers[k].reason || '') + '">' + esc(providers[k].label || k) + ' ' + (providers[k].count != null ? providers[k].count : '') + '</span>')
+            .join('') +
+          '</div>' +
+          ((sub.items || []).length
+            ? '<div style="margin-top:9px">' +
+              sub.items
+                .slice(0, 6)
+                .map(
+                  (it, i) =>
+                    '<div class="srad-sub-row" data-picked="' + ((sub.chosen && sub.chosen.index === i) || (i === 0 && sub.chosen) ? 1 : 0) + '">' +
+                    '<span title="' + esc(it.name || it.filename || '') + '">' + esc(it.name || it.filename || t('panel.subs.found')) + '</span>' +
+                    '<em>' + esc((it.providerLabel || it.provider || '') + ' ' + (it.format || 'srt')) + '</em>' +
+                    '<button class="srad-btn" data-act="sub-pick" data-index="' + i + '">' + esc(i === 0 ? t('action.use') : t('action.pick')) + '</button></div>'
+                )
+                .join('') +
+              '</div>'
+            : '<div class="srad-note">' + ico('info') + '<span>' + esc(sub.error || t('panel.subs.hint')) + '</span></div>') +
+          '<div class="srad-sub-actions">' +
+          '<button class="srad-btn" data-act="subs" data-primary="1">' + ico('search') + esc(t('panel.subs.retry')) + '</button>' +
+          '<button class="srad-btn" data-act="sub-attach">' + ico('captions') + esc(t('panel.subs.attach')) + '</button>' +
+          '<button class="srad-btn" data-act="sub-download">' + ico('file-down') + esc(t('panel.subs.download')) + '</button>' +
+          '</div></div>';
+      }
+
+      /* ================= info pane ================= */
+      function renderInfo() {
+        const st = api.state || {};
+        const rows = [
+          [t('panel.layers'), Object.keys(st.layers || {}).filter((k) => st.layers[k]).join(', ') || t('panel.none')],
+          [t('label.frames'), (st.frames || []).map((f) => util.host(f.url)).filter(Boolean).slice(0, 6).join(', ') || '-'],
+          [t('label.players'), (st.players || []).join(', ') || '-'],
+          ['Service worker', st.sw && st.sw.caches ? st.sw.caches + ' cache' + (st.sw.caches > 1 ? 'es' : '') + (st.sw.checked ? ', ' + st.sw.checked + ' checked' : '') : '-'],
+          ['Diagnostics', st.health && st.health.kind ? st.health.kind : '-'],
+          [t('update.state'), st.update && st.update.status ? st.update.status + (st.update.version ? ' v' + st.update.version : '') : 'idle'],
+        ];
+        bodyEl.innerHTML =
+          '<div class="srad-sub-card">' +
+          rows.map(([k, v]) => '<div class="srad-field"><span class="lab">' + esc(k) + '</span><span style="color:var(--c-fg-2);font-size:12px;text-align:right;max-width:60%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(v) + '</span></div>').join('') +
+          '</div>' +
+          '<div class="srad-note" style="padding:0 2px">' + ico('shield-check') + '<span>' + esc(t('privacy.note')) + '</span></div>';
+      }
+
+      function renderFooter() {
+        if (!footEl) return;
+        const st = api.state || {};
+        const n = ((st.items || []).length) || 0;
+        footEl.querySelector('[data-el="count"]').textContent = t('panel.items', { n: n });
+        const ads = (st.ads || []).length;
+        const adsBtn = footEl.querySelector('[data-act="ads"]');
+        const label = adsBtn.querySelector('[data-el="adslabel"]');
+        if (ads) {
+          adsBtn.hidden = false;
+          label.textContent = api.showAds ? t('panel.hideAds') : t('panel.ads', { n: ads });
+        } else {
+          adsBtn.hidden = true;
+        }
+      }
+
+      /* ================= settings sheet ================= */
+      function openPop(on) {
+        const pop = panel.querySelector('[data-el="pop"]');
+        if (!pop) return;
+        api.popOpen = !!on;
+        if (on) {
+          pop.innerHTML =
+            '<header class="srad-head"><div class="srad-brand"><span class="srad-mark">' + ico('settings') + '</span>' +
+            '<span class="srad-headtxt"><b>' + esc(t('settings.title')) + '</b><small>' + esc(t('settings.subtitle')) + '</small></span></div>' +
+            '<span class="srad-spacer"></span>' + iconBtn('x', t('common.close')) + '</header>' +
+            '<div class="srad-popbody">' +
+            swField('enabled', t('settings.autoDetect'), t('settings.autoDetectHint')) +
+            swField('layerNetwork', 'L1 ' + t('settings.network')) +
+            swField('layerDom', 'L2 ' + t('settings.dom')) +
+            swField('layerMse', 'L3 ' + t('settings.mse')) +
+            swField('layerSw', 'L4 ' + t('settings.sw')) +
+            swField('layerHeuristic', 'L5 ' + t('settings.heuristic')) +
+            swField('autoSubtitle', t('settings.autosub'), t('settings.autosubHint')) +
+            swField('notify', t('settings.notify')) +
+            swField('recordMse', t('settings.record'), t('settings.recordHint')) +
+            '<div class="srad-field"><span class="lab">' + esc(t('common.theme')) + '</span><span class="srad-seg">' +
+            ['system', 'dark', 'light'].map((v) => '<button data-act="theme-' + v + '" data-on="' + ((api.settings.theme || 'system') === v ? 1 : 0) + '">' + esc(t('theme.' + v)) + '</button>').join('') +
+            '</span></div>' +
+            '<div class="srad-field"><span class="lab">' + esc(t('common.language')) + '</span><span class="srad-seg">' +
+            ['auto', 'en', 'id'].map((v) => '<button data-act="lang-' + v + '" data-on="' + ((api.settings.lang || 'auto') === v ? 1 : 0) + '">' + v.toUpperCase() + '</button>').join('') +
+            '</span></div>' +
+            '<div class="srad-field"><span class="lab">' + esc(t('settings.fab')) + '<span class="hint">' + esc(t('settings.fabHint')) + '</span></span>' +
+            '<button class="srad-btn" data-act="reset-fab">' + esc(t('settings.reset')) + '</button></div>' +
+            '<div class="srad-sub-actions" style="margin-top:12px"><button class="srad-btn" data-act="update-check">' + ico('refresh-cw') + esc(t('update.check')) + '</button>' +
+            '<button class="srad-btn" data-act="options">' + ico('keyboard') + esc(t('settings.openOptions')) + '</button></div>' +
+            (api.state && api.state.update ? '<div class="srad-note" style="margin-top:10px">' + ico('info') + '<span>' + esc(t('update.state') + ': ' + api.state.update.status + (api.state.update.notes ? ', ' + api.state.update.notes : '')) + '</span></div>' : '') +
+            '</div>';
+          panel.querySelectorAll('[data-act^="theme-"]').forEach((b) => b.addEventListener('click', () => fire('set-setting', { key: 'theme', value: b.getAttribute('data-act').slice(6) })));
+          panel.querySelectorAll('[data-act^="lang-"]').forEach((b) => b.addEventListener('click', () => fire('set-setting', { key: 'lang', value: b.getAttribute('data-act').slice(5) })));
+        }
+        pop.setAttribute('data-open', on ? '1' : '0');
+        if (on) setTimeout(() => pop.querySelector('.srad-iconbtn') && pop.querySelector('.srad-iconbtn').focus(), 80);
+      }
+      function swField(key, label, hint) {
+        const on = api.settings[key] !== false;
+        return (
+          '<div class="srad-field"><span class="lab">' + esc(label) + (hint ? '<span class="hint">' + esc(hint) + '</span>' : '') + '</span>' +
+          '<button class="srad-switch" role="switch" aria-checked="' + (on ? 'true' : 'false') + '" data-act="set:' + key + '" aria-label="' + esc(label) + '"></button></div>'
+        );
+      }
+
+      /* ================= events ================= */
+      function wire() {
+        attachRipples(shadow);
         fab.addEventListener('click', () => toggle());
         fab.addEventListener('keydown', (e) => {
           if (e.key === 'Enter' || e.key === ' ') {
@@ -133,20 +518,19 @@
         root.addEventListener('pointermove', onPointerMove, { passive: true });
         root.addEventListener('pointerup', onPointerUp);
         root.addEventListener('pointercancel', onPointerUp);
+        root.addEventListener('resize', util.throttle(() => applyFabPos(currentFabPos()), 260));
 
         panel.addEventListener('click', onPanelClick);
         panel.addEventListener('keydown', onPanelKey);
-        panel.addEventListener('change', (e) => {
-          const act = e.target.getAttribute('data-act');
-          if (act === 'toggle-auto') fire('set-setting', { key: 'enabled', value: e.target.checked });
-          else if (act && act.startsWith('set:')) fire('set-setting', { key: act.slice(4), value: e.target.checked });
-        });
         root.addEventListener('keydown', (e) => {
           if (e.key === 'Escape' && api.open) {
             e.preventDefault();
             setOpen(false);
-            fab.focus();
+            try {
+              fab.focus();
+            } catch (_) {}
           }
+          if (api.open && e.key === 'Tab') trapFocus(e);
         }, true);
         root.addEventListener(
           'pointerdown',
@@ -158,59 +542,116 @@
           },
           true
         );
-        // re-clamp on resize
-        root.addEventListener('resize', util.throttle(() => applyFabPos(currentFabPos()), 250));
+      }
+
+      function trapFocus(e) {
+        const f = [...shadow.querySelectorAll('.srad-panel button:not([disabled]), .srad-panel [role="switch"], .srad-panel [tabindex="0"]')].filter((el) => el.offsetParent !== null || el.getClientRects().length);
+        if (!f.length) return;
+        const first = f[0];
+        const last = f[f.length - 1];
+        const active = shadow.activeElement;
+        if (e.shiftKey && active === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && active === last) {
+          e.preventDefault();
+          first.focus();
+        }
       }
 
       function onPanelClick(e) {
-        const btn = e.target.closest ? e.target.closest('[data-act],[data-variant-id]') : null;
+        const btn = e.target.closest ? e.target.closest('[data-act]') : null;
         if (!btn) return;
         const act = btn.getAttribute('data-act');
-        const id = btn.getAttribute('data-id') || (btn.closest('[data-id]') ? btn.closest('[data-id]').getAttribute('data-id') : null);
+        const holder = btn.closest('[data-id]');
+        const id = btn.getAttribute('data-id') || (holder ? holder.getAttribute('data-id') : null);
+        const vbtn = e.target.closest ? e.target.closest('[data-variant-id]') : null;
+        if (vbtn) return fire('variant', { id: holder ? holder.getAttribute('data-id') : id, index: Number(vbtn.getAttribute('data-variant-id')) });
+
         if (act === 'close') return setOpen(false);
-        if (act === 'theme') return cycleTheme();
+        if (act === 'theme') return cycleTheme(btn);
         if (act === 'settings') return openPop(true);
-        if (act === 'popclose') return openPop(false);
-        if (act === 'options') return fire('open-options');
+        if (act === 'tab') return setTab(btn.getAttribute('data-tab'));
+        if (act === 'toggle-auto') return fire('set-setting', { key: 'enabled', value: !(api.settings.enabled !== false) });
+        if (act.indexOf('set:') === 0) {
+          const key = act.slice(4);
+          return fire('set-setting', { key: key, value: api.settings[key] === false });
+        }
         if (act === 'refresh') {
           btn.setAttribute('data-done', '1');
           fire('scan-now');
           setTimeout(() => btn.removeAttribute('data-done'), 900);
           return;
         }
-        if (act === 'clear') return fire('clear');
+        if (act === 'update-check') {
+          fire('update-check');
+          return;
+        }
+        if (act === 'clear' || act === 'options') {
+          fire(act);
+          return;
+        }
         if (act === 'ads') {
           api.showAds = !api.showAds;
           fire('set-setting', { key: 'showAds', value: api.showAds });
-          render(api.state);
+          render();
           return;
         }
         if (act === 'toggle-expand') {
           const item = btn.closest('.srad-item');
-          if (item) item.setAttribute('data-expanded', item.getAttribute('data-expanded') === '1' ? '0' : '1');
+          const open = item.getAttribute('data-expanded') === '1' ? '0' : '1';
+          item.setAttribute('data-expanded', open);
+          btn.setAttribute('aria-expanded', open === '1' ? 'true' : 'false');
+          const panelEl = item.querySelector('.srad-variants');
+          if (panelEl) animate(panelEl, { opacity: [0, 1], transform: ['translateY(-4px)', 'none'] }, { duration: 0.2 });
           return;
         }
-        if (!act || !id) {
-          const vbtn = e.target.closest ? e.target.closest('[data-variant-id]') : null;
-          if (vbtn) {
-            fire('variant', { id: id, index: Number(vbtn.getAttribute('data-variant-id')) });
-          }
-          return;
+        if (!id && ['copy', 'download', 'watchparty', 'subs', 'ffmpeg', 'record', 'open'].indexOf(act) >= 0) return;
+        if (act === 'copy') {
+          btn.setAttribute('data-done', '1');
+          const original = btn.innerHTML;
+          btn.innerHTML = ico('check') + esc(t('action.copied'));
+          setTimeout(() => {
+            btn.innerHTML = original;
+            btn.removeAttribute('data-done');
+          }, 1400);
         }
-        fire(act, { id: id, button: btn });
+        if (act === 'record') vibrate(12);
+        fire(act, { id: id, index: Number(btn.getAttribute('data-index') || 0), button: btn });
       }
 
       function onPanelKey(e) {
-        if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
-        const items = [...panel.querySelectorAll('.srad-item')];
-        if (!items.length) return;
-        const cur = items.indexOf(e.target.closest('.srad-item'));
-        const next = util.clamp((cur < 0 ? 0 : cur) + (e.key === 'ArrowDown' ? 1 : -1), 0, items.length - 1);
-        e.preventDefault();
-        const focusable = items[next].querySelector('.srad-btn, .srad-iconbtn');
-        (focusable || items[next]).focus && items[next].scrollIntoView({ block: 'nearest' });
-        if (focusable) focusable.focus();
-        items.forEach((el, i) => el.setAttribute('data-active', i === next ? '1' : '0'));
+        const row = e.target.closest && e.target.closest('.srad-item');
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+          const rows = [...bodyEl.querySelectorAll('.srad-item')];
+          if (!rows.length) return;
+          e.preventDefault();
+          const i = rows.indexOf(row);
+          const next = util.clamp((i < 0 ? 0 : i) + (e.key === 'ArrowDown' ? 1 : -1), 0, rows.length - 1);
+          rows[next].focus();
+          rows[next].scrollIntoView({ block: 'nearest', behavior: reduced() ? 'auto' : 'smooth' });
+          rows.forEach((el, k) => el.setAttribute('data-active', k === next ? '1' : '0'));
+          return;
+        }
+        if (!row) return;
+        if (e.key === 'e' || e.key === 'Enter') {
+          const toggle = row.querySelector('[data-act="toggle-expand"]');
+          if (toggle) {
+            e.preventDefault();
+            toggle.click();
+          } else if (e.key === 'Enter') {
+            e.preventDefault();
+            row.querySelector('[data-act="watchparty"]').click();
+          }
+        }
+        if (e.key === 'c') {
+          e.preventDefault();
+          row.querySelector('[data-act="copy"]').click();
+        }
+        if (e.key === 's') {
+          e.preventDefault();
+          row.querySelector('[data-act="subs"]').click();
+        }
       }
 
       function fire(action, payload) {
@@ -218,41 +659,45 @@
           if (o.onAction) o.onAction(action, payload || {});
         } catch (_) {}
       }
+      function setTab(id) {
+        if (api.tab === id) return;
+        api.tab = id;
+        animate(bodyEl, { opacity: [0.35, 1], transform: ['translateY(4px)', 'none'] }, { duration: 0.2 });
+        renderTabs();
+        renderBody();
+      }
 
-      /* ---------- FAB drag + position ---------- */
-      let moved = false;
+      /* ---------------- FAB drag + anchor ---------------- */
+      function rect(which) {
+        const r = fab.getBoundingClientRect();
+        return which === 'left' ? r.left : r.top;
+      }
       function onPointerDown(e) {
         if (e.button !== undefined && e.button !== 0) return;
-        drag = { x: e.clientX, y: e.clientY, ox: fab.offsetLeft, oy: fab.offsetTop, startLeft: rectLeft(), startTop: rectTop(), id: e.pointerId };
+        const r = fab.getBoundingClientRect();
+        drag = { x: e.clientX, y: e.clientY, left: r.left, top: r.top, w: r.width, h: r.height, id: e.pointerId };
         moved = false;
         try {
           fab.setPointerCapture(e.pointerId);
         } catch (_) {}
-      }
-      function rectLeft() {
-        const r = fab.getBoundingClientRect();
-        return r.left;
-      }
-      function rectTop() {
-        const r = fab.getBoundingClientRect();
-        return r.top;
       }
       function onPointerMove(e) {
         if (!drag) return;
         const dx = e.clientX - drag.x;
         const dy = e.clientY - drag.y;
         if (!moved && Math.abs(dx) + Math.abs(dy) < 7) return;
-        moved = true;
-        fab.setAttribute('data-dragging', '1');
-        const w = fab.offsetWidth;
-        const h = fab.offsetHeight;
-        const left = util.clamp(drag.startLeft + dx, 6, Math.max(8, root.innerWidth - w - 6));
-        const top = util.clamp(drag.startTop + dy, 6, Math.max(8, root.innerHeight - h - 6));
+        if (!moved) {
+          moved = true;
+          fab.setAttribute('data-dragging', '1');
+          vibrate(6);
+        }
+        const left = util.clamp(drag.left + dx, 6, Math.max(8, root.innerWidth - drag.w - 6));
+        const top = util.clamp(drag.top + dy, 6, Math.max(8, root.innerHeight - drag.h - 6));
         fab.style.left = left + 'px';
         fab.style.top = top + 'px';
         fab.style.right = 'auto';
         fab.style.bottom = 'auto';
-        positionPanel(left, top, w, h);
+        positionPanel(left, top, drag.w, drag.h);
       }
       function onPointerUp() {
         if (!drag) return;
@@ -260,9 +705,8 @@
         const wasMoved = moved;
         drag = null;
         if (wasMoved) {
-          const r = fab.getBoundingClientRect();
-          fire('set-setting', { key: 'fabPos', value: { x: Math.round(r.left), y: Math.round(r.top) } });
           moved = false;
+          fire('set-setting', { key: 'fabPos', value: currentFabPos() });
         }
       }
       function currentFabPos() {
@@ -273,17 +717,12 @@
         if (!fab) return;
         if (!pos || typeof pos.x !== 'number') {
           fab.style.left = fab.style.top = 'auto';
-          fab.style.right = '20px';
-          fab.style.bottom = '20px';
-          if (root.innerWidth < 720) {
-            fab.style.right = '12px';
-            fab.style.bottom = '12px';
-          }
+          fab.style.right = fab.style.bottom = '';
           positionPanel();
           return;
         }
-        const w = fab.offsetWidth || 58;
-        const h = fab.offsetHeight || 58;
+        const w = fab.offsetWidth || 56;
+        const h = fab.offsetHeight || 56;
         const left = util.clamp(pos.x, 6, Math.max(8, root.innerWidth - w - 6));
         const top = util.clamp(pos.y, 6, Math.max(8, root.innerHeight - h - 6));
         fab.style.left = left + 'px';
@@ -292,7 +731,6 @@
         fab.style.bottom = 'auto';
         positionPanel(left, top, w, h);
       }
-      /** Keep the panel on the same side as the FAB (and below/below it). */
       function positionPanel(left, top, w, h) {
         if (!panel) return;
         if (left == null) {
@@ -302,18 +740,16 @@
           w = w || r.width;
           h = h || r.height;
         }
-        const midX = left + (w || 58) / 2;
         const nearTop = top < root.innerHeight * 0.34;
-        const anchor = (nearTop ? 't' : 'b') + (midX < root.innerWidth / 2 ? 'l' : 'r');
-        panel.setAttribute('data-anchor', panel.getAttribute('data-anchor') === anchor ? anchor : anchor);
+        const anchor = (nearTop ? 't' : 'b') + (left + (w || 56) / 2 < root.innerWidth / 2 ? 'l' : 'r');
+        panel.setAttribute('data-anchor', anchor);
       }
 
-      /* ---------- theme ---------- */
+      /* ---------------- theme ---------------- */
       let mq = null;
       function applyTheme() {
         if (!rootEl) return;
-        const s = api.settings || {};
-        let theme = s.theme || 'system';
+        let theme = api.settings.theme || 'system';
         if (theme === 'system') {
           try {
             mq = mq || root.matchMedia('(prefers-color-scheme: dark)');
@@ -323,302 +759,112 @@
           }
         }
         rootEl.setAttribute('data-theme', theme);
-        const btn = panel.querySelector('[data-act="theme"]');
-        if (btn) btn.innerHTML = theme === 'dark' ? ICONS.moon : ICONS.sun;
+        const btn = panel && panel.querySelector('[data-act="theme"]');
+        if (btn) btn.innerHTML = theme === 'dark' ? ico('sun') : ico('moon');
         try {
           root.document.documentElement.setAttribute('data-srad-theme', theme);
         } catch (_) {}
       }
-      function cycleTheme() {
+      function cycleTheme(btn) {
         const order = ['system', 'dark', 'light'];
-        const cur = (api.settings && api.settings.theme) || 'system';
+        const cur = api.settings.theme || 'system';
         const next = order[(order.indexOf(cur) + 1) % order.length];
+        if (btn) animate(btn, { transform: ['rotate(0deg) scale(1)', 'rotate(-28deg) scale(1.14)', 'rotate(0deg) scale(1)'] }, { duration: 0.36 });
         fire('set-setting', { key: 'theme', value: next });
       }
-      if (root.matchMedia) {
-        try {
-          root.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
-            if (!api.settings || api.settings.theme === 'system') applyTheme();
-          });
-        } catch (_) {}
-      }
+      try {
+        if (root.matchMedia) root.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => (api.settings.theme || 'system') === 'system' && applyTheme());
+      } catch (_) {}
 
-      /* ---------- settings popover ---------- */
-      function openPop(on) {
-        const pop = panel.querySelector('[data-el="pop"]');
-        if (!pop) return;
-        if (on) renderPop();
-        pop.setAttribute('data-open', on ? '1' : '0');
-      }
-      function renderPop() {
-        const s = api.settings || {};
-        const rows = [
-          switchRow('enabled', 'Auto-detect (master)', 'Nyalakan/matikan deteksi di situs ini'),
-          switchRow('layerNetwork', 'Layer 1 · Network intercept', 'fetch / XHR / WebSocket + webRequest'),
-          switchRow('layerDom', 'Layer 2 · DOM deep scan', 'video, source, iframe, embed, object + MutationObserver'),
-          switchRow('layerMse', 'Layer 3 · MSE / blob', 'MediaSource, SourceBuffer, createObjectURL'),
-          switchRow('layerSw', 'Layer 4 · Service Worker & Cache API', 'scan caches for video responses'),
-          switchRow('layerHeuristic', 'Layer 5 · Heuristics', 'inline scripts, resource timing, player configs'),
-          switchRow('autoSubtitle', 'Auto subtitle search', 'Cari subtitle Indonesia otomatis'),
-          switchRow('notify', 'Notifications', 'Toast + browser notification'),
-          switchRow('recordMse', 'Allow MSE buffer recording', 'Beta: rekam stream blob menjadi file'),
-          '<div class="srad-field"><label>' +
-            util.esc(t('common.theme')) +
-            '</label><span class="srad-seg">' +
-            ['system', 'dark', 'light']
-              .map((v) => '<button data-act="theme-' + v + '" data-on="' + (s.theme === v ? 1 : 0) + '">' + util.esc(t('theme.' + v)) + '</button>')
-              .join('') +
-            '</span></div>',
-          '<div class="srad-field"><label>' + util.esc(t('common.language')) + '</label><span class="srad-seg">' +
-            ['auto', 'en', 'id']
-              .map((v) => '<button data-act="lang-' + v + '" data-on="' + (s.lang === v ? 1 : 0) + '">' + v.toUpperCase() + '</button>')
-              .join('') +
-            '</span></div>',
-          '<div class="srad-field"><label>Simpan posisi FAB<div class="hint">Reset ke pojok kanan bawah</div></label>' +
-            '<button class="srad-btn" data-act="reset-fab">Reset</button></div>',
-        ].join('');
-        const body = panel.querySelector('[data-el="popbody"]');
-        if (body) body.innerHTML = rows;
-        panel.querySelectorAll('[data-act^="theme-"]').forEach((b) => {
-          b.addEventListener('click', () => fire('set-setting', { key: 'theme', value: b.getAttribute('data-act').slice(6) }));
-        });
-        panel.querySelectorAll('[data-act^="lang-"]').forEach((b) => {
-          b.addEventListener('click', () => fire('set-setting', { key: 'lang', value: b.getAttribute('data-act').slice(5) }));
-        });
-        const rf = panel.querySelector('[data-act="reset-fab"]');
-        if (rf) rf.addEventListener('click', () => fire('set-setting', { key: 'fabPos', value: null }));
-      }
-      function switchRow(key, label, hint) {
-        const v = api.settings ? api.settings[key] : false;
-        return (
-          '<div class="srad-field"><label>' + util.esc(label) + (hint ? '<span class="hint">' + util.esc(hint) + '</span>' : '') + '</label>' +
-          '<label class="srad-switch"><input type="checkbox" data-act="set:' + key + '"' + (v ? ' checked' : '') + ' aria-label="' + util.esc(label) + '"><span class="srad-slider"></span></label></div>'
-        );
-      }
-
-      /* ---------- render ---------- */
-      function render(state) {
-        if (!mounted) return;
-        api.state = state;
-        api.settings = (state && state.settings) || api.settings || {};
-        if (SR.i18n.get() === 'auto') SR.i18n.set(SR.i18n.detect(root.navigator));
-        applyTheme();
-        const items = (state && state.items) || [];
-        const s = api.settings;
-        const ads = (state && state.ads) || [];
-        if (s.showAds) items.push(...ads);
-        else api.showAds = false;
-
-        // badge + pulse
-        const count = items.filter((i) => !i.hidden).length;
-        badge.textContent = count > 99 ? '99+' : String(count);
-        badge.setAttribute('data-show', count ? '1' : '0');
-        fab.setAttribute('aria-label', t('fab.label', { n: count }));
-        fab.setAttribute('data-live', state && state.settings && state.settings.enabled ? '1' : '0');
-        if (count > api.lastCount && api.lastCount >= 0) pulse();
-        api.lastCount = count;
-
-        // header subtitle = cleaned title
-        const info = (state && state.title) || null;
-        const titleEl = panel.querySelector('[data-el="title"]');
-        const subEl = panel.querySelector('[data-el="subtitle"]');
-        if (info && info.title) {
-          titleEl.textContent = info.title + (info.year ? ' (' + info.year + ')' : '');
-          subEl.textContent = util.host(root.location.href) + ' · ' + t('panel.items', { n: count });
-        } else {
-          titleEl.textContent = t('panel.title');
-          subEl.textContent = util.host(root.location.href);
-        }
-        renderMeta(state, count, ads.length);
-        renderList(items, state);
-        const auto = panel.querySelector('[data-act="toggle-auto"]');
-        if (auto) auto.checked = !!(state && state.settings && state.settings.enabled);
-        const adsLabel = panel.querySelector('[data-el="adslabel"]');
-        if (adsLabel)
-          adsLabel.textContent = ads.length ? (api.showAds ? t('panel.hideAds') : t('panel.ads', { n: ads.length })) : '';
-        const adsBtn = panel.querySelector('[data-act="ads"]');
-        if (adsBtn) adsBtn.style.display = ads.length ? '' : 'none';
-      }
-
-      function renderMeta(state, count, adCount) {
-        const meta = panel.querySelector('[data-el="meta"]');
-        if (!meta) return;
-        const chips = [];
-        const info = state && state.title;
-        if (info && info.isJunk) chips.push('<span class="srad-chip" data-kind="junk">' + util.esc(t('popup.empty')) + '</span>');
-        if (info && info.year) chips.push('<span class="srad-chip" data-kind="year">' + util.esc(info.year) + '</span>');
-        const ep = info && SR.title.episodeLabel(info);
-        if (ep) chips.push('<span class="srad-chip" data-kind="ep">' + util.esc(ep) + '</span>');
-        if (info && info.kind === 'episode') chips.push('<span class="srad-chip" data-kind="ep">Series</span>');
-        if (state && state.drm) chips.push('<span class="srad-chip" data-kind="ep">' + util.esc(t('label.drm')) + ' · ' + util.esc(state.drm) + '</span>');
-        const layers = (state && state.layers) || {};
-        const active = Object.keys(layers).filter((k) => layers[k]);
-        if (active.length) chips.push('<span class="srad-chip" title="' + util.esc(active.join(', ')) + '">' + active.length + '/5 layers</span>');
-        if (state && state.pagePaused) chips.push('<span class="srad-chip" data-kind="junk">' + util.esc(t('panel.paused')) + '</span>');
-        meta.innerHTML = chips.join('');
-        meta.style.display = chips.length ? '' : 'none';
-      }
-
-      function renderList(items, state) {
-        if (!items.length) {
-          listEl.innerHTML =
-            '<div class="srad-empty"><div class="srad-spin"></div><strong>' + util.esc(t('panel.empty')) + '</strong>' + util.esc(t('panel.emptyHint')) + '</div>';
-          return;
-        }
-        const sorted = items
-          .slice()
-          .sort((a, b) => (b.confidence || 0) - (a.confidence || 0) || (SR.rules.CATEGORY_WEIGHT[b.category] || 0) - (SR.rules.CATEGORY_WEIGHT[a.category] || 0) || (b.ts || 0) - (a.ts || 0));
-        listEl.innerHTML = sorted.map((it) => itemHtml(it, state)).join('');
-      }
-
-      function itemHtml(it, state) {
-        const cat = it.category || 'other';
-        const label = SR.rules.CATEGORY_LABEL[cat] || cat.toUpperCase();
-        const name = it.name || it.file || urlName(it.url);
-        const thumb = it.thumb ? '<img src="' + util.esc(it.thumb) + '" alt="" loading="lazy">' : util.esc(label.replace('SEGMENTS', 'SEG').slice(0, 5));
-        const tags = [];
-        if (it.quality) tags.push('<span class="srad-tag" data-tone="q">' + util.esc(it.quality) + '</span>');
-        if (it.sizeLabel) tags.push('<span class="srad-tag">' + util.esc(it.sizeLabel) + '</span>');
-        if (it.durationLabel) tags.push('<span class="srad-tag">' + util.esc(it.durationLabel) + '</span>');
-        if (it.isLive) tags.push('<span class="srad-tag" data-tone="warn">' + util.esc(t('label.live')) + '</span>');
-        if (it.aes) tags.push('<span class="srad-tag" data-tone="warn">' + util.esc(t('label.aes')) + '</span>');
-        if (it.drm) tags.push('<span class="srad-tag" data-tone="err">' + util.esc(t('label.drm')) + '</span>');
-        if (it.segmentCount) tags.push('<span class="srad-tag">' + util.esc(t('label.segments', { n: it.segmentCount, size: it.segmentBytesLabel || '' })) + '</span>');
-        if (it.mseBytes) tags.push('<span class="srad-tag">' + util.esc(util.formatBytes(it.mseBytes)) + ' buffered</span>');
-        if (it.isAd) tags.push('<span class="srad-tag" data-tone="err">AD</span>');
-        const via = [].concat(it.via || []).filter(Boolean);
-        if (via.length) tags.push('<span class="srad-tag" title="' + util.esc(t('label.via')) + ': ' + util.esc(via.join(', ')) + '">' + via.length + ' src</span>');
-
-        const subs = it.sub || {};
-        const subTone = subs.status === 'found' ? 'ok' : subs.status === 'none' ? 'warn' : subs.status === 'error' ? 'err' : '';
-        if (subs.status) tags.push('<span class="srad-tag" data-tone="' + subTone + '">' + util.esc(subLabel(subs)) + '</span>');
-
-        const conf = Math.min(3, via.length + (it.size ? 1 : 0) + (it.quality ? 1 : 0));
-        const dots = [0, 1, 2].map((i) => '<i data-on="' + (i < conf ? 1 : 0) + '"></i>').join('');
-
-        const variants = (it.variants || [])
-          .slice(0, 12)
-          .map(
-            (v, i) =>
-              '<div class="srad-variant"><span class="srad-vq">' + util.esc(v.quality || (v.height ? util.qualityLabel(v.height) : '?')) + '</span>' +
-              '<b>' + util.esc(v.codecs || cat.toUpperCase()) + '</b><span>' + util.esc(v.bandwidthLabel || '') + '</span>' +
-              '<button class="srad-btn" data-variant-id="' + i + '">' + util.esc(t('action.copy')) + '</button></div>'
-          )
-          .join('');
-
-        return (
-          '<div class="srad-item" role="listitem" data-id="' + util.esc(it.id) + '" data-ad="' + (it.isAd ? '1' : '0') + '" tabindex="0" aria-label="' + util.esc(label + ' ' + name) + '">' +
-          '<div class="srad-thumb" data-cat="' + util.esc(cat) + '">' + thumb + '</div>' +
-          '<div class="srad-main">' +
-          '<div class="srad-row1"><span class="srad-name">' + util.esc(name) + '</span><span class="srad-conf" aria-hidden="true">' + dots + '</span></div>' +
-          '<div class="srad-url" title="' + util.esc(it.url) + '">' + util.esc(it.url.length > 130 ? it.url.slice(0, 60) + '…' + it.url.slice(-52) : it.url) + '</div>' +
-          '<div class="srad-tags">' + tags.join('') + '</div>' +
-          '<div class="srad-actions">' +
-          '<button class="srad-btn" data-act="watchparty" data-primary="1">' + ICONS.party + util.esc(t('action.watchparty')) + '</button>' +
-          '<button class="srad-btn" data-act="copy">' + ICONS.copy + util.esc(t('action.copy')) + '</button>' +
-          (cat === 'hls' || cat === 'dash' ? '<button class="srad-btn" data-act="download">' + ICONS.download + 'M3U8</button>' : '<button class="srad-btn" data-act="download">' + ICONS.download + util.esc(t('action.download')) + '</button>') +
-          '<button class="srad-btn" data-act="subs">' + ICONS.subs + util.esc(t('action.subs')) + '</button>' +
-          (cat === 'hls' || cat === 'dash' || cat === 'blob' ? '<button class="srad-btn" data-act="open">' + ICONS.open + util.esc(t('action.open')) + '</button>' : '') +
-          '<button class="srad-btn" data-act="ffmpeg" title="' + util.esc(t('action.ffmpeg')) + '">' + ICONS.play + '</button>' +
-          (variants ? '<button class="srad-btn" data-act="toggle-expand">' + ICONS.chevron + t('action.variants', { n: (it.variants || []).length }) + '</button>' : '') +
-          (cat === 'blob' ? '<button class="srad-btn" data-act="record">' + ICONS.rec + util.esc(t('action.record')) + '</button>' : '') +
-          '</div>' +
-          (variants ? '<div class="srad-variants">' + variants + '</div>' : '') +
-          (cat === 'blob' && it.mseBytes ? '<div class="srad-variants" style="display:block;border:0;padding-top:4px"><span class="srad-tag">' + util.esc(t('label.mseHint')) + '</span></div>' : '') +
-          '</div></div>'
-        );
-      }
-
-      function subLabel(subs) {
-        if (subs.status === 'found') return '♪ ' + (subs.name || t('panel.subs.found'));
-        if (subs.status === 'searching') return t('panel.subs.searching');
-        if (subs.status === 'none') return t('panel.subs.none');
-        if (subs.status === 'error') return t('panel.subs.error');
-        if (subs.status === 'skipped') return t('panel.subs.skipped');
-        return '';
-      }
-
-      function urlName(u) {
-        try {
-          const p = new URL(u).pathname.split('/').filter(Boolean).pop() || util.host(u);
-          return decodeURIComponent(p).slice(0, 70);
-        } catch (_) {
-          return String(u).slice(0, 60);
-        }
-      }
-
-      function pulse() {
-        fab.setAttribute('data-pulse', '1');
-        setTimeout(() => fab.removeAttribute('data-pulse'), 2600);
-      }
-
-      /* ---------- toasts ---------- */
-      const liveToasts = [];
-      function toast(msg, kind, action) {
-        if (!mounted) mount();
+      /* ---------------- toasts ---------------- */
+      const live = [];
+      function toast(msg, kind, action, ms) {
+        if (!mounted && !mount()) return null;
+        const life = ms || 4000;
         const el = root.document.createElement('div');
         el.className = 'srad-toast';
         el.setAttribute('data-kind', kind || 'info');
         el.setAttribute('role', kind === 'err' ? 'alert' : 'status');
         el.innerHTML =
-          '<span class="srad-tico">' + (kind === 'ok' ? ICONS.check : kind === 'err' ? ICONS.close : ICONS.film) + '</span>' +
-          '<span style="flex:1 1 auto;min-width:0">' + util.esc(msg) + '</span>' +
-          (action ? '<button data-toast-act="' + util.esc(action.id) + '">' + util.esc(action.label) + '</button>' : '') +
+          '<span class="srad-tico">' + ico(kind === 'ok' ? 'check' : kind === 'err' ? 'info' : kind === 'warn' ? 'info' : 'sparkles') + '</span>' +
+          '<span>' + esc(msg) + '</span>' +
+          (action ? '<button data-toast-act="' + esc(action.id) + '">' + esc(action.label) + '</button>' : '') +
           '<span class="srad-tbar"></span>';
         toastsEl.appendChild(el);
-        liveToasts.push(el);
-        while (liveToasts.length > 4) dismiss(liveToasts.shift());
-        if (action) {
-          const b = el.querySelector('[data-toast-act]');
-          if (b) b.addEventListener('click', () => { fire(action.id, action.payload || {}); dismiss(el); });
-        }
-        const timer = setTimeout(() => dismiss(el), 4000);
+        live.push(el);
+        while (live.length > 4) dismiss(live[0]);
+        animate(el, { opacity: [0, 1], transform: ['translateX(16px) scale(.97)', 'none'] }, spring);
+        const bar = el.querySelector('.srad-tbar');
+        animate(bar, { transform: ['scaleX(1)', 'scaleX(0)'] }, { duration: life / 1000, easing: 'linear' });
+        const timer = setTimeout(() => dismiss(el), life);
         el.addEventListener('pointerenter', () => clearTimeout(timer), { once: true });
-        el.addEventListener('click', (e) => {
-          if (!e.target.closest('button')) dismiss(el);
+        el.addEventListener('pointerleave', () => setTimeout(() => dismiss(el), 1200), { once: true });
+        const b = el.querySelector('[data-toast-act]');
+        if (b) b.addEventListener('click', () => {
+          fire(action.id, action.payload || {});
+          dismiss(el);
         });
-        if (liveEl) liveEl.textContent = msg;
+        const sr = rootEl.querySelector('[data-el="live"]');
+        if (sr) sr.textContent = String(msg);
         return el;
       }
       function dismiss(el) {
         if (!el || el.getAttribute('data-leaving') === '1') return;
         el.setAttribute('data-leaving', '1');
-        setTimeout(() => {
+        const anim = animate(el, { opacity: [1, 0], transform: ['none', 'translateX(18px) scale(.97)'] }, { duration: 0.2 });
+        const rm = () => {
           el.remove();
-          const i = liveToasts.indexOf(el);
-          if (i >= 0) liveToasts.splice(i, 1);
-        }, 240);
+          const i = live.indexOf(el);
+          if (i >= 0) live.splice(i, 1);
+        };
+        if (anim && anim.finished) anim.finished.then(rm, rm);
+        else setTimeout(rm, 220);
       }
 
-      /* ---------- open/close ---------- */
+      /* ---------------- open / close ---------------- */
       function setOpen(on) {
-        api.open = on;
+        api.open = !!on;
         panel.setAttribute('data-open', on ? '1' : '0');
         fab.setAttribute('aria-expanded', on ? 'true' : 'false');
         if (on) {
+          lastFocused = root.document.activeElement;
           positionPanel();
+          render();
           setTimeout(() => {
-            const first = panel.querySelector('.srad-item .srad-btn');
-            if (first && !root.document.activeElement?.closest?.('[data-act="close"]')) first.focus({ preventScroll: true });
-            else if (!first) listEl.focus({ preventScroll: true });
-          }, 60);
+            const first = panel.querySelector('.srad-item') || bodyEl;
+            try {
+              first.focus({ preventScroll: true });
+            } catch (_) {}
+          }, 70);
+        } else {
+          openPop(false);
+          if (lastFocused && lastFocused.focus) {
+            try {
+              lastFocused.focus({ preventScroll: true });
+            } catch (_) {}
+          }
         }
       }
       function toggle() {
         if (!api.open && o.beforeOpen) o.beforeOpen();
+        vibrate(8);
         setOpen(!api.open);
       }
 
-      /* ---------- public ---------- */
+      function esc(v) {
+        return util.esc ? util.esc(v) : String(v == null ? '' : v);
+      }
+
       return Object.assign(api, {
         mount,
         render,
         toast,
         dismissAll() {
-          [...liveToasts].forEach(dismiss);
+          live.slice().forEach(dismiss);
         },
         toggle,
         setOpen,
+        setTab,
         destroy() {
           try {
             host.remove();

@@ -1,21 +1,25 @@
-/**
- * Stream Radar — UI stylesheet (design system)
- * ------------------------------------------------------------------
- * Injected into a closed shadow root, so nothing leaks in or out.
- * Conventions:
- *   • tokens only, no magic numbers in rules
- *   • motion: 120/180/260 ms springs, always paired with prefers-reduced-motion
- *   • every interactive element is ≥ 40 px (44 px on touch) and has a visible
- *     focus ring; press feedback comes from Motion (JS) plus :active here
- *   • no emoji, no decorative glyphs: icons are Lucide SVG (src/shared/icons.js)
- * The `srad-` prefix is kept for readable DevTools output.
- */
-(function (root) {
-  'use strict';
-  const SR = (root.SR = root.SR || {});
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Stream Radar UI preview</title>
+<style>
+  body { min-height: 100vh; background: #0a0d18 url('https://picsum.photos/seed/cinema/1600/900') center/cover no-repeat; }
+  body::after { content: ""; position: fixed; inset: 0; background: rgba(6,8,16,.72); backdrop-filter: blur(2px); }
+  #stream-radar-host { position: fixed !important; inset: 0 !important; z-index: 999 !important; }
+  .cap { position: fixed; left: 18px; top: 16px; z-index: 1000; color: #cfd6ee; font: 12px/1.6 ui-sans-serif, system-ui; }
+  .cap b { color: #fff; }
+</style>
+</head>
+<body>
+<div class="cap"><b>Stream Radar, preview statis</b><br>
+Dihasilkan oleh <code>npm run preview</code> memakai modul UI asli (src/content/ui*.js).
+Panel dan tombolnya hidup, tapi aksi tidak terhubung ke browser: ini pratinjau desain.<br>
+Ganti tema lewat ikon bulan di header. Resize jendela ke <b>&le;720px</b> untuk melihat layout mobile.</div>
+<div id="stream-radar-host"></div>
+<style>
 
-  SR.uiCss = `
-:host { all: initial; }
 *, *::before, *::after { box-sizing: border-box; }
 
 .srad-root {
@@ -349,5 +353,6 @@
 @media (prefers-contrast: more) {
   .srad-root { --c-line: currentColor; --c-bg: ButtonFace; --c-bg-3: Canvas; --c-fg: CanvasText; }
 }
-`;
-})(typeof globalThis !== 'undefined' ? globalThis : window);
+</style>
+</body>
+</html>

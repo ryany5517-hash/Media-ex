@@ -127,7 +127,7 @@
             segmentBytes: 0,
             isSegment: true,
             sub: { status: 'idle' },
-            name: (util.host(dir) || 'segments') + ' · segment stream',
+            name: (util.host(dir) || 'segments') + ' segment stream',
           };
           this.add(key, g);
         }

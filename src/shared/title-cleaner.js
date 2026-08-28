@@ -164,9 +164,15 @@
     return out;
   }
 
+  function extras() {
+    const d = (SR.dynamic || {}) && SR.dynamic;
+    return d ? { phrases: d.junkPhrases || [], tokens: d.junkTokens || [] } : { phrases: [], tokens: [] };
+  }
+
   function stripPhrases(text) {
+    const ex = extras();
     let out = ' ' + normalize(text) + ' ';
-    for (const p of PHRASES) {
+    for (const p of PHRASES.concat(ex.phrases)) {
       const esc = p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
       out = out.replace(new RegExp('\\b' + esc + '\\b', 'gi'), ' ');
     }
@@ -187,7 +193,7 @@
   function stripTokens(text) {
     const words = normalize(text).split(' ');
     const keep = [];
-    const set = new Set(TOKENS.map((t) => t.toLowerCase()));
+    const set = new Set(TOKENS.concat(extras().tokens).map((t) => String(t).toLowerCase()));
     for (let i = 0; i < words.length; i++) {
       const w = words[i];
       const bare = w.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '');
@@ -433,7 +439,7 @@
       const mv = ld.find((x) => x.types.includes('movie') || x.types.includes('videoobject') || x.types.includes('tvseries'));
       const pick = ep || mv || ld[0];
       const showName = pick.partOf || (ep && ep.name) || '';
-      const display = ep && ep.episodeTitle && pick.name ? pick.name + ' — ' + ep.episodeTitle : pick.name || pick.alternate || '';
+      const display = ep && ep.episodeTitle && pick.name ? pick.name + ': ' + ep.episodeTitle : pick.name || pick.alternate || '';
       push(display, 'json-ld');
       if (showName && showName !== display) push(showName, 'json-ld-show');
       res.info = {

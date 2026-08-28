@@ -12,6 +12,7 @@
   const t = (k, v) => SR.i18n.t(k, v);
   const $ = (s) => document.querySelector(s);
   const esc = util.esc;
+  const ico = (n) => (SR.icons ? SR.icons(n) : '');
 
   let tabId = null;
   let state = { items: [], ads: [], title: null, settings: {}, sub: { status: 'idle', items: [] }, layers: {} };
@@ -38,6 +39,10 @@
     const s = state.settings || {};
     showAds = !!s.showAds;
     document.body.setAttribute('data-theme', resolvedTheme(s.theme));
+    $('#brandIco').innerHTML = ico('radar');
+    $('#themeBtn').innerHTML = ico('moon');
+    $('#refreshBtn').innerHTML = ico('refresh-cw');
+    $('#optionsBtn').innerHTML = ico('settings');
     $('#brandSub').textContent = (state.title && state.title.title) || util.host((state.title && state.title.url) || '') || t('app.tagline');
     renderLayers();
     renderMeta();
@@ -81,7 +86,7 @@
     if (ep) chips.push(`<span class="chip" data-tone="ep">${esc(ep)}</span>`);
     if (info.imdbId) chips.push(`<span class="chip">${esc(info.imdbId)}</span>`);
     if (info.isJunk || !info.title) chips.push(`<span class="chip" data-tone="warn">title not resolved</span>`);
-    if (state.drm) chips.push(`<span class="chip" data-tone="err">${esc(t('label.drm'))} · ${esc(state.drm)}</span>`);
+    if (state.drm) chips.push(`<span class="chip" data-tone="err">${esc(t('label.drm'))} ${esc(state.drm)}</span>`);
     if (state.frames && state.frames.length) chips.push(`<span class="chip">${state.frames.length} frame${state.frames.length > 1 ? 's' : ''}</span>`);
     if (state.players && state.players.length) chips.push(`<span class="chip">${esc('players: ' + state.players.join(', '))}</span>`);
     const total = (state.items || []).length;
@@ -110,7 +115,7 @@
       .slice(0, 5)
       .map(
         (it, i) =>
-          `<div class="sub-item"><button class="btn tiny" data-act="sub-pick" data-i="${i}">${i === 0 ? 'Use' : 'Pick'}</button><span title="${esc(it.name)}">${esc(it.name || it.filename)}</span><b>${esc(it.providerLabel || it.provider)} · ${esc(it.format || 'srt')}</b></div>`
+          `<div class="sub-item"><button class="btn tiny" data-act="sub-pick" data-i="${i}">${i === 0 ? 'Use' : 'Pick'}</button><span title="${esc(it.name)}">${esc(it.name || it.filename)}</span><b>${esc(it.providerLabel || it.provider)} ${esc(it.format || 'srt')}</b></div>`
       )
       .join('');
     $('#subsSearch').textContent = t('panel.subs.retry');
@@ -148,11 +153,11 @@
         <div class="rurl">${esc(it.host || util.host(it.url))}</div>
         <div class="rtags">${tags.join('')}</div>
         <div class="acts">
-          <button class="btn" data-primary="1" data-act="watchparty">★ ${esc(t('action.watchparty'))}</button>
-          <button class="btn" data-act="copy">${esc(t('action.copy'))}</button>
+          <button class="btn" data-primary="1" data-act="watchparty">${ico('users')}${esc(t('action.watchparty'))}</button>
+          <button class="btn" data-act="copy">${ico('copy')}${esc(t('action.copy'))}</button>
           ${canDl ? `<button class="btn" data-act="download">${esc(it.category === 'hls' || it.category === 'dash' ? '.m3u8/.mpd' : t('action.download'))}</button>` : ''}
-          <button class="btn" data-act="subs">${esc(t('action.subs'))}</button>
-          <button class="btn" data-act="open">↗</button>
+          <button class="btn" data-act="subs">${ico('captions')}${esc(t('action.subs'))}</button>
+          <button class="btn" data-act="open" title="${esc(t('action.open'))}">${ico('external-link')}</button>
         </div>
       </div>
     </div>`;
@@ -164,10 +169,10 @@
       ? list
           .map(
             (h, i) =>
-              `<div class="hist"><span title="${esc(h.url)}">${esc(h.title || h.host || '')} · ${esc((h.category || '').toUpperCase())}</span><button data-act="hist-copy" data-i="${i}">${esc(t('action.copy'))}</button></div>`
+              `<div class="hist"><span title="${esc(h.url)}">${esc(h.title || h.host || '')} ${esc((h.category || '').toUpperCase())}</span><button data-act="hist-copy" data-i="${i}">${esc(t('action.copy'))}</button></div>`
           )
           .join('')
-      : '<div class="hist"><span>—</span></div>';
+      : '<div class="hist"><span>-</span></div>';
   }
 
   /* ---------------- actions ---------------- */

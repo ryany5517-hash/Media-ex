@@ -51,7 +51,7 @@
       onStatus: status,
       t: (k, v) => SR.i18n.t(k, v),
     });
-    if (payload.subtitle) status('Subtitle ' + (payload.subtitle.name || 'id') + ' siap dipasang · click “Attach here” in the room', 'ok');
+    if (payload.subtitle) status('Subtitle ' + (payload.subtitle.name || 'id') + ' ready. Use Attach subtitle in the room.', 'ok');
   }
 
   if (api && api.runtime && api.runtime.onMessage) {

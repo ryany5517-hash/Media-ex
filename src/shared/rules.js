@@ -68,6 +68,30 @@
     'embed', 'id', 'auth', 'referer', 'to', 'target', 'redirect', 'cb', 'callback', 'json', 'p',
   ];
 
+  /**
+   * Rule packs (see src/shared/updater.js) can extend the static lists below at
+   * runtime without shipping new code. Everything here is additive: a pack can
+   * never *remove* a built-in rule, so a broken/old pack cannot blind us.
+   */
+  const dynamic = (SR.dynamic = {
+    embedHosts: [],
+    adHosts: [],
+    mediaExt: new Set(),
+    blocked: [],
+    allow: [],
+    loadedAt: 0,
+    version: 0,
+    signatureOk: null,
+  });
+  SR.dynamicLists = dynamic;
+
+  function dynHas(list, needle) {
+    if (!list || !list.length) return false;
+    const n = String(needle || '').toLowerCase();
+    if (!n) return false;
+    return list.some((h) => n === h || n.endsWith('.' + h) || n.indexOf(h) >= 0);
+  }
+
   /** Hosts that are almost never the movie the user wants (ads / trackers). */
   const AD_HOSTS = [
     'doubleclick.net', 'googlesyndication.com', 'googletagservices.com', 'adsafeprotected.com',
@@ -107,6 +131,12 @@
   /* ---------------------------------------------------------------- *
    * 2. Categorisation
    * ---------------------------------------------------------------- */
+  function isMediaExt(ext) {
+    if (!ext) return false;
+    if (EXT[ext] || SEGMENT_EXT.indexOf(ext) >= 0) return true;
+    return dynamic.mediaExt.has(String(ext).toLowerCase());
+  }
+
   function extOf(url) {
     try {
       const p = new URL(url).pathname;
@@ -166,7 +196,7 @@
     } catch (_) {
       pathname = clean.split('?')[0];
     }
-    const pathHit = MEDIA_PATH_RE.test(pathname);
+    const pathHit = MEDIA_PATH_RE.test(pathname) || (dynamic.mediaExt.size && new RegExp('\\.(' + [...dynamic.mediaExt].join('|') + ')(\\?|#|$)', 'i').test(pathname));
     if (!category || category === 'other') {
       // No extension and no helpful mime: accept only when the *path* looks like
       // a media file. A media-looking string inside ?query= belongs to the
@@ -194,7 +224,7 @@
       isAd,
       isBlob,
       isTextTrack: category === 'texttrack',
-      isEmbed: EMBED_HOSTS.some((h) => host.indexOf(h) >= 0),
+      isEmbed: EMBED_HOSTS.some((h) => host.indexOf(h) >= 0) || dynamic.embedHosts.indexOf(host) >= 0 || dynHas(dynamic.embedHosts, host),
     };
   }
 
@@ -202,6 +232,7 @@
     host = host || util.host(url);
     if (!host) return false;
     if (AD_HOSTS.some((h) => host === h || host.endsWith('.' + h) || host.indexOf(h) >= 0)) return true;
+    if (dynHas(dynamic.adHosts, host)) return true;
     return AD_PATH_RE.test(url);
   }
 
