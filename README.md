@@ -120,7 +120,7 @@ src/shared/                    util · rules (klasifikasi) · title-cleaner · s
 src/userscript/host.js         host untuk build userscript (Tampermonkey/Violentmonkey)
 tools/build.mjs                bundling prelude, tweak manifest per browser, validasi, zip/xpi
 tools/build-userscript.mjs     generate userscript/stream-radar.user.js (+header @grant dll.)
-tools/test/*.test.mjs          39 test (node:test)
+tools/test/*.test.mjs          41 test (node:test)
 demo/                          halaman uji deteksi
 ```
 
