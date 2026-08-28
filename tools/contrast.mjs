@@ -113,12 +113,16 @@ function auditLiterals() {
     'src/options/options.css',
     'src/popup/popup.html',
     'src/options/options.html',
+    'src/popup/popup.js',
+    'src/options/options.js',
   ];
   for (const rel of uiFiles) {
     const lines = readFileSync(path.join(ROOT, rel), 'utf8').split('\n');
     lines.forEach((line, i) => {
       if (/mask(-image)?\s*:/.test(line)) return; // alpha channel mask, allowed
-      if (/#[0-9a-fA-F]{3,8}\b|rgba?\(/.test(line) && !/var\(/.test(line)) {
+      // strip string literals that are URLs (data: URIs may embed rgba in payloads)
+      const stripped = line.replace(/'[^']*'|"[^"]*"/g, m => (/https?:|data:|\.css|\.js/.test(m) ? '' : m));
+      if (/#[0-9a-fA-F]{3,8}\b|rgba?\(/.test(stripped) && !/var\(/.test(stripped)) {
         problems.push(`${rel}:${i + 1}: literal colour outside tokens/mask: ${line.trim().slice(0, 80)}`);
       }
     });

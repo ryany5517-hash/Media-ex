@@ -125,11 +125,25 @@
             <label class="field"><span data-i18n="options.updateUrl">Update source</span><input type="text" data-key="updateUrl" spellcheck="false" /></label>
             <label class="field"><span data-i18n="options.updateHours">Check every (hours)</span><input type="number" data-key="updateCheckHours" min="1" max="168" /></label>
           </div>
-          <div class="row" style="margin-top:14px">
-            <button class="primary" id="checkUpdates" data-i18n="update.check">Check now</button>
-            <span id="updateInfo" class="hint">...</span>
+          <div class="update-card" id="updateCard" data-state="idle">
+            <div class="update-glow" aria-hidden="true"></div>
+            <div class="update-head">
+              <span class="update-status-dot" aria-hidden="true"><span class="update-dot-ring"></span><span class="update-dot-core"></span></span>
+              <div class="update-head-text">
+                <strong id="updateStatusTitle" data-i18n="update.stateIdle">Idle</strong>
+                <span id="updateStatusSub" class="hint" data-i18n="update.hint"></span>
+              </div>
+              <button class="primary" id="checkUpdates" data-i18n="update.check">Check now</button>
+            </div>
+            <div class="update-chips" id="updateChips">
+              <span class="update-chip" id="chipPack"></span>
+              <span class="update-chip" id="chipHosts"></span>
+              <span class="update-chip" id="chipAds"></span>
+              <span class="update-chip" id="chipSig"></span>
+              <span class="update-chip" id="chipPatch"></span>
+            </div>
           </div>
-          <pre id="updateOut" hidden></pre>
+          <pre id="updateOut" hidden class="update-raw"></pre>
         </div>
       </section>
 

@@ -54,6 +54,24 @@ test('popup has a single scroll container .p-scroll with the required constraint
   assert.match(css, /\.history-list\s*\{[^}]*overflow:\s*visible/, '.history-list must not scroll itself');
 });
 
+test('live-update card markup and styles are present (#12)', () => {
+  const html = read('src/options/options.html');
+  for (const need of ['id="updateCard"', 'class="update-glow"', 'id="updateStatusTitle"', 'id="updateChips"', 'id="chipPack"', 'id="chipSig"']) {
+    assert.ok(html.includes(need), 'options.html must contain ' + need);
+  }
+  const css = read('src/options/options.css');
+  for (const need of ['.update-card', '.update-glow', '.update-dot-core', '@keyframes sr-ud-pulse', '.update-chip']) {
+    assert.ok(css.includes(need), 'options.css must define ' + need);
+  }
+  // the card glow must use tokens, not a literal colour
+  const glowRule = css.slice(css.indexOf('.update-glow'));
+  assert.ok(!/#[0-9a-fA-F]{3,8}/.test(glowRule.slice(0, 400)), 'glow must not hard-code a colour');
+  // options.js renders the card instead of the old inline status text
+  const js = read('src/options/options.js');
+  assert.ok(js.includes('renderUpdateCard'), 'options.js must render the update card');
+  assert.ok(!/updateInfo'\)\.textContent/.test(js), 'old inline updateInfo text must be gone');
+});
+
 test('global webkit scrollbar is token styled and transparent-tracked', () => {
   const css = read('src/shared/theme.css');
   assert.match(css, /::-webkit-scrollbar\s*\{[^}]*width:\s*var\(--sr-scroll-size\)/);

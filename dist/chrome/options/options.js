@@ -198,17 +198,46 @@
     }
   }
 
+  function renderUpdateCard(status, st) {
+    const card = $('#updateCard');
+    if (!card) return;
+    const t = SR.i18n.t;
+    const stateMap = {
+      current: 'current', updated: 'updated', error: 'error',
+      incompatible: 'error', disabled: 'idle', checking: 'checking',
+    };
+    const state = stateMap[status] || (status ? 'idle' : 'idle');
+    card.setAttribute('data-state', state);
+    const titleKey = {
+      current: 'update.stateCurrent', updated: 'update.stateUpdated', error: 'update.stateError',
+      incompatible: 'update.stateIncompat', checking: 'update.stateChecking', idle: 'update.stateIdle',
+    }[state] || 'update.stateIdle';
+    $('#updateStatusTitle').textContent = t(titleKey);
+    $('#updateStatusSub').textContent = t('update.hint');
+
+    const d = (st && st.dynamic) || {};
+    const chip = (id, text, on) => { const el = $(id); if (!el) return; el.textContent = text; el.setAttribute('data-on', on ? '1' : '0'); };
+    chip('#chipPack', t('update.packVersion', { v: d.version || 0 }), d.version > 0);
+    chip('#chipHosts', t('update.hostsAdded', { n: d.embedHosts || 0 }), (d.embedHosts || 0) > 0);
+    chip('#chipAds', t('update.adsAdded', { n: d.adHosts || 0 }), (d.adHosts || 0) > 0);
+    chip('#chipSig', d.signed ? t('update.sigOk') : t('update.sigNone'), !!d.signed);
+    chip('#chipPatch', t('update.patchVersion', { v: (st && st.patch) || 0 }), (st && st.patch) > 0);
+  }
+
   async function checkUpdates() {
     const out = $('#updateOut');
-    $('#updateInfo').textContent = 'memeriksa…';
-    out.hidden = false;
+    renderUpdateCard('checking', null);
+    out.hidden = true;
     try {
       const res = await api.runtime.sendMessage({ type: 'action', payload: { name: 'check-updates' } });
       const st = await api.runtime.sendMessage({ type: 'action', payload: { name: 'update-status' } });
+      const status = (res && res.status) || 'error';
+      renderUpdateCard(status, st);
+      out.hidden = false;
       out.textContent = JSON.stringify({ check: res, status: st }, null, 1);
-      $('#updateInfo').textContent = (res && res.status) || 'error';
     } catch (e) {
-      $('#updateInfo').textContent = 'error';
+      renderUpdateCard('error', null);
+      out.hidden = false;
       out.textContent = String((e && e.message) || e);
     }
   }
@@ -217,9 +246,12 @@
     try {
       const st = await api.runtime.sendMessage({ type: 'action', payload: { name: 'update-status' } });
       const d = (st && st.dynamic) || {};
-      $('#updateInfo').textContent =
-        'pack v' + (d.version || 0) + ', hosts +' + (d.embedHosts || 0) + ' ads +' + (d.adHosts || 0) + ', sign '+ (d.signed ? 'ok' : 'belum ada') + ', patch v' + ((st && st.patch) || 0);
-    } catch (_) {}
+      // before the user ever presses "Check now" show the last known pack state
+      const status = d.version > 0 ? (st && st.lastStatus) || 'current' : 'idle';
+      renderUpdateCard(status, st);
+    } catch (_) {
+      renderUpdateCard('error', null);
+    }
   }
 
   async function storageInfo() {
@@ -237,10 +269,7 @@
   function toast(text, kind) {
     const el = document.createElement('div');
     el.textContent = text;
-    el.style.cssText =
-      'position:fixed;right:18px;bottom:18px;z-index:99;background:#171b2c;color:#e9edf7;border:1px solid rgba(255,255,255,.16);border-left:3px solid ' +
-      (kind === 'err' ? '#f87171' : '#2ee6c5') +
-      ';padding:11px 15px;border-radius:11px;font:600 12.5px system-ui;box-shadow:0 10px 30px rgba(0,0,0,.4)';
+    el.className = 'opt-toast' + (kind ? ' data-' + kind : '');
     document.body.appendChild(el);
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => el.remove(), 3000);
