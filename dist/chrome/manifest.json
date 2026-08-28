@@ -1,0 +1,139 @@
+{
+  "manifest_version": 3,
+  "name": "Stream Radar — Media Detector & WatchParty",
+  "version": "1.0.0",
+  "description": "7-layer video stream detector (HLS/DASH/MP4/blob) that beats IDM & Video DownloadHelper, cleans the movie title, auto-fetches Indonesian subtitles and opens a WatchParty room. No server, no tracking.",
+  "homepage_url": "https://github.com/ryany5517-hash/Media-ex",
+  "minimum_chrome_version": "111",
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_title": "Stream Radar — detected media",
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "options_page": "options/options.html",
+  "permissions": [
+    "storage",
+    "unlimitedStorage",
+    "tabs",
+    "webRequest",
+    "downloads",
+    "notifications",
+    "contextMenus",
+    "alarms"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "shared/util.js",
+        "shared/rules.js",
+        "shared/title-cleaner.js",
+        "page/inject.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": true,
+      "match_about_blank": true,
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "shared/util.js",
+        "shared/rules.js",
+        "shared/title-cleaner.js",
+        "shared/i18n.js",
+        "shared/icons.js",
+        "shared/updater.js",
+        "shared/dom-scanner.js",
+        "vendor/motion.min.js",
+        "content/ui-styles.js",
+        "content/ui.js",
+        "content/content.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": true,
+      "match_about_blank": true
+    },
+    {
+      "matches": [
+        "*://www.watchparty.me/*",
+        "*://watchparty.me/*"
+      ],
+      "js": [
+        "shared/util.js",
+        "shared/rules.js",
+        "shared/title-cleaner.js",
+        "shared/i18n.js",
+        "shared/watchparty-auto.js",
+        "watchparty/watchparty.js"
+      ],
+      "run_at": "document_end",
+      "all_frames": false
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "page/inject.js",
+        "shared/*.js",
+        "vendor/*.js",
+        "icons/*.png",
+        "watchparty/watchparty.js"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
+    }
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  },
+  "commands": {
+    "toggle-panel": {
+      "suggested_key": {
+        "default": "Alt+Shift+S"
+      },
+      "description": "Show / hide the Stream Radar panel"
+    },
+    "scan-now": {
+      "suggested_key": {
+        "default": "Alt+Shift+D"
+      },
+      "description": "Force a full re-scan of this page"
+    },
+    "subtitle-now": {
+      "suggested_key": {
+        "default": "Alt+Shift+F"
+      },
+      "description": "Search Indonesian subtitles for this title now"
+    },
+    "_execute_action": {
+      "suggested_key": {
+        "mac": "Alt+Shift+A"
+      },
+      "description": "Open the Stream Radar popup"
+    }
+  },
+  "short_name": "Stream Radar"
+}
