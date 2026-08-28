@@ -98,15 +98,13 @@ dan (kalau kamu aktifkan) patch script konten. Yang tetap perlu build ulang: per
 
 ```bash
 npm install
-npm test          # 64 test: rules, judul, SRT→VTT, unzip, provider, simulasi 67movies, audit 12 fitur, UI, userscript, update verifier
+npm test          # 64 test: rules, judul, SRT-VTT, unzip, provider, simulasi halaman 67movies, audit 12 fitur, UI, userscript, verifier update
 npm run qa        # design QA: kontras WCAG, target sentuh, kelas yatim, kebijakan tanpa emoji/emdash
-npm run preview   # render panel UI dari modul aslinya → docs/preview/ui.html
 npm run lint      # web-ext lint (Firefox) → 0 errors
-npm run build     # dist/chrome, dist/firefox, dist/*.zip|*.xpi, userscript/
-npm run qa        # design QA: kontras WCAG, target sentuh, kelas yatim, kebijakan tanpa emoji/emdash
-npm run demo      # http://localhost:8088/demo/index.html → harus muncul 1 HLS (1080p/720p) + 1 MP4 + 1 blob
-npm run preview   # docs/preview/ui.html → panel UI dirender dari modul aslinya
+npm run demo      # http://localhost:8088/demo/index.html → harus muncul 1 HLS (1080p + 720p) + 1 MP4 + 1 blob
 npm run test:demo # 3 test yang menjalankan server demo + pipeline deteksi lewat HTTP beneran
+npm run preview   # docs/preview/ui.html → panel UI dirender dari modul UI yang asli
+npm run build     # regenerasi dist/chrome + dist/firefox (snapshot sudah ikut repo), arsip zip/xpi, userscript/
 ```
 
 CI siap pakai (opsional): `ci/github-actions-build.yml` — salin ke `.github/workflows/build.yml`
