@@ -186,6 +186,7 @@
     let category = categoryFromExtension(ext);
 
     if (!category && o.mime) category = categoryFromMime(o.mime);
+    if (!category && util.isHlsProxy && util.isHlsProxy(clean)) category = 'hls';
     if (!category && !isBlob && o.via === 'heuristic') return null; // heuristics must be extension-backed
     if (!category && NOISE_RE.test(clean)) return null;
     if (!category && isBlob) category = 'blob';

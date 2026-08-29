@@ -563,4 +563,32 @@ test('F15 play: page Referer 403 then retry with stream origin like IDM', async 
   h.dom.window.close();
 });
 
+test('F16 play: m3u8-proxy URL keeps wrapper + baked Origin/Referer', async () => {
+  const inner = 'https://futureproofmarketing.site/pl/master.m3u8';
+  const proxy =
+    'https://proxy.valhallastream.dpdns.org/m3u8-proxy?url=' +
+    encodeURIComponent(inner) +
+    '&headers=' +
+    encodeURIComponent(JSON.stringify({ Origin: 'https://nextgencloudfabric.com', Referer: 'https://nextgencloudfabric.com/' }));
+  const h = await boot({ settings: { autoSubtitle: false, lastUpdateCheck: Date.now() } });
+  h.hub.fireWebRequest({
+    url: proxy,
+    type: 'xmlhttprequest',
+    statusCode: 200,
+    responseHeaders: h.hub.header({ 'content-type': 'application/vnd.apple.mpegurl' }),
+  });
+  await until(h, () => (stateOf(h).items || []).some((i) => i.url === proxy), 4000);
+  const item = (h.hub.lastBroadcast.items || []).find((i) => i.url === proxy);
+  assert.ok(item, 'proxy row present: ' + JSON.stringify((h.hub.lastBroadcast.items || []).map((i) => i.url)));
+  assert.equal(item.category, 'hls');
+  const res = await h.hub.sendFromContent({ type: 'action', payload: { name: 'play', id: item.id, tabId: 1 } });
+  assert.equal(res.ok, true, 'play launched: ' + JSON.stringify(res));
+  const stored = h.hub.storage['srad:play:' + res.sid];
+  assert.equal(stored.url, proxy, 'play uses the proxy wrapper, not the naked inner m3u8');
+  assert.equal(stored.category, 'hls');
+  assert.match(stored.referer, /nextgencloudfabric\.com/, 'Referer taken from headers= query: ' + stored.referer);
+  assert.match(stored.origin, /nextgencloudfabric\.com/);
+  h.dom.window.close();
+});
+
 const readModule = (rel) => readSrc(rel);

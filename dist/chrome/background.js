@@ -16,7 +16,7 @@
   'use strict';
 
   const SR = (root.SR = root.SR || {});
-  SR.VERSION = '1.1.2';
+  SR.VERSION = '1.1.3';
   SR.NS = 'streamRadar'; // message channel id / storage prefix
   SR.PREFIX = 'srad'; // css class prefix
 
@@ -207,6 +207,37 @@
       return '';
     },
 
+    /**
+     * Sites like Valhalla wrap the real playlist:
+     *   /m3u8-proxy?url=<encoded m3u8>&headers={"Origin":"…","Referer":"…"}
+     * The wrapper IS the playable HLS URL (it rewrites segments). The headers
+     * query is the Origin/Referer IDM would copy — use them if we play the inner url.
+     */
+    isHlsProxy(url) {
+      if (!url || typeof url !== 'string') return false;
+      let path = url;
+      try {
+        path = new URL(url).pathname;
+      } catch (_) {}
+      if (/(^|\/)(m3u8-proxy|hls-proxy|ts-proxy)(\/|$)/i.test(path)) return true;
+      const q = util.query(url);
+      return !!(q.headers && q.url && /\.m3u8/i.test(q.url));
+    },
+
+    parsePlayHeaders(url) {
+      const q = util.query(url);
+      let raw = q.headers || '';
+      if (!raw) return { referer: '', origin: '' };
+      try {
+        raw = decodeURIComponent(raw);
+      } catch (_) {}
+      const obj = util.safeJSON(raw, null);
+      if (!obj || typeof obj !== 'object') return { referer: '', origin: '' };
+      const referer = String(obj.Referer || obj.referer || '');
+      const origin = String(obj.Origin || obj.origin || '');
+      return { referer: referer, origin: origin };
+    },
+
     /** Local player can fetch with the page Referer; blob/segments still cannot. */
     localPlayable(url, category) {
       if (!url) return false;
@@ -223,6 +254,7 @@
       //    everything: real HLS CDNs often serve .../api/playlist.m3u8, so a
       //    resolver-looking path must not veto an explicit manifest/file.
       if (/\.(m3u8|mpd|mp4|webm|mkv|mov|m4v|m3u)(\?|#|$)/i.test(path)) return true;
+      if (util.isHlsProxy(url)) return true;
       // 2) A classified direct-media category (content-type/parsed manifest,
       //    served without a clean extension) is playable too.
       if (category === 'hls' || category === 'dash' || category === 'mp4' || category === 'webm') return true;
@@ -750,6 +782,7 @@
     let category = categoryFromExtension(ext);
 
     if (!category && o.mime) category = categoryFromMime(o.mime);
+    if (!category && util.isHlsProxy && util.isHlsProxy(clean)) category = 'hls';
     if (!category && !isBlob && o.via === 'heuristic') return null; // heuristics must be extension-backed
     if (!category && NOISE_RE.test(clean)) return null;
     if (!category && isBlob) category = 'blob';
@@ -3725,9 +3758,24 @@
 
       // streams hidden inside a proxy URL's query string / base64 param
       if (/\?|%3a%2f%2f|base64/i.test(url)) {
+        const wrapHdr = util.parsePlayHeaders(url);
         for (const n of rules.unwrapUrl(url)) {
           if (n === url || recentlyReported(util.dedupKey(n, ''))) continue;
-          ingest(tabId, { url: n, via: 'network', mime: mime, size: len, public: { unwrappedFrom: url } }, 'network');
+          ingest(
+            tabId,
+            {
+              url: n,
+              via: 'network',
+              mime: mime,
+              size: len,
+              public: {
+                unwrappedFrom: url,
+                requestReferer: wrapHdr.referer || '',
+                requestOrigin: wrapHdr.origin || '',
+              },
+            },
+            'network'
+          );
         }
       }
 
@@ -3752,8 +3800,8 @@
             initiator: details.initiator || details.originUrl || '',
             documentUrl: details.documentUrl || details.originUrl || '',
             originUrl: details.originUrl || details.initiator || '',
-            requestReferer: (REQUEST_HDRS.get(url) || {}).referer || '',
-            requestOrigin: (REQUEST_HDRS.get(url) || {}).origin || '',
+            requestReferer: (REQUEST_HDRS.get(url) || {}).referer || (util.parsePlayHeaders(url) || {}).referer || '',
+            requestOrigin: (REQUEST_HDRS.get(url) || {}).origin || (util.parsePlayHeaders(url) || {}).origin || '',
             frameId: details.frameId,
           },
         },
@@ -4299,6 +4347,16 @@
       referers: refs,
     };
     if (!url || (hop || 0) > 2) return fallback;
+    if (util.isHlsProxy(url)) {
+      const baked = util.parsePlayHeaders(url);
+      return {
+        url: url,
+        category: 'hls',
+        referer: baked.referer || refs[0] || '',
+        origin: baked.origin || originOf(baked.referer) || fallback.origin,
+        referers: refs,
+      };
+    }
     if (/\.(m3u8|mpd|mp4|webm|mkv|m4v|mov|m3u)(\?|#|$)/i.test(url)) {
       return Object.assign({}, fallback, { url: url, category: sniffCategory('', '', url, fallback.category) });
     }

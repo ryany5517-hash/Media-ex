@@ -206,9 +206,24 @@ try {
 
       // streams hidden inside a proxy URL's query string / base64 param
       if (/\?|%3a%2f%2f|base64/i.test(url)) {
+        const wrapHdr = util.parsePlayHeaders(url);
         for (const n of rules.unwrapUrl(url)) {
           if (n === url || recentlyReported(util.dedupKey(n, ''))) continue;
-          ingest(tabId, { url: n, via: 'network', mime: mime, size: len, public: { unwrappedFrom: url } }, 'network');
+          ingest(
+            tabId,
+            {
+              url: n,
+              via: 'network',
+              mime: mime,
+              size: len,
+              public: {
+                unwrappedFrom: url,
+                requestReferer: wrapHdr.referer || '',
+                requestOrigin: wrapHdr.origin || '',
+              },
+            },
+            'network'
+          );
         }
       }
 
@@ -233,8 +248,8 @@ try {
             initiator: details.initiator || details.originUrl || '',
             documentUrl: details.documentUrl || details.originUrl || '',
             originUrl: details.originUrl || details.initiator || '',
-            requestReferer: (REQUEST_HDRS.get(url) || {}).referer || '',
-            requestOrigin: (REQUEST_HDRS.get(url) || {}).origin || '',
+            requestReferer: (REQUEST_HDRS.get(url) || {}).referer || (util.parsePlayHeaders(url) || {}).referer || '',
+            requestOrigin: (REQUEST_HDRS.get(url) || {}).origin || (util.parsePlayHeaders(url) || {}).origin || '',
             frameId: details.frameId,
           },
         },
@@ -780,6 +795,16 @@ try {
       referers: refs,
     };
     if (!url || (hop || 0) > 2) return fallback;
+    if (util.isHlsProxy(url)) {
+      const baked = util.parsePlayHeaders(url);
+      return {
+        url: url,
+        category: 'hls',
+        referer: baked.referer || refs[0] || '',
+        origin: baked.origin || originOf(baked.referer) || fallback.origin,
+        referers: refs,
+      };
+    }
     if (/\.(m3u8|mpd|mp4|webm|mkv|m4v|mov|m3u)(\?|#|$)/i.test(url)) {
       return Object.assign({}, fallback, { url: url, category: sniffCategory('', '', url, fallback.category) });
     }

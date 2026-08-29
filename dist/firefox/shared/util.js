@@ -15,7 +15,7 @@
   'use strict';
 
   const SR = (root.SR = root.SR || {});
-  SR.VERSION = '1.1.2';
+  SR.VERSION = '1.1.3';
   SR.NS = 'streamRadar'; // message channel id / storage prefix
   SR.PREFIX = 'srad'; // css class prefix
 
@@ -206,6 +206,37 @@
       return '';
     },
 
+    /**
+     * Sites like Valhalla wrap the real playlist:
+     *   /m3u8-proxy?url=<encoded m3u8>&headers={"Origin":"…","Referer":"…"}
+     * The wrapper IS the playable HLS URL (it rewrites segments). The headers
+     * query is the Origin/Referer IDM would copy — use them if we play the inner url.
+     */
+    isHlsProxy(url) {
+      if (!url || typeof url !== 'string') return false;
+      let path = url;
+      try {
+        path = new URL(url).pathname;
+      } catch (_) {}
+      if (/(^|\/)(m3u8-proxy|hls-proxy|ts-proxy)(\/|$)/i.test(path)) return true;
+      const q = util.query(url);
+      return !!(q.headers && q.url && /\.m3u8/i.test(q.url));
+    },
+
+    parsePlayHeaders(url) {
+      const q = util.query(url);
+      let raw = q.headers || '';
+      if (!raw) return { referer: '', origin: '' };
+      try {
+        raw = decodeURIComponent(raw);
+      } catch (_) {}
+      const obj = util.safeJSON(raw, null);
+      if (!obj || typeof obj !== 'object') return { referer: '', origin: '' };
+      const referer = String(obj.Referer || obj.referer || '');
+      const origin = String(obj.Origin || obj.origin || '');
+      return { referer: referer, origin: origin };
+    },
+
     /** Local player can fetch with the page Referer; blob/segments still cannot. */
     localPlayable(url, category) {
       if (!url) return false;
@@ -222,6 +253,7 @@
       //    everything: real HLS CDNs often serve .../api/playlist.m3u8, so a
       //    resolver-looking path must not veto an explicit manifest/file.
       if (/\.(m3u8|mpd|mp4|webm|mkv|mov|m4v|m3u)(\?|#|$)/i.test(path)) return true;
+      if (util.isHlsProxy(url)) return true;
       // 2) A classified direct-media category (content-type/parsed manifest,
       //    served without a clean extension) is playable too.
       if (category === 'hls' || category === 'dash' || category === 'mp4' || category === 'webm') return true;

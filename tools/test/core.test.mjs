@@ -47,6 +47,25 @@ test('classify: flags ad traffic', () => {
   assert.equal(rules.classify('https://movies.example.com/movie.mp4').isAd, false);
 });
 
+test('classify + parsePlayHeaders: m3u8-proxy with Origin/Referer is HLS', () => {
+  const inner = 'https://futureproofmarketing.site/pl/master.m3u8';
+  const proxy =
+    'https://proxy.valhallastream.dpdns.org/m3u8-proxy?url=' +
+    encodeURIComponent(inner) +
+    '&headers=' +
+    encodeURIComponent(JSON.stringify({ Origin: 'https://nextgencloudfabric.com', Referer: 'https://nextgencloudfabric.com/' }));
+  const r = rules.classify(proxy);
+  assert.ok(r, 'proxy classified');
+  assert.equal(r.category, 'hls');
+  assert.equal(util.isHlsProxy(proxy), true);
+  const h = util.parsePlayHeaders(proxy);
+  assert.match(h.referer, /nextgencloudfabric\.com/);
+  assert.equal(h.origin, 'https://nextgencloudfabric.com');
+  assert.equal(util.watchPartyPlayable(proxy, 'hls'), true);
+  const unwrapped = rules.unwrapUrl(proxy);
+  assert.ok(unwrapped.some((u) => u.indexOf('master.m3u8') >= 0), JSON.stringify(unwrapped));
+});
+
 test('unwrapUrl: extracts streams hidden in query params / base64', () => {
   const urls = rules.unwrapUrl('https://vidlink.pro/movie/123?api=/&src=https%3A%2F%2Fcdn.host%2Fhls%2Fmaster.m3u8');
   assert.ok(urls.some((u) => /master\.m3u8$/.test(u)), JSON.stringify(urls));
