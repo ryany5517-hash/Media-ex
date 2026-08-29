@@ -463,6 +463,31 @@
         case 'ping':
           respond({ ok: true, pageAlive: pageAlive, isTop: isTop, version: SR.VERSION, hooks: pageAlive ? 'MAIN' : 'fallback' });
           return true;
+        case 'play-in-page': {
+          const session = msg.session || {};
+          const here = util.host(root.location.href);
+          const relatedHost = function (a, b) {
+            a = String(a || '').toLowerCase();
+            b = String(b || '').toLowerCase();
+            if (!a || !b) return false;
+            if (a === b) return true;
+            if (a.endsWith('.' + b) || b.endsWith('.' + a)) return true;
+            const tail = (h) => {
+              const p = h.split('.');
+              return p.length <= 2 ? h : p.slice(-2).join('.');
+            };
+            return tail(a) === tail(b);
+          };
+          const wants = [session.host, util.host(session.url)].filter(Boolean);
+          const related = wants.some((w) => relatedHost(here, w));
+          if (!related) {
+            respond({ ok: false, played: false, reason: 'frame' });
+            return true;
+          }
+          postCmd('play-in-page', session);
+          respond({ ok: true, played: true, host: here });
+          return true;
+        }
       }
     });
   }

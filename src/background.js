@@ -876,6 +876,42 @@ try {
     return fallback;
   }
 
+  async function tryInPagePlay(tabId, media, session) {
+    if (tabId == null) return false;
+    const want = (session && session.host) || util.host((media && media.url) || '') || util.host((session && session.url) || '');
+    const ids = [];
+    const pushId = (id, front) => {
+      if (id == null || ids.indexOf(id) >= 0) return;
+      if (front) ids.unshift(id);
+      else ids.push(id);
+    };
+    if (media && media.flags && media.flags.frameId != null) pushId(media.flags.frameId, true);
+    (stFrames(tabId) || []).forEach((f) => {
+      if (!f || f.frameId == null) return;
+      const host = util.host(f.url || '');
+      const related = want && host && (host === want || host.endsWith('.' + want) || want.endsWith('.' + host));
+      pushId(f.frameId, related);
+    });
+    async function ping(frameId) {
+      try {
+        const msg = { type: 'play-in-page', session: session };
+        const res = frameId != null ? await api.tabs.sendMessage(tabId, msg, { frameId: frameId }) : await api.tabs.sendMessage(tabId, msg);
+        return !!(res && res.played);
+      } catch (_) {
+        return false;
+      }
+    }
+    for (let i = 0; i < ids.length; i++) {
+      if (await ping(ids[i])) return true;
+    }
+    return ping(undefined);
+  }
+
+  function stFrames(tabId) {
+    const st = tabs.get(tabId);
+    return (st && st.frames) || [];
+  }
+
   async function launchPlayer(st, itemId, urlOverride) {
     const clicked = itemId ? st.store.byId.get(itemId) : null;
     const picked = pickPlayable(st, itemId);
@@ -893,6 +929,17 @@ try {
     if (resolved.referer) session.referer = resolved.referer;
     if (resolved.origin) session.origin = resolved.origin;
     if (resolved.referers && resolved.referers.length) session.referers = resolved.referers;
+    session.host = (media && media.host) || util.host((media && media.url) || '') || session.host;
+    try {
+      session.hlsLib = api.runtime.getURL('vendor/hls.light.min.js');
+    } catch (_) {}
+
+    const inPage = await tryInPagePlay(st.tabId, media, session);
+    if (inPage) {
+      toastTo(st.tabId, t('toast.player'), 'ok');
+      return { ok: true, inpage: true, session: session };
+    }
+
     await api.storage.local.set({ [PLAY_PREFIX + sid]: session });
     const target = api.runtime.getURL('player/player.html?sid=' + encodeURIComponent(sid));
     const tab = await api.tabs.create({ url: target, active: true });
@@ -1162,7 +1209,7 @@ try {
             if (!st) return { ok: false };
             const p = msg.payload || {};
             const hooks = p.hooks || [];
-            const rec = { url: msg.href || sender.url || '', top: !!p.isTop, version: p.version, hooks: hooks };
+            const rec = { url: msg.href || sender.url || '', top: !!p.isTop, version: p.version, hooks: hooks, frameId: sender.frameId };
             if (!st.frames.some((f) => f.url === rec.url)) st.frames.push(rec);
             if (hooks.indexOf('fetch') >= 0) st.store.layers.network = true;
             if (hooks.indexOf('mse') >= 0) st.store.layers.mse = true;
