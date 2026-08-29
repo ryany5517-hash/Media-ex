@@ -15,7 +15,6 @@ body {
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
 }
-@media (max-width: 420px) { body { width: 100vw; max-height: 100vh; } }
 
 /* single scroll container; every middle block lives inside it */
 .p-scroll {
@@ -143,7 +142,7 @@ body {
   display: flex; align-items: center; gap: var(--sr-sp-2); padding: 9px 12px 12px;
   border-top: 1px solid var(--sr-line); margin-top: 6px; background: var(--sr-surface);
 }
-.sw { display: inline-flex; align-items: center; gap: 7px; font-size: 11.5px; color: var(--sr-ink-2); cursor: pointer; }
+.sw { display: inline-flex; align-items: center; gap: 7px; font-size: 11.5px; color: var(--sr-ink-2); cursor: pointer; white-space: nowrap; min-width: 0; }
 .sw input { position: absolute; opacity: 0; pointer-events: none; }
 .slider { width: 30px; height: 18px; border-radius: var(--sr-r-pill); background: var(--sr-line-2); position: relative; transition: background var(--sr-t-mid) var(--sr-ease); flex: none; }
 .slider::after {
@@ -167,9 +166,11 @@ body {
 .toast[data-k="warn"] { border-left-color: var(--sr-warn); }
 @keyframes sr-in { from { opacity: 0; transform: translateY(6px); } }
 
-/* mobile / Android: go full-bleed, respect notches and the gesture bar */
-@media (max-width: 430px), (pointer: coarse) {
-  body { width: 100vw; max-height: 100vh; min-height: 100vh; }
+/* Touch / Android: larger tap targets and notch/gesture-bar padding.
+   IMPORTANT: never set width/height here - the popup is a fixed ~400px window,
+   so a max-width media query matches the popup itself and collapses it. env()
+   safe-area insets are 0 in a normal desktop popup, so padding is harmless. */
+@media (pointer: coarse) {
   .p-head { padding-top: calc(12px + env(safe-area-inset-top, 0px)); padding-left: calc(12px + env(safe-area-inset-left, 0px)); padding-right: calc(12px + env(safe-area-inset-right, 0px)); }
   .p-foot { padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px)); }
   .btn, .ibtn { min-height: 42px; }

@@ -99,6 +99,17 @@ test('mobile / Android: safe-area insets and bottom-sheet rules exist', () => {
   assert.ok(/font-size:\s*16px/.test(options), 'options uses 16px inputs to prevent iOS focus zoom');
 });
 
+test('popup never forces 100vw/100vh (that collapsed the ~400px popup window)', () => {
+  const css = read('src/popup/popup.css');
+  // the base body rule sets a fixed popup width
+  assert.ok(/body\s*\{[^}]*width:\s*400px/.test(css), 'popup body keeps a fixed 400px width');
+  // a popup is a fixed-size browser window (~400px wide); any full-bleed
+  // viewport sizing (100vw/100vh) in a media query matches the popup itself and
+  // collapses it. Such rules belong only in the in-page panel / options page.
+  assert.ok(!/100vw/.test(css), 'popup.css must never use 100vw');
+  assert.ok(!/100vh/.test(css), 'popup.css must never use 100vh');
+});
+
 test('global webkit scrollbar is token styled and transparent-tracked', () => {
   const css = read('src/shared/theme.css');
   assert.match(css, /::-webkit-scrollbar\s*\{[^}]*width:\s*var\(--sr-scroll-size\)/);
