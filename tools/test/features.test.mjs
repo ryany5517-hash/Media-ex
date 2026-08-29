@@ -201,13 +201,14 @@ test('F6 watch party: opens watchparty.me with media + cleaned room name + subti
   const res = await h.hub.sendFromContent({ type: 'action', payload: { name: 'watchparty', id: item.id, tabId: 1 } });
   assert.equal(res.ok, true, 'watchparty launched: ' + JSON.stringify(res));
   const tab = h.hub.tabs.created[h.hub.tabs.created.length - 1];
-  assert.equal(tab.url.startsWith('https://www.watchparty.me/watchNow?url='), true);
-  assert.ok(tab.url.includes(encodeURIComponent(MP4_URL)), 'media url passed via watchNow');
-  assert.ok(tab.url.includes('name=Dune%3A%20Part%20Two%20(2024)'), 'room name is the cleaned title');
+  assert.equal(tab.url.startsWith('https://www.watchparty.me/create?video='), true, 'auto-creates a room: ' + tab.url);
+  assert.ok(tab.url.includes(encodeURIComponent(MP4_URL)), 'media url passed as ?video=');
+  assert.ok(!tab.url.includes('watchNow'), 'legacy /watchNow hand-off is replaced by /create');
   const key = 'srad:party:' + tab.id;
   const payload = h.hub.storage[key];
   assert.ok(payload, 'hand-off payload stored for the watchparty tab');
   assert.equal(payload.mediaUrl, MP4_URL);
+  assert.ok(payload.roomName.includes('Dune'), 'cleaned room name travels in the payload: ' + payload.roomName);
   assert.equal(payload.autoJoin, true);
   assert.ok(payload.subtitle && /^WEBVTT/.test(payload.subtitle.vtt), 'subtitle travels with the room');
 

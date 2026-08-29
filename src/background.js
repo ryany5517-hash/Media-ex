@@ -516,6 +516,11 @@ try {
   /* ================================================================== *
    * WatchParty (PART 3)
    * ================================================================== */
+  // /create?video= auto-creates the room server-side and redirects into it.
+  function watchPartyCreateUrl(mediaUrl) {
+    return 'https://www.watchparty.me/create?video=' + encodeURIComponent(mediaUrl);
+  }
+
   async function launchWatchParty(st, itemId) {
     const media = (itemId && st.store.byId.get(itemId)) || st.store.best();
     const url = media && media.url;
@@ -536,10 +541,12 @@ try {
       autoJoin: settings.watchpartyAutoJoin !== false,
       createdAt: Date.now(),
     };
-    // WatchParty exposes no public room-creation REST API (only `watchNow?url=`
-    // and the Discord bot's `/watch video <url>`), so we hand over through the
-    // supported URL param and let the watchparty helper fill the room form.
-    const target = 'https://www.watchparty.me/watchNow?url=' + encodeURIComponent(url) + '&name=' + encodeURIComponent(roomName);
+    // WatchParty's /create?video=<url> route auto-creates a room and loads the
+    // video (it POSTs /createRoom then redirects to /watch<room>), exactly like
+    // the "Watch Party" button on rivestream etc. That is strictly better than
+    // /watchNow?url= which only pre-fills a form, so we open /create and keep the
+    // payload for the on-site adapter (user name + subtitle attach).
+    const target = watchPartyCreateUrl(url);
     const tab = await api.tabs.create({ url: target, active: true }).catch(async () => await api.tabs.create({ url: target }));
     if (tab && tab.id > 0) await api.storage.local.set({ [PARTY_PREFIX + tab.id]: payload });
     return { ok: true, tabId: tab && tab.id, payload: payload };
@@ -937,7 +944,7 @@ try {
         const url = info.srcUrl || info.linkUrl || '';
         if (info.menuItemId === 'sr-watchparty') {
           const best = st.store.best() || {};
-          if (url) await api.storage.local.set({ [PARTY_PREFIX + (await api.tabs.create({ url: 'https://www.watchparty.me/watchNow?url=' + encodeURIComponent(url) })).id]: { mediaUrl: url, roomName: (st.title && st.title.title) || 'Stream Radar room', autoJoin: true, createdAt: Date.now() } });
+          if (url) await api.storage.local.set({ [PARTY_PREFIX + (await api.tabs.create({ url: watchPartyCreateUrl(url) })).id]: { mediaUrl: url, roomName: (st.title && st.title.title) || 'Stream Radar room', autoJoin: true, createdAt: Date.now() } });
           else await launchWatchParty(st, best.id);
         } else if (info.menuItemId === 'sr-copy' && url) {
           api.tabs.sendMessage(tab.id, { type: 'copy-clipboard', text: url }).catch(() => {});

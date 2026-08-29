@@ -31,13 +31,14 @@ body {
 
 .p-head {
   display: flex; align-items: center; gap: var(--sr-sp-2); padding: 11px 12px;
-  border-bottom: 1px solid var(--sr-line); position: sticky; top: 0; background: var(--sr-surface); z-index: 5;
+  border-bottom: 1px solid var(--sr-line); position: sticky; top: 0; z-index: 5;
+  background: var(--sr-glass); backdrop-filter: saturate(1.5) blur(16px); -webkit-backdrop-filter: saturate(1.5) blur(16px);
 }
 .brand { display: flex; align-items: center; gap: 9px; min-width: 0; flex: 1 1 auto; }
 .brand-ico {
   width: 28px; height: 28px; border-radius: var(--sr-r-1); display: grid; place-items: center;
   color: var(--sr-glyph-on-color); background: var(--sr-brand-gradient);
-  box-shadow: var(--sr-shadow-1);
+  box-shadow: var(--sr-shadow-1), var(--sr-shadow-accent);
 }
 .brand-ico svg { width: 16px; height: 16px; }
 .brand-txt { min-width: 0; }
@@ -125,8 +126,8 @@ body {
 .btn svg, .ibtn svg, .brand-ico svg { width: 15px; height: 15px; }
 .btn:hover { border-color: var(--sr-accent); }
 .btn:active { transform: scale(.97); }
-.btn[data-primary="1"] { background: var(--sr-accent); color: var(--sr-accent-ink); border-color: transparent; }
-.btn[data-primary="1"]:hover { background: var(--sr-accent); opacity: .92; }
+.btn[data-primary="1"] { background: var(--sr-brand-gradient); color: var(--sr-accent-ink); border-color: transparent; box-shadow: var(--sr-shadow-accent); }
+.btn[data-primary="1"]:hover { filter: brightness(1.07); transform: translateY(-1px); opacity: 1; }
 .btn.tiny { min-height: 32px; font-size: 11px; padding: 0 8px; }
 .btn[disabled] { opacity: .55; pointer-events: none; }
 

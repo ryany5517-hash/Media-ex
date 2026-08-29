@@ -18,7 +18,7 @@ code, pre, textarea, input[type='text'], input[type='number'] { font-family: var
   gap: 14px; position: sticky; top: 0; height: 100vh; background: var(--sr-surface);
 }
 .logo { display: flex; align-items: center; gap: 9px; font-size: 15px; }
-.logo .ico { width: 26px; height: 26px; border-radius: var(--sr-r-1); background: var(--sr-brand-gradient); box-shadow: var(--sr-shadow-1); }
+.logo .ico { width: 26px; height: 26px; border-radius: var(--sr-r-1); background: var(--sr-brand-gradient); box-shadow: var(--sr-shadow-1), var(--sr-shadow-accent); }
 .logo small { color: var(--sr-ink-3); font-size: 11px; margin-left: auto; }
 nav { display: flex; flex-direction: column; gap: 2px; }
 nav button {
@@ -27,7 +27,7 @@ nav button {
   transition: background var(--sr-t-fast) var(--sr-ease), color var(--sr-t-fast) var(--sr-ease);
 }
 nav button:hover { background: var(--sr-surface-2); color: var(--sr-ink); }
-nav button.on { background: var(--sr-accent); color: var(--sr-accent-ink); }
+nav button.on { background: var(--sr-brand-gradient); color: var(--sr-accent-ink); box-shadow: var(--sr-shadow-accent); }
 .side-foot { margin-top: auto; display: flex; align-items: center; gap: 9px; }
 #saveState { font-size: 12px; color: var(--sr-ok); font-weight: 600; }
 
@@ -35,7 +35,8 @@ main { padding: 26px 34px 90px; max-width: 1080px; }
 h1 { font-size: 24px; margin: 0 0 4px; letter-spacing: -.2px; }
 .lead { color: var(--sr-ink-2); margin: 0 0 22px; }
 h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .7px; color: var(--sr-ink-3); margin: 0 0 12px; }
-.card { background: var(--sr-surface); border: 1px solid var(--sr-line); border-radius: var(--sr-r-3); padding: 18px 20px; margin-bottom: 18px; box-shadow: var(--sr-shadow-1); }
+.card { background: var(--sr-surface); border: 1px solid var(--sr-line); border-radius: var(--sr-r-3); padding: 18px 20px; margin-bottom: 18px; box-shadow: var(--sr-shadow-1); transition: border-color var(--sr-t-mid) var(--sr-ease), box-shadow var(--sr-t-mid) var(--sr-ease), transform var(--sr-t-mid) var(--sr-ease); }
+.card:hover { border-color: var(--sr-accent-line); box-shadow: var(--sr-shadow-2); transform: translateY(-1px); }
 .grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
 .grid.two { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
 .grid.three { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
@@ -72,11 +73,12 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-
 input.sw { position: static; opacity: 1; width: 18px; height: 18px; accent-color: var(--sr-accent); }
 
 button.primary, .side-foot button {
-  background: var(--sr-accent); border: 0; color: var(--sr-accent-ink); font: 700 13px var(--sr-font);
+  background: var(--sr-brand-gradient); border: 0; color: var(--sr-accent-ink); font: 700 13px var(--sr-font);
   padding: 10px 16px; border-radius: var(--sr-r-2); cursor: pointer; min-height: 40px;
-  transition: opacity var(--sr-t-fast) var(--sr-ease), transform var(--sr-t-fast) var(--sr-spring);
+  box-shadow: var(--sr-shadow-accent);
+  transition: filter var(--sr-t-fast) var(--sr-ease), transform var(--sr-t-fast) var(--sr-spring), box-shadow var(--sr-t-fast);
 }
-button.primary:hover, .side-foot button:hover { opacity: .92; }
+button.primary:hover, .side-foot button:hover { filter: brightness(1.07); transform: translateY(-1px); }
 button:not(.primary):not(nav button):not(.seg button) {
   background: var(--sr-surface-2); border: 1px solid var(--sr-line); color: var(--sr-ink);
   font: 600 12.5px var(--sr-font); padding: 9px 13px; border-radius: var(--sr-r-2); cursor: pointer; min-height: 40px;

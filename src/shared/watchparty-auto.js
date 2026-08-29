@@ -127,9 +127,12 @@
             } catch (_) {}
           }, 320);
         }
-        // landing page already gone → we are inside a room
-        if (!room && !user && !urlField && (doc.querySelector('video') || /\/watch\/|watchNow/i.test(root.location.href))) state.done = true;
-        if (attempts > 45) state.done = true;
+        // /create?video= shows a "Creating room…" loader then redirects to
+        // /watch<name>; the room is ready once a <video> exists or the URL is a
+        // watch room (room links look like /watch<room>, no trailing slash).
+        const inRoom = doc.querySelector('video') || /\/watch/i.test(root.location.href);
+        if (!room && !user && !urlField && inRoom) state.done = true;
+        if (attempts > 60) state.done = true;
       }
 
       // Object URLs can be patched/restricted by the host page; a data: URL is a
