@@ -50,8 +50,8 @@ function loadUpdater() {
   // swap the embedded public key for the freshly generated one (P-256 JWK coords
   // are exactly 43 base64url chars, so this cannot hit `kty: 'EC'`)
   const src = read('shared/updater.js')
-    .replace(/\bx: '[A-Za-z0-9_-]{43}'/, `x: '${pub.x}'`)
-    .replace(/\by: '[A-Za-z0-9_-]{43}'/, `y: '${pub.y}'`);
+    .replace(/\bx: ["'][A-Za-z0-9_-]{43}["']/, `x: '${pub.x}'`)
+    .replace(/\by: ["'][A-Za-z0-9_-]{43}["']/, `y: '${pub.y}'`);
   if (!src.includes(`x: '${pub.x}'`) || !src.includes(`y: '${pub.y}'`)) throw new Error('key injection failed');
   // reset the live rule set IN PLACE: rules.js captured that object at init, so
   // replacing SR.dynamic would detach the classifier from the pack.
