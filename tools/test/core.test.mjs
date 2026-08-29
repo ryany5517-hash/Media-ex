@@ -335,12 +335,17 @@ test('util.watchPartyPlayable: direct media yes, resolver/API links no', () => {
     ['https://cdn.x/manifest.mpd', 'dash'],
     ['https://cdn.x/v.webm', 'webm'],
     ['https://cdn.x/noext-but-hls', 'hls'],
+    // real HLS CDNs frequently serve the manifest through an /api path;
+    // a real .m3u8 on the path must still play despite "api" in the URL
+    ['https://a2.shows.st/api/playlist/aBc.m3u8?token=x', 'hls'],
+    ['https://cdn.x/api/manifest/master.m3u8', 'hls'],
   ];
   for (const [u, c] of yes) assert.equal(util.watchPartyPlayable(u, c), true, 'should play ' + u);
   const no = [
     ['https://d.shows.st/api?d=fC1Oq-resolver-token-very-long', 'other'],
     ['https://x.com/redirect?to=https%3A%2F%2Fcdn%2Fa.m3u8', 'other'],
-    ['https://x.com/gateway/v1/stream?id=9', 'mp4'],
+    // a gateway with no media path AND no direct-media category is a resolver
+    ['https://x.com/gateway/v1/stream?id=9', 'other'],
     ['blob:https://x/1-2-3', 'blob'],
     ['https://cdn.x/seg0.ts', 'segment'],
     ['https://x.com/page/123', 'other'],

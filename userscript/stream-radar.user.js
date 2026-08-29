@@ -249,15 +249,17 @@
       if (category === 'blob' || category === 'segment' || category === 'texttrack') return false;
       let path = String(url);
       try { path = new URL(url).pathname; } catch (_) {}
-      // Resolver/gateway endpoints are never a direct media file, even if a
-      // media extension hides in the query string (e.g. /redirect?to=..a.m3u8).
-      const resolverSeg = /(^|\/)(api|resolve|redirect|gateway|link|source|get|serve)(\/|$)/i.test(path);
-      if (resolverSeg) return false;
-      // A media extension on the path is directly playable.
-      if (/\.(m3u8|mpd|mp4|webm|mkv|mov|m4v|ts|aac|m4a|mp3|m3u)$/i.test(path)) return true;
-      // Otherwise trust a direct-media category (manifest served without a
-      // clean extension), but not generic "other" pages/APIs.
-      return category === 'hls' || category === 'dash' || category === 'mp4' || category === 'webm';
+      // 1) A media extension on the PATH is directly playable. This wins over
+      //    everything: real HLS CDNs often serve .../api/playlist.m3u8, so a
+      //    resolver-looking path must not veto an explicit manifest/file.
+      if (/\.(m3u8|mpd|mp4|webm|mkv|mov|m4v|m3u)(\?|#|$)/i.test(path)) return true;
+      // 2) A classified direct-media category (content-type/parsed manifest,
+      //    served without a clean extension) is playable too.
+      if (category === 'hls' || category === 'dash' || category === 'mp4' || category === 'webm') return true;
+      // 3) Generic/other URLs that point at a resolver/gateway endpoint return a
+      //    page or JSON, not media (e.g. d.shows.st/api?d=<token>): reject those.
+      if (/(^|\/)(api|resolve|redirect|gateway|link|source|get|serve)(\/|$)/i.test(path)) return false;
+      return false;
     },
 
     formatBytes(bytes) {
