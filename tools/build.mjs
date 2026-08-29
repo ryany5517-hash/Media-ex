@@ -31,6 +31,7 @@ const PRELUDE = ['shared/util.js', 'shared/rules.js', 'shared/title-cleaner.js',
 const args = process.argv.slice(2);
 const only = args.includes('--chrome') ? 'chrome' : args.includes('--firefox') ? 'firefox' : null;
 const noZip = args.includes('--no-zip');
+const dev = args.includes('--dev');
 
 const log = (...a) => console.log('\x1b[36m▸\x1b[0m', ...a);
 const ok = (...a) => console.log('\x1b[32m✓\x1b[0m', ...a);
@@ -176,7 +177,12 @@ async function buildTarget(target) {
   await writeFile(path.join(out, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
 
   const version = manifest.version;
-  await writeFile(path.join(out, 'background.js'), await bundleBackground(SRC));
+  let bg = await bundleBackground(SRC);
+  if (dev) {
+    const snippet = await readFile(path.join(HERE, 'live-reload-snippet.js'), 'utf8');
+    bg += '\n' + snippet.trim() + '\n';
+  }
+  await writeFile(path.join(out, 'background.js'), bg);
   const n = await validate(target, out, manifest);
   ok(`${target}: ${n} files, manifest v${version}, validated`);
 
@@ -203,9 +209,12 @@ async function main() {
     const { buildUserscript } = await import('./build-userscript.mjs');
     await buildUserscript();
   }
-  ok(`build finished in ${Date.now() - t0} ms`);
-  console.log('\nLoad it:\n  Chrome  → chrome://extensions → "Load unpacked" → dist/chrome\n  Firefox → about:debugging#/runtime/this-firefox → "Load Temporary Add-on" → dist/firefox/manifest.json\n');
+  ok(`build finished in ${Date.now() - t0} ms${dev ? ' (dev live-reload injected)' : ''}`);
+  if (!dev) {
+    console.log('\nLoad it:\n  Chrome  → chrome://extensions → "Load unpacked" → dist/chrome\n  Firefox → about:debugging#/runtime/this-firefox → "Load Temporary Add-on" → dist/firefox/manifest.json\n\nDev (auto-reload unpacked): npm run watch\n');
+  }
 }
+
 
 main().catch((e) => {
   console.error('\x1b[31mBuild failed:\x1b[0m', e.message);

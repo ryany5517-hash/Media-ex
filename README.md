@@ -44,6 +44,8 @@ Bisa. Ringkasnya:
 | Firefox desktop (stabil) | `web-ext sign` sebagai *unlisted* (akun AMO gratis, tidak masuk katalog) | **ya** |
 | Firefox Android | userscript (Violentmonkey) atau XPI unlisted | **ya** |
 
+Saat ngoding: `npm run watch` — unpacked extension me-reload sendiri, tidak perlu klik Reload di `chrome://extensions` tiap save. Lihat [docs/AUTO-UPDATE.md](docs/AUTO-UPDATE.md).
+
 Dan supaya kamu tidak perlu lepas-pasang lagi tiap ada perbaikan: [docs/AUTO-UPDATE.md](docs/AUTO-UPDATE.md).
 Intinya: push perubahan `rules/live-rules.json` ke GitHub → CI menandatangani → semua install menariknya dalam
 ≤ 12 jam. Yang bisa ditambal tanpa install: domain embed/iklan baru, ekstensi media baru, kata sampah judul baru,

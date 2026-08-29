@@ -52,6 +52,16 @@ Code patch: taruh `patch/patch.js` + `patch/meta.json` di repo, jalankan perinta
 hapus foldernya dari branch `live` (klien berhenti mengambil; versi yang sudah dipakai tidak di-rollback
 otomatis, jadi biasakan menambah aturan, bukan mengubah perilaku).
 
+## Dev: `npm run watch` (tidak perlu klik Reload di chrome://extensions)
+
+Saat kamu ngoding di mesin sendiri, rule pack 12-jam itu terlalu lambat. Jalankan:
+
+```bash
+npm run watch
+```
+
+Itu nge-watch `src/`, `rules/`, `userscript/`, rebuild `dist/` tiap ada perubahan, dan inject snippet di service worker yang nge-poll `http://127.0.0.1:18765/stamp`. Kalau stamp berubah, extension memanggil `chrome.runtime.reload()` sendiri, lalu me-refresh tab `http(s)` yang terbuka. Load unpacked **sekali** ke `dist/chrome` (atau `dist/firefox`) selagi `watch` jalan. Build produksi (`npm run build`) **tidak** menyertakan snippet itu.
+
 ## Yang TIDAK bisa di-hot-update
 
 Perubahan pada `background.js` (izin, observer jaringan, API subtitle) tidak bisa ditambal dari jauh: MV3

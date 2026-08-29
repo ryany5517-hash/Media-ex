@@ -230,3 +230,13 @@ test('updater: disabled switch short-circuits everything', async () => {
   assert.equal(res.status, 'disabled');
   assert.equal(fetched, false);
 });
+
+test('dev live-reload snippet exists, production background does not poll localhost', () => {
+  const snippet = readFileSync(path.join(ROOT, 'tools', 'live-reload-snippet.js'), 'utf8');
+  assert.match(snippet, /runtime\.reload/);
+  assert.match(snippet, /127\.0\.0\.1/);
+  assert.match(snippet, /18765/);
+  const bg = readFileSync(path.join(ROOT, 'src', 'background.js'), 'utf8');
+  assert.equal(bg.includes('streamRadarLiveReload'), false);
+  assert.equal(bg.includes('srad:devstamp'), false);
+});

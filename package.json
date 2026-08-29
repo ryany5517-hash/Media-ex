@@ -8,6 +8,7 @@
     "test": "node --test --test-force-exit --test-concurrency=1 tools/test/core.test.mjs tools/test/demo.test.mjs tools/test/design.test.mjs tools/test/features.test.mjs tools/test/integration.test.mjs tools/test/ui.test.mjs tools/test/updater.test.mjs tools/test/userscript.test.mjs",
     "test:core": "node --test tools/test/core.test.mjs",
     "lint": "web-ext lint --source-dir dist/firefox --no-input --self-hosted",
+    "watch": "node tools/watch.mjs",
     "build": "node tools/build.mjs",
     "build:chrome": "node tools/build.mjs --chrome",
     "build:firefox": "node tools/build.mjs --firefox",
