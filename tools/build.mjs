@@ -21,6 +21,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { zip } from './lib/zip.mjs';
+import { validateCommands } from './lib/commands.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..');
@@ -150,6 +151,8 @@ async function validate(target, dir, manifest) {
   }
 
   // 4. manifest JSON validity is implied by the parse above; check MV3 basics
+  const commandProblems = validateCommands(manifest);
+  for (const p of commandProblems) fail(`${target}: ${p}`);
   if (manifest.manifest_version !== 3) fail(`${target}: manifest_version must be 3`);
   if (!manifest.content_scripts?.length) fail(`${target}: no content scripts`);
   if (!(manifest.host_permissions || []).includes('<all_urls>')) warn(`${target}: <all_urls> host permission missing → detection will be crippled`);

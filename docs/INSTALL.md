@@ -24,7 +24,7 @@ Catatan:
 - Chrome menampilkan peringatan “mode developer” tiap buka browser — itu normal untuk unpacked.
 - Jangan load `src/` di Chrome kalau kamu juga mau pakai di Chrome lama: `src/background.js` butuh
   `importScripts` (jalan di Chrome) tapi folder `dist/` sudah lebih aman untuk kedua browser.
-- Shortcut: `chrome://extensions/shortcuts` → set Alt+Shift+S / D / F kalau belum kebaca.
+- Shortcut: `chrome://extensions/shortcuts` → set Alt+Shift+S / D / F dan Ctrl+Shift+A (popup) kalau belum kebaca.
 
 ## 2. Firefox desktop
 

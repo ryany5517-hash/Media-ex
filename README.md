@@ -74,7 +74,7 @@ dan (kalau kamu aktifkan) patch script konten. Yang tetap perlu build ulang: per
    - SubDL: https://subdl.com/panel/api
    - OpenSubtitles: https://www.opensubtitles.com/en/api-keys (wajib isi **User-Agent** yang sama persis seperti di form)
 3. Klik **★ Nonton Bareng** pada sebuah stream → WatchParty.me kebuka di tab baru, nama room = judul film yang sudah dibersihkan, URL stream ke-isi, subtitle ikut dipasang.
-4. Shortcut: `Alt+Shift+S` (panel) · `Alt+Shift+D` (scan ulang) · `Alt+Shift+F` (cari subtitle). Bisa diganti di `chrome://extensions/shortcuts` / `about:addons` → Manage → Shortcuts.
+4. Shortcut: `Alt+Shift+S` (panel) · `Alt+Shift+D` (scan ulang) · `Alt+Shift+F` (cari subtitle) · `Ctrl+Shift+A` / `⌘⇧A` (buka popup). Bisa diganti di `chrome://extensions/shortcuts` / `about:addons` → Manage → Shortcuts.
 
 ## 4. Fitur (checklist vs request awal)
 

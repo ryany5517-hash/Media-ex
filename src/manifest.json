@@ -134,7 +134,11 @@
     },
     "_execute_action": {
       "suggested_key": {
-        "mac": "Alt+Shift+A"
+        "default": "Ctrl+Shift+A",
+        "windows": "Ctrl+Shift+A",
+        "linux": "Ctrl+Shift+A",
+        "chromeos": "Ctrl+Shift+A",
+        "mac": "Command+Shift+A"
       },
       "description": "Open the Stream Radar popup"
     }

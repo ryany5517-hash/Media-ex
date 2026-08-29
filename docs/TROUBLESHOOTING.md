@@ -39,6 +39,11 @@ Cek berurutan (buka DevTools → Console):
 - Firefox: “Load Temporary Add-on” memang sementara (± 24 jam / restart). Untuk permanen harus XPI ber-signature
   (lihat docs/INSTALL.md §2).
 - `manifest.json` error “Input version cannot be empty” → kamu load folder yang salah; jalankan `npm run build`.
+- **“Failed to load extension … Could not find key specification for `command[N].suggested_key`: Either specify a
+  key for `windows`, or specify a default key.”** → `dist/` kamu masih versi lama. Penyebabnya: kalau `suggested_key`
+  ditulis per-platform, **semua** platform harus ada (`default`, `windows`, `mac`, `linux`, `chromeos`) — atau cukup
+  pakai satu `default`. Fix: `npm run build` (validator-nya sekarang menolak manifest seperti ini sebelum ke-release),
+  lalu **Remove** extension lama di `chrome://extensions` dan **Load unpacked** ulang.
 
 ### Web-ext lint warning
 
