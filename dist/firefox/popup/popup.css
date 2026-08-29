@@ -166,3 +166,12 @@ body {
 .toast[data-k="err"] { border-left-color: var(--sr-err); }
 .toast[data-k="warn"] { border-left-color: var(--sr-warn); }
 @keyframes sr-in { from { opacity: 0; transform: translateY(6px); } }
+
+/* mobile / Android: go full-bleed, respect notches and the gesture bar */
+@media (max-width: 430px), (pointer: coarse) {
+  body { width: 100vw; max-height: 100vh; min-height: 100vh; }
+  .p-head { padding-top: calc(12px + env(safe-area-inset-top, 0px)); padding-left: calc(12px + env(safe-area-inset-left, 0px)); padding-right: calc(12px + env(safe-area-inset-right, 0px)); }
+  .p-foot { padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px)); }
+  .btn, .ibtn { min-height: 42px; }
+  .btn.tiny { min-height: 36px; }
+}

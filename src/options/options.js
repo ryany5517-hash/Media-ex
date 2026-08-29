@@ -285,6 +285,21 @@
     wire();
     storageInfo();
     updateInfo();
+    applyLive();
   }
+  // Live fixes reach the options page: run the verified pack (and the code
+  // patch only when opted in) so even settings UI can be improved remotely.
+  function applyLive() {
+    SR.util.api().runtime.sendMessage({ type: 'get-live' }).then((res) => {
+      if (res && res.ok && SR.updater) {
+        const allowed = res.settings && res.settings.autoPatch === true;
+        SR.updater.applyRemote(res.pack, allowed ? res.patch : null, res.settings);
+        updateInfo();
+      }
+    }).catch(() => {});
+  }
+  SR.util.api().runtime.onMessage.addListener((msg) => {
+    if (msg && msg.type === 'rules') applyLive();
+  });
   boot();
 })();

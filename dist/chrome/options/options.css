@@ -99,10 +99,12 @@ table.layers code { color: var(--sr-ink-2); }
 kbd { background: var(--sr-surface-2); border: 1px solid var(--sr-line); border-bottom-width: 2px; border-radius: 6px; padding: 1px 6px; font-size: 11.5px; font-family: var(--sr-mono); }
 
 @media (max-width: 760px) {
-  body { grid-template-columns: 1fr; }
-  .side { position: static; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center; }
+  body { grid-template-columns: 1fr; padding-left: env(safe-area-inset-left, 0px); padding-right: env(safe-area-inset-right, 0px); }
+  .side { position: static; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center; padding-top: calc(14px + env(safe-area-inset-top, 0px)); }
   nav { flex-direction: row; flex-wrap: wrap; }
-  main { padding: 18px 14px 60px; }
+  nav button { min-height: 44px; }
+  main { padding: 18px 14px calc(60px + env(safe-area-inset-bottom, 0px)); }
+  button, .field input, .field select, textarea { font-size: 16px; /* prevents iOS focus-zoom */ }
 }
 
 /* ---- Live update status card (#12) ---- */

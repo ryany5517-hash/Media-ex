@@ -316,7 +316,23 @@
     }
   });
 
+  // Live fixes reach the popup too: pull the signature-verified rule pack (and,
+  // only when opted in, the code patch) from the worker and run it in this page.
+  function applyLive() {
+    api.runtime.sendMessage({ type: 'get-live' }).then((res) => {
+      if (res && res.ok && SR.updater) {
+        const allowed = res.settings && res.settings.autoPatch === true;
+        SR.updater.applyRemote(res.pack, allowed ? res.patch : null, res.settings);
+        refresh();
+      }
+    }).catch(() => {});
+  }
+  api.runtime.onMessage.addListener((msg) => {
+    if (msg && msg.type === 'rules') applyLive();
+  });
+
   if (SR.i18n) SR.i18n.set((state.settings && state.settings.lang) === 'id' ? 'id' : SR.i18n.detect(navigator));
+  applyLive();
   refresh();
   const timer = setInterval(refresh, 4000);
   window.addEventListener('unload', () => clearInterval(timer));

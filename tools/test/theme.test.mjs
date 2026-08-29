@@ -72,6 +72,33 @@ test('live-update card markup and styles are present (#12)', () => {
   assert.ok(!/updateInfo'\)\.textContent/.test(js), 'old inline updateInfo text must be gone');
 });
 
+test('live patches can reach popup and options (not just content scripts)', () => {
+  assert.ok(read('src/popup/popup.html').includes('shared/updater.js'), 'popup must load updater.js');
+  assert.ok(read('src/options/options.html').includes('shared/updater.js'), 'options must load updater.js');
+  assert.ok(/get-live/.test(read('src/popup/popup.js')), 'popup must request get-live');
+  assert.ok(/get-live/.test(read('src/options/options.js')), 'options must request get-live');
+  assert.ok(/SR\.updater\.applyRemote\(/.test(read('src/popup/popup.js')), 'popup must applyRemote');
+  assert.ok(/SR\.updater\.applyRemote\(/.test(read('src/options/options.js')), 'options must applyRemote');
+  const bg = read('src/background.js');
+  assert.ok(/case 'get-live'/.test(bg), 'background must answer get-live');
+  // patch is gated on the opt-in before being handed to extension pages
+  assert.ok(/settings\.autoPatch[\s\S]{0,80}patch/.test(bg), 'get-live must gate the patch on autoPatch');
+  // background worker also applies the signed patch itself
+  assert.ok(/applyRemote\(stored\[RULES_KEY\]\.pack, stored\[PATCH_KEY\]/.test(bg), 'worker applies the stored patch');
+});
+
+test('mobile / Android: safe-area insets and bottom-sheet rules exist', () => {
+  const panel = read('src/content/ui-styles.js');
+  assert.ok(/@media[^{]*pointer:\s*coarse/.test(panel), 'panel must have a coarse-pointer mobile query');
+  assert.ok(/env\(safe-area-inset-bottom/.test(panel), 'panel bottom sheet respects the gesture bar');
+  assert.ok(/env\(safe-area-inset-(top|right)/.test(panel), 'FAB/head respect safe areas');
+  const popup = read('src/popup/popup.css');
+  assert.ok(/env\(safe-area-inset-bottom/.test(popup) && /pointer:\s*coarse/.test(popup), 'popup is safe-area aware on touch');
+  const options = read('src/options/options.css');
+  assert.ok(/env\(safe-area-inset-bottom/.test(options), 'options respects the gesture bar');
+  assert.ok(/font-size:\s*16px/.test(options), 'options uses 16px inputs to prevent iOS focus zoom');
+});
+
 test('global webkit scrollbar is token styled and transparent-tracked', () => {
   const css = read('src/shared/theme.css');
   assert.match(css, /::-webkit-scrollbar\s*\{[^}]*width:\s*var\(--sr-scroll-size\)/);

@@ -317,7 +317,11 @@ try {
   async function loadRemote(packFromStorage) {
     try {
       const stored = packFromStorage || (await api.storage.local.get([RULES_KEY, PATCH_KEY]));
-      if (stored[RULES_KEY] && stored[RULES_KEY].pack) SR.updater.applyRemote(stored[RULES_KEY].pack, null);
+      if (stored[RULES_KEY] && stored[RULES_KEY].pack) {
+        // the patch is signature-verified at fetch time; applyRemote re-checks the
+        // autoPatch opt-in and size cap before running it in this worker too.
+        SR.updater.applyRemote(stored[RULES_KEY].pack, stored[PATCH_KEY] || null, settings);
+      }
       return stored;
     } catch (_) {
       return {};
@@ -811,6 +815,13 @@ try {
           }
           case 'wake':
             return { ok: true };
+          case 'get-live': {
+            // Hand the already-verified pack (and, only when the user opted into
+            // signed code patches, the patch) to extension pages (popup/options)
+            // so live fixes can reach the whole UI, not just content scripts.
+            const [pack, patch] = await Promise.all([storedPack(), storedPatch()]);
+            return { ok: true, pack: pack || null, patch: settings.autoPatch ? patch || null : null, settings: settings };
+          }
           case 'action':
             // canonical: {type:'action', payload:{name,…}}; also accept the flat
             // shape so an old content script in a stale tab never breaks silently.

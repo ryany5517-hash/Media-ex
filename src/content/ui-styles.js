@@ -395,12 +395,25 @@
 
 /* ── responsive / touch ─────────────────────────────────── */
 @media (max-width: 720px), (pointer: coarse) and (max-width: 900px) {
-  .srad-fab { width: 52px; height: 52px; right: 12px; bottom: 12px; border-radius: 17px; }
+  .srad-fab {
+    width: 54px; height: 54px; z-index: 5;
+    right: calc(12px + env(safe-area-inset-right, 0px));
+    bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+    border-radius: 18px;
+  }
+  /* keep the launcher tappable when the bottom sheet covers it */
+  .srad-root[data-panel="1"] .srad-fab,
+  .srad-root:has(.srad-panel[data-open="1"]) .srad-fab {
+    position: fixed;
+    bottom: calc(86vh + 12px + env(safe-area-inset-bottom, 0px));
+  }
   .srad-panel {
     right: 0 !important; left: 0 !important; top: auto !important; bottom: 0 !important;
     width: 100vw; max-width: 100vw; max-height: 84vh; border-radius: var(--sr-r-3) var(--sr-r-3) 0 0;
-    border-bottom: 0; transform-origin: bottom center; padding-bottom: env(safe-area-inset-bottom, 0);
+    border-bottom: 0; transform-origin: bottom center;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
   }
+  .srad-head { padding-top: calc(10px + env(safe-area-inset-top, 0px)); }
   .srad-panel::before { content: ""; position: absolute; top: 6px; left: 50%; transform: translateX(-50%); width: 38px; height: 4px; border-radius: 2px; background: var(--sr-line); }
   .srad-iconbtn, .srad-btn, .srad-variant .srad-btn, .srad-toast button, .srad-tab { min-height: 44px; }
   .srad-btn { flex: 1 1 auto; }
