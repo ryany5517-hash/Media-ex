@@ -920,6 +920,38 @@ try {
       if (!session.force && !related) return { played: false, reason: 'host', host: here };
       if (window.__sradPlaying) return { played: true, host: here, dup: 1 };
 
+      function codecsOf(level) {
+        return String((level && (level.videoCodec || level.codec || (level.attrs && level.attrs.CODECS))) || '').toLowerCase();
+      }
+      function isHevc(c) {
+        return /hvc1|hev1|hevc|dvh1|dvhe|av01/.test(c || '');
+      }
+      function pickAvcLevel(hls) {
+        var levels = (hls && hls.levels) || [];
+        var best = -1;
+        var bestScore = -1;
+        for (var i = 0; i < levels.length; i++) {
+          var c = codecsOf(levels[i]);
+          if (isHevc(c)) continue;
+          var h = Number(levels[i].height || 0);
+          if (h > 1080) continue;
+          var score = (h || 1) + (/avc/.test(c) ? 200 : 0);
+          if (score > bestScore) {
+            bestScore = score;
+            best = i;
+          }
+        }
+        if (best >= 0) return best;
+        for (var j = 0; j < levels.length; j++) {
+          if (isHevc(codecsOf(levels[j]))) continue;
+          var h2 = Number(levels[j].height || 0);
+          if (h2 >= bestScore) {
+            bestScore = h2;
+            best = j;
+          }
+        }
+        return best;
+      }
       function mount(playUrl) {
         var doc = document;
         var old = doc.getElementById('srad-inpage');
@@ -928,7 +960,7 @@ try {
         wrap.id = 'srad-inpage';
         wrap.setAttribute('style', 'position:fixed;inset:0;z-index:2147483647;background:#000;display:flex;flex-direction:column;');
         var bar = doc.createElement('div');
-        bar.setAttribute('style', 'display:flex;justify-content:flex-end;padding:8px 12px;background:#111;');
+        bar.setAttribute('style', 'display:flex;justify-content:flex-end;padding:8px 12px;background:#111;flex:0 0 auto;');
         var close = doc.createElement('button');
         close.textContent = 'Close';
         close.setAttribute('style', 'color:#fff;background:#333;border:0;padding:6px 12px;cursor:pointer;border-radius:4px');
@@ -940,14 +972,39 @@ try {
           window.__sradPlaying = 0;
         };
         bar.appendChild(close);
+        wrap.appendChild(bar);
+        (doc.body || doc.documentElement).appendChild(wrap);
+
+        var live = null;
+        try {
+          var vids = doc.querySelectorAll('video');
+          for (var vi = 0; vi < vids.length; vi++) {
+            var cand = vids[vi];
+            if (cand && cand.id !== 'srad-inpage-video' && cand.videoWidth > 16 && cand.readyState >= 2) {
+              live = cand;
+              break;
+            }
+          }
+        } catch (_) {}
+        if (live) {
+          live.setAttribute('controls', '');
+          live.setAttribute('playsinline', '');
+          live.setAttribute('style', 'flex:1;width:100%;height:100%;min-height:0;object-fit:contain;background:#000');
+          wrap.appendChild(live);
+          try {
+            live.muted = false;
+            live.play();
+          } catch (_) {}
+          return;
+        }
+
         var video = doc.createElement('video');
+        video.id = 'srad-inpage-video';
         video.setAttribute('controls', '');
         video.setAttribute('autoplay', '');
         video.setAttribute('playsinline', '');
-        video.setAttribute('style', 'flex:1;width:100%;min-height:0;background:#000');
-        wrap.appendChild(bar);
+        video.setAttribute('style', 'flex:1;width:100%;height:100%;min-height:0;object-fit:contain;background:#000');
         wrap.appendChild(video);
-        (doc.body || doc.documentElement).appendChild(wrap);
         var queue = [playUrl].concat(session.alts || []).filter(function (u, i, a) {
           return u && a.indexOf(u) === i;
         });
@@ -957,12 +1014,20 @@ try {
             try {
               if (window.__sradInpageHls) window.__sradInpageHls.destroy();
             } catch (_) {}
-            var hls = new H({ enableWorker: false });
+            var hls = new H({ enableWorker: false, capLevelToPlayerSize: true, startLevel: -1 });
             window.__sradInpageHls = hls;
             hls.loadSource(u);
             hls.attachMedia(video);
             var ev = H.Events && H.Events.MANIFEST_PARSED ? H.Events.MANIFEST_PARSED : 'hlsManifestParsed';
             hls.on(ev, function () {
+              var idx = pickAvcLevel(hls);
+              if (idx >= 0) {
+                try {
+                  hls.currentLevel = idx;
+                  hls.loadLevel = idx;
+                  hls.nextLevel = idx;
+                } catch (_) {}
+              }
               try {
                 video.play();
               } catch (_) {}
@@ -971,6 +1036,9 @@ try {
             hls.on(errEv, function (_e, data) {
               if (data && data.fatal && rest && rest.length) attach(rest[0], rest.slice(1));
             });
+            setTimeout(function () {
+              if (video.videoWidth < 16 && video.currentTime > 0.2 && rest && rest.length) attach(rest[0], rest.slice(1));
+            }, 2500);
             return;
           }
           video.src = u;
@@ -1026,18 +1094,21 @@ try {
     if (!url) return url;
     try {
       const u = new URL(url);
-      if (/\.(m3u8|mpd)(\?|#|$)/i.test(u.pathname)) return url;
+      const hot = /v3\.m3u8|2160|4k/i.test(url + ' ' + ((media && media.quality) || ''));
+      if (/\.(m3u8|mpd)(\?|#|$)/i.test(u.pathname) && !hot) return url;
       if (!/\/mpd\//i.test(u.pathname) || !st || !st.store) return url;
-      const prefix = u.origin + u.pathname.replace(/\/$/, '');
-      let best = '';
+      const prefix = (u.origin + u.pathname.replace(/\/v\d+\.m3u8$/i, '').replace(/\/$/, ''));
+      let v0 = '';
+      let mild = '';
       for (const it of st.store.byId.values()) {
         if (!it || !it.url || it.isAd) continue;
-        if (it.url.indexOf(prefix + '/') !== 0) continue;
+        if (it.url.indexOf(prefix) !== 0) continue;
         if (!/\.m3u8(\?|#|$)/i.test(it.url)) continue;
-        best = it.url;
-        if (/v3\.m3u8/i.test(it.url) || /4k|2160/i.test(String(it.quality || ''))) return it.url;
+        if (/v0\.m3u8/i.test(it.url)) v0 = it.url;
+        else if (!/v3\.m3u8/i.test(it.url) && !/4k|2160/i.test(String(it.quality || ''))) mild = it.url;
       }
-      if (best) return best;
+      if (v0) return v0;
+      if (mild) return mild;
     } catch (_) {}
     return url;
   }
@@ -1066,6 +1137,14 @@ try {
     if (api.scripting && typeof api.scripting.executeScript === 'function') {
       const injectHls = async (target) => {
         try {
+          const probe = await api.scripting.executeScript({
+            target: target,
+            world: 'MAIN',
+            func: function () {
+              return !!(window.Hls && window.Hls.isSupported && window.Hls.isSupported());
+            },
+          });
+          if ((probe || []).some((r) => r && r.result)) return;
           await api.scripting.executeScript({ target: target, world: 'MAIN', files: ['vendor/hls.light.min.js'] });
         } catch (e) {
           log('hls inject', String((e && e.message) || e));
