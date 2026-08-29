@@ -1100,9 +1100,40 @@
     if (failed.length) post('hook-error', { failed: failed });
   }
 
+  function needsUnwrap(url) {
+    if (!url) return false;
+    if (/\.(m3u8|mpd|mp4|webm|mkv|m4v|mov|m3u)(\?|#|$)/i.test(url)) return false;
+    if (util && util.isHlsProxy && util.isHlsProxy(url)) return false;
+    var path = url;
+    try {
+      path = new URL(url).pathname;
+    } catch (_) {}
+    return /\/api\/?$/i.test(path);
+  }
+
   function playInPage(session, retried) {
     try {
       var url = session && session.url;
+      if (url && !session.__unwrapped && needsUnwrap(url) && typeof root.fetch === 'function') {
+        session.__unwrapped = true;
+        root
+          .fetch(url, { credentials: 'include' })
+          .then(function (res) {
+            return res.text();
+          })
+          .then(function (text) {
+            var inner = '';
+            if (!(text && /#EXTM3U/.test(String(text).slice(0, 64)))) {
+              inner = util.extractMediaUrl(util.safeJSON(text, null) || text);
+            }
+            if (inner) session.url = inner;
+            playInPage(session, retried);
+          })
+          .catch(function () {
+            playInPage(session, retried);
+          });
+        return;
+      }
       var existing = doc && doc.getElementById('srad-inpage');
       if (existing) existing.remove();
       var H = root.Hls;

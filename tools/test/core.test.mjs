@@ -371,6 +371,8 @@ test('util.watchPartyPlayable: direct media yes, resolver/API links no', () => {
   for (const [u, c] of yes) assert.equal(util.watchPartyPlayable(u, c), true, 'should play ' + u);
   const no = [
     ['https://d.shows.st/api?d=fC1Oq-resolver-token-very-long', 'other'],
+    // misleading HLS content-type on a resolver must still be rejected
+    ['https://a2.shows.st/api?d=zDi0HsW9-WyCwCalBZIXmeiNh6I', 'hls'],
     ['https://x.com/redirect?to=https%3A%2F%2Fcdn%2Fa.m3u8', 'other'],
     // a gateway with no media path AND no direct-media category is a resolver
     ['https://x.com/gateway/v1/stream?id=9', 'other'],

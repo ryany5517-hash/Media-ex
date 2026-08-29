@@ -607,12 +607,22 @@ try {
   }
 
   async function launchWatchParty(st, itemId) {
-    const picked = pickPlayable(st, itemId);
-    const media = picked.item;
-    const url = picked.url;
+    const clicked = itemId ? st.store.byId.get(itemId) : null;
+    let picked = pickPlayable(st, itemId);
+    let media = picked.item || clicked;
+    let url = picked.url;
+    if (!url && media && media.url && util.localPlayable(media.url, media.category)) {
+      const resolved = await resolvePlaySource(st, media, media.url);
+      if (resolved && resolved.url && util.watchPartyPlayable(resolved.url, resolved.category)) {
+        url = resolved.url;
+        media = Object.assign({}, media, { url: url, category: resolved.category || media.category });
+      }
+    }
     if (!url) {
-      // No direct-playable stream found. A resolver/API link (or blob/segments)
-      // cannot be used by WatchParty direct mode; VBrowser can open the page.
+      // WatchParty cannot fetch resolver/API links (JSON/HTML). Play in the
+      // matching iframe instead — that is the IDM path.
+      const play = await launchPlayer(st, itemId);
+      if (play && play.ok) return play;
       return { ok: false, reason: t('watchparty.needDirect'), hint: 'vbrowser' };
     }
     const ti = st.title || {};
@@ -919,12 +929,25 @@ try {
     let url = urlOverride || (clicked && util.localPlayable(clicked.url, clicked.category) ? clicked.url : null) || picked.url;
     if (!url) return { ok: false, reason: t('player.needDirect') };
     if (media && media.drm) return { ok: false, reason: t('player.drm') };
+
+    const origUrl = url;
+    const sid = util.uuid();
+    const inSession = buildPlaySession(st, media, origUrl);
+    inSession.host = (media && media.host) || util.host((media && media.url) || origUrl) || inSession.host;
+    try {
+      inSession.hlsLib = api.runtime.getURL('vendor/hls.light.min.js');
+    } catch (_) {}
+    const inPage = await tryInPagePlay(st.tabId, media, inSession);
+    if (inPage) {
+      toastTo(st.tabId, t('toast.player'), 'ok');
+      return { ok: true, inpage: true, session: inSession };
+    }
+
     const previewRef = pageReferer(st, media);
     await installRefererRule(null, previewRef, originOf(previewRef) || util.origin(url), url);
     const resolved = await resolvePlaySource(st, media, url);
     url = resolved.url || url;
     const mediaForSession = Object.assign({}, media || {}, { url: url, category: resolved.category || (media && media.category) || '' });
-    const sid = util.uuid();
     const session = buildPlaySession(st, mediaForSession, url);
     if (resolved.referer) session.referer = resolved.referer;
     if (resolved.origin) session.origin = resolved.origin;
@@ -933,12 +956,6 @@ try {
     try {
       session.hlsLib = api.runtime.getURL('vendor/hls.light.min.js');
     } catch (_) {}
-
-    const inPage = await tryInPagePlay(st.tabId, media, session);
-    if (inPage) {
-      toastTo(st.tabId, t('toast.player'), 'ok');
-      return { ok: true, inpage: true, session: session };
-    }
 
     await api.storage.local.set({ [PLAY_PREFIX + sid]: session });
     const target = api.runtime.getURL('player/player.html?sid=' + encodeURIComponent(sid));
@@ -1415,10 +1432,14 @@ try {
         const st = await restore(tab.id);
         if (!st) return;
         const url = info.srcUrl || info.linkUrl || '';
-        if (info.menuItemId === 'sr-watchparty') {
+        if (info.menuItemId === 'sr-play') {
           const best = st.store.best() || {};
-          if (url) await api.storage.local.set({ [PARTY_PREFIX + (await api.tabs.create({ url: watchPartyCreateUrl(url) })).id]: { mediaUrl: url, roomName: (st.title && st.title.title) || 'Stream Radar room', autoJoin: true, createdAt: Date.now() } });
-          else await launchWatchParty(st, best.id);
+          await launchPlayer(st, best.id, url || undefined);
+        } else if (info.menuItemId === 'sr-watchparty') {
+          const best = st.store.best() || {};
+          if (url && util.watchPartyPlayable(url, '')) {
+            await api.storage.local.set({ [PARTY_PREFIX + (await api.tabs.create({ url: watchPartyCreateUrl(url) })).id]: { mediaUrl: url, roomName: (st.title && st.title.title) || 'Stream Radar room', autoJoin: true, createdAt: Date.now() } });
+          } else await launchWatchParty(st, best.id);
         } else if (info.menuItemId === 'sr-copy' && url) {
           api.tabs.sendMessage(tab.id, { type: 'copy-clipboard', text: url }).catch(() => {});
         } else if (info.menuItemId === 'sr-download' && url) {
