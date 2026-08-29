@@ -525,11 +525,38 @@ try {
     return 'https://www.watchparty.me/create?video=' + encodeURIComponent(mediaUrl);
   }
 
+  // WatchParty's direct-URL mode only plays a file it can fetch as media
+  // (.m3u8/.mpd/.mp4/.webm/...). A resolver/API link such as
+  // "d.shows.st/api?d=...." returns JSON/an HTML page, so WatchParty shows
+  // "it doesn't look like this is a media file". Pick a truly playable item:
+  // prefer a media-extension direct manifest/file and never send an API link.
+  function playableUrlFrom(item) {
+    if (!item || !item.url || item.isAd) return null;
+    return util.watchPartyPlayable(item.url, item.category) ? item.url : null;
+  }
+  function pickPlayable(st, itemId) {
+    const first = itemId && st.store.byId.get(itemId);
+    const direct = playableUrlFrom(first);
+    if (direct) return { url: direct, item: first };
+    // fall back to the best detected stream that is genuinely playable
+    const items = st.store.view ? st.store.view().items : [...st.store.byId.values()];
+    const weights = (SR.rules && SR.rules.CATEGORY_WEIGHT) || { mp4: 100, hls: 95, dash: 90, webm: 85, other: 70 };
+    const scored = items
+      .map((it) => ({ it, u: playableUrlFrom(it) }))
+      .filter((x) => x.u)
+      .sort((a, b) => (weights[b.it.category] || 0) - (weights[a.it.category] || 0) || (b.it.size || 0) - (a.it.size || 0));
+    return scored.length ? { url: scored[0].u, item: scored[0].it } : { url: null, item: first || null };
+  }
+
   async function launchWatchParty(st, itemId) {
-    const media = (itemId && st.store.byId.get(itemId)) || st.store.best();
-    const url = media && media.url;
-    if (!url) return { ok: false, reason: t('panel.empty') };
-    if (media.category === 'blob') return { ok: false, reason: t('label.mseHint') };
+    const picked = pickPlayable(st, itemId);
+    const media = picked.item;
+    const url = picked.url;
+    if (!url) {
+      // No direct-playable stream found. A resolver/API link (or blob/segments)
+      // cannot be used by WatchParty direct mode; VBrowser can open the page.
+      return { ok: false, reason: t('watchparty.needDirect'), hint: 'vbrowser' };
+    }
     const ti = st.title || {};
     const roomName = String(
       ti.title ? ti.title + (ti.year ? ' (' + ti.year + ')' : '') + (ti.episode ? ' S' + (ti.season || '01') + 'E' + ti.episode : '') : ti.raw || util.domain(st.url) || 'Stream Radar room'
@@ -597,8 +624,11 @@ try {
         if (!v) return { ok: false, reason: 'no such variant' };
         return { ok: true, id: await api.downloads.download({ url: v.uri, filename: downloadName(it, st), saveAs: false, conflictAction: 'uniquify' }) };
       }
-      case 'watchparty':
-        return await launchWatchParty(st, msg.id);
+      case 'watchparty': {
+        const res = await launchWatchParty(st, msg.id);
+        if (!res.ok) toastTo(tabId, res.reason || t('panel.empty'), 'warn');
+        return res;
+      }
       case 'subs-search':
         scheduleSubSearch(tabId, true);
         return { ok: true };

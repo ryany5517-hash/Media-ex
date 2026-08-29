@@ -241,6 +241,25 @@
       }
     },
 
+    // WatchParty direct mode only plays a file it can fetch as media. Decide
+    // whether a detected URL is directly playable there. Resolver/API links
+    // (e.g. "/api?d=...") return a page/JSON and must NOT be sent.
+    watchPartyPlayable(url, category) {
+      if (!url) return false;
+      if (category === 'blob' || category === 'segment' || category === 'texttrack') return false;
+      let path = String(url);
+      try { path = new URL(url).pathname; } catch (_) {}
+      // Resolver/gateway endpoints are never a direct media file, even if a
+      // media extension hides in the query string (e.g. /redirect?to=..a.m3u8).
+      const resolverSeg = /(^|\/)(api|resolve|redirect|gateway|link|source|get|serve)(\/|$)/i.test(path);
+      if (resolverSeg) return false;
+      // A media extension on the path is directly playable.
+      if (/\.(m3u8|mpd|mp4|webm|mkv|mov|m4v|ts|aac|m4a|mp3|m3u)$/i.test(path)) return true;
+      // Otherwise trust a direct-media category (manifest served without a
+      // clean extension), but not generic "other" pages/APIs.
+      return category === 'hls' || category === 'dash' || category === 'mp4' || category === 'webm';
+    },
+
     formatBytes(bytes) {
       if (!bytes || !isFinite(bytes) || bytes <= 0) return '';
       const units = ['B', 'KB', 'MB', 'GB', 'TB'];
@@ -1763,6 +1782,7 @@
       'label.mse': 'MediaSource (blob)',
       'label.mseHint': 'Blob streams cannot be downloaded directly, use Record buffer or open the source page.',
       'watchparty.noBlob': 'No Watch Party: blob stream has no shareable URL',
+      'watchparty.needDirect': 'No direct stream URL found for Watch Party - open the video in the room VBrowser, or use the Copy/ffmpeg button on the real .m3u8/.mp4 row.',
       'watchparty.opening': 'Opening room',
       'watchparty.fallback': 'The room could not open. The tab may not be ready yet. Try reloading the tab then press Watch Party again.',
       'watchparty.reattach': 'Re-detect this tab',
@@ -1976,6 +1996,7 @@
       'label.mse': 'MediaSource (blob)',
       'label.mseHint': 'Stream blob tidak bisa diunduh langsung, pakai Rekam buffer atau buka halaman sumbernya.',
       'watchparty.noBlob': 'Tidak bisa Nonton Bareng: stream blob tidak punya URL yang bisa dibagikan',
+      'watchparty.needDirect': 'Tidak ada URL stream langsung untuk Nonton Bareng - buka videonya lewat VBrowser di room, atau pakai tombol Salin/ffmpeg pada baris .m3u8/.mp4 yang asli.',
       'watchparty.opening': 'Membuka room',
       'watchparty.fallback': 'Room gagal dibuka. Tab mungkin belum siap. Coba muat ulang tab lalu tekan Nonton Bareng lagi.',
       'watchparty.reattach': 'Deteksi ulang tab ini',

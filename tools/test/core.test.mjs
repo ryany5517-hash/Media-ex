@@ -328,6 +328,26 @@ test('settings.merge: unknown keys dropped, nested providers merged', () => {
   assert.equal(merged.providers.yify, true);
 });
 
+test('util.watchPartyPlayable: direct media yes, resolver/API links no', () => {
+  const yes = [
+    ['https://cdn.x/a/master.m3u8', 'hls'],
+    ['https://cdn.x/a/play.mp4?t=1', 'mp4'],
+    ['https://cdn.x/manifest.mpd', 'dash'],
+    ['https://cdn.x/v.webm', 'webm'],
+    ['https://cdn.x/noext-but-hls', 'hls'],
+  ];
+  for (const [u, c] of yes) assert.equal(util.watchPartyPlayable(u, c), true, 'should play ' + u);
+  const no = [
+    ['https://d.shows.st/api?d=fC1Oq-resolver-token-very-long', 'other'],
+    ['https://x.com/redirect?to=https%3A%2F%2Fcdn%2Fa.m3u8', 'other'],
+    ['https://x.com/gateway/v1/stream?id=9', 'mp4'],
+    ['blob:https://x/1-2-3', 'blob'],
+    ['https://cdn.x/seg0.ts', 'segment'],
+    ['https://x.com/page/123', 'other'],
+  ];
+  for (const [u, c] of no) assert.equal(util.watchPartyPlayable(u, c), false, 'must reject ' + u);
+});
+
 test('util: pattern compiler + matching', () => {
   const pats = util.compilePatterns('*.example.com\n/m3u8$/i\n# comment');
   assert.equal(pats.length, 2);
