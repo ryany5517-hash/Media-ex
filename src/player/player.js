@@ -212,17 +212,19 @@
       setOverlay(false);
       video.play().catch(() => {});
     });
+    let netTries = 0;
     hls.on(Hls.Events.ERROR, (_ev, data) => {
       if (!data) return;
       if (data.fatal) {
-        if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+        if (data.type === Hls.ErrorTypes.NETWORK_ERROR && netTries++ < 2) {
           try {
             hls.startLoad();
             return;
           } catch (_) {}
         }
         destroyHls();
-        playNative(url);
+        const detail = data.details || data.type || 'network';
+        setOverlay(true, t('player.error', { msg: String(detail) }), 'err');
       }
     });
     hls.loadSource(url);

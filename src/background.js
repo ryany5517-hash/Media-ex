@@ -886,9 +886,154 @@ try {
     return fallback;
   }
 
+  /**
+   * Runs in the PAGE world of every frame. Chrome forbids Referer on extension
+   * fetch(); IDM works because it uses the tab. Same-origin fetch here sends
+   * the real Referer + cookies. Serialized into scripting.executeScript — do
+   * not close over background state.
+   */
+  function inPagePlayFunc(session) {
+    try {
+      var url = session && session.url;
+      if (!url) return { played: false, reason: 'nourl' };
+      var here = '';
+      try {
+        here = String(location.hostname || '').toLowerCase();
+      } catch (_) {}
+      var want = String((session && session.host) || '').toLowerCase();
+      try {
+        if (!want) want = new URL(url).hostname.toLowerCase();
+      } catch (_) {}
+      var sameOrigin = false;
+      try {
+        sameOrigin = new URL(url, location.href).origin === location.origin;
+      } catch (_) {}
+      function tail(h) {
+        var p = String(h || '').split('.');
+        return p.length <= 2 ? h : p.slice(-2).join('.');
+      }
+      var related =
+        sameOrigin ||
+        (here && want && (here === want || here.indexOf('.' + want) === here.length - want.length - 1 || want.indexOf('.' + here) === want.length - here.length - 1 || tail(here) === tail(want)));
+      if (!related) return { played: false, reason: 'host', host: here };
+      if (window.__sradPlaying) return { played: true, host: here, dup: 1 };
+      window.__sradPlaying = 1;
+
+      function mount(playUrl) {
+        var doc = document;
+        var old = doc.getElementById('srad-inpage');
+        if (old) old.remove();
+        var wrap = doc.createElement('div');
+        wrap.id = 'srad-inpage';
+        wrap.setAttribute('style', 'position:fixed;inset:0;z-index:2147483647;background:#000;display:flex;flex-direction:column;');
+        var bar = doc.createElement('div');
+        bar.setAttribute('style', 'display:flex;justify-content:flex-end;padding:8px 12px;background:#111;');
+        var close = doc.createElement('button');
+        close.textContent = 'Close';
+        close.setAttribute('style', 'color:#fff;background:#333;border:0;padding:6px 12px;cursor:pointer;border-radius:4px');
+        close.onclick = function () {
+          try {
+            if (window.__sradInpageHls) window.__sradInpageHls.destroy();
+          } catch (_) {}
+          wrap.remove();
+          window.__sradPlaying = 0;
+        };
+        bar.appendChild(close);
+        var video = doc.createElement('video');
+        video.setAttribute('controls', '');
+        video.setAttribute('autoplay', '');
+        video.setAttribute('playsinline', '');
+        video.setAttribute('style', 'flex:1;width:100%;min-height:0;background:#000');
+        wrap.appendChild(bar);
+        wrap.appendChild(video);
+        (doc.body || doc.documentElement).appendChild(wrap);
+        function attach(u) {
+          var H = window.Hls;
+          if (H && H.isSupported && H.isSupported()) {
+            try {
+              if (window.__sradInpageHls) window.__sradInpageHls.destroy();
+            } catch (_) {}
+            var hls = new H({ enableWorker: false });
+            window.__sradInpageHls = hls;
+            hls.loadSource(u);
+            hls.attachMedia(video);
+            var ev = H.Events && H.Events.MANIFEST_PARSED ? H.Events.MANIFEST_PARSED : 'hlsManifestParsed';
+            hls.on(ev, function () {
+              try {
+                video.play();
+              } catch (_) {}
+            });
+            return;
+          }
+          video.src = u;
+          video.play().catch(function () {});
+        }
+        function withHls(cb) {
+          if (window.Hls && window.Hls.isSupported && window.Hls.isSupported()) return cb();
+          if (!session.hlsLib) return cb();
+          var s = doc.createElement('script');
+          s.src = session.hlsLib;
+          s.onload = cb;
+          s.onerror = cb;
+          (doc.head || doc.documentElement).appendChild(s);
+        }
+        withHls(function () {
+          var path = playUrl;
+          try {
+            path = new URL(playUrl).pathname;
+          } catch (_) {}
+          if (!/\/api\/?$/i.test(path) || /\.m3u8/i.test(playUrl)) {
+            attach(playUrl);
+            return;
+          }
+          fetch(playUrl, { credentials: 'include' })
+            .then(function (r) {
+              return r.text();
+            })
+            .then(function (text) {
+              var inner = playUrl;
+              if (text && /#EXTM3U/.test(String(text).slice(0, 8))) inner = playUrl;
+              else if (text && (text.charAt(0) === '{' || text.charAt(0) === '[')) {
+                try {
+                  var j = JSON.parse(text);
+                  inner = j.file || j.src || j.url || (j.source && (j.source.file || j.source.src)) || playUrl;
+                } catch (_) {}
+              }
+              attach(inner);
+            })
+            .catch(function () {
+              attach(playUrl);
+            });
+        });
+      }
+      mount(url);
+      return { played: true, host: here };
+    } catch (e) {
+      return { played: false, reason: String((e && e.message) || e) };
+    }
+  }
+
   async function tryInPagePlay(tabId, media, session) {
     if (tabId == null) return false;
-    const want = (session && session.host) || util.host((media && media.url) || '') || util.host((session && session.url) || '');
+    const payload = {
+      url: session && session.url,
+      host: (session && session.host) || util.host((media && media.url) || '') || util.host((session && session.url) || ''),
+      hlsLib: (session && session.hlsLib) || '',
+    };
+    if (api.scripting && typeof api.scripting.executeScript === 'function') {
+      try {
+        const results = await api.scripting.executeScript({
+          target: { tabId: tabId, allFrames: true },
+          world: 'MAIN',
+          func: inPagePlayFunc,
+          args: [payload],
+        });
+        if ((results || []).some((r) => r && r.result && r.result.played)) return true;
+      } catch (e) {
+        log('inpage executeScript', String((e && e.message) || e));
+      }
+    }
+    const want = payload.host;
     const ids = [];
     const pushId = (id, front) => {
       if (id == null || ids.indexOf(id) >= 0) return;
