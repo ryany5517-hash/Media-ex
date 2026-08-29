@@ -328,6 +328,15 @@ test('settings.merge: unknown keys dropped, nested providers merged', () => {
   assert.equal(merged.providers.yify, true);
 });
 
+test('util.extractMediaUrl + localPlayable: resolver JSON is playable locally', () => {
+  const api = 'https://d.shows.st/api?d=fC1Oq-resolver-token-very-long';
+  assert.equal(util.localPlayable(api, 'other'), true);
+  assert.equal(util.localPlayable(api, 'blob'), false);
+  assert.equal(util.extractMediaUrl({ file: 'https://cdn.x/a/master.m3u8?t=1' }), 'https://cdn.x/a/master.m3u8?t=1');
+  assert.equal(util.extractMediaUrl({ source: { src: 'https://cdn.x/v.mp4' } }), 'https://cdn.x/v.mp4');
+  assert.match(util.extractMediaUrl(JSON.parse('{"url":"https://a.b/c/index.m3u8"}')), /index\.m3u8/);
+});
+
 test('util.watchPartyPlayable: direct media yes, resolver/API links no', () => {
   const yes = [
     ['https://cdn.x/a/master.m3u8', 'hls'],

@@ -16,7 +16,7 @@
   'use strict';
 
   const SR = (root.SR = root.SR || {});
-  SR.VERSION = '1.1.0';
+  SR.VERSION = '1.1.1';
   SR.NS = 'streamRadar'; // message channel id / storage prefix
   SR.PREFIX = 'srad'; // css class prefix
 
@@ -168,6 +168,52 @@
     // WatchParty direct mode only plays a file it can fetch as media. Decide
     // whether a detected URL is directly playable there. Resolver/API links
     // (e.g. "/api?d=...") return a page/JSON and must NOT be sent.
+    /**
+     * Pull a direct media URL out of a resolver JSON/HTML/text body
+     * (d.shows.st/api?d=… often returns `{file:"https://…m3u8"}`).
+     */
+    extractMediaUrl(input, depth) {
+      const d = depth || 0;
+      if (d > 6 || input == null) return '';
+      if (typeof input === 'string') {
+        const s = input.trim();
+        if (/^https?:\/\//i.test(s) && /\.(m3u8|mpd|mp4|webm|mkv|m4v|m3u)(\?|#|$)/i.test(s)) return s;
+        const m = s.match(/https?:\/\/[^\s"'<>\\)]{8,800}?\.(?:m3u8|mpd|mp4|webm|mkv|m4v)(?:\?[^\s"'<>\\)]{0,400})?/i);
+        return m ? m[0] : '';
+      }
+      if (Array.isArray(input)) {
+        for (let i = 0; i < input.length; i++) {
+          const u = util.extractMediaUrl(input[i], d + 1);
+          if (u) return u;
+        }
+        return '';
+      }
+      if (typeof input === 'object') {
+        const keys = ['file', 'src', 'source', 'sources', 'url', 'video', 'stream', 'link', 'playlist', 'hls', 'file_url', 'videoUrl', 'fileUrl'];
+        for (let i = 0; i < keys.length; i++) {
+          if (input[keys[i]] == null) continue;
+          const u = util.extractMediaUrl(input[keys[i]], d + 1);
+          if (u) return u;
+        }
+        const vals = Object.keys(input);
+        for (let i = 0; i < vals.length; i++) {
+          const v = input[vals[i]];
+          if (v && (typeof v === 'object' || typeof v === 'string')) {
+            const u = util.extractMediaUrl(v, d + 1);
+            if (u) return u;
+          }
+        }
+      }
+      return '';
+    },
+
+    /** Local player can fetch with the page Referer; blob/segments still cannot. */
+    localPlayable(url, category) {
+      if (!url) return false;
+      if (category === 'blob' || category === 'segment' || category === 'texttrack') return false;
+      return /^https?:/i.test(url);
+    },
+
     watchPartyPlayable(url, category) {
       if (!url) return false;
       if (category === 'blob' || category === 'segment' || category === 'texttrack') return false;
@@ -4148,14 +4194,62 @@
     } catch (_) {}
   }
 
+  function categoryFromUrl(url, fallback) {
+    if (/\.m3u8(\?|#|$)/i.test(url) || /\.m3u(\?|#|$)/i.test(url)) return 'hls';
+    if (/\.mpd(\?|#|$)/i.test(url)) return 'dash';
+    if (/\.webm(\?|#|$)/i.test(url)) return 'webm';
+    if (/\.(mp4|m4v|mkv|mov)(\?|#|$)/i.test(url)) return 'mp4';
+    return fallback || '';
+  }
+
+  function sniffCategory(mime, text, url, fallback) {
+    if (/mpegurl|x-mpegurl|vnd\.apple\.mpegurl/i.test(mime || '')) return 'hls';
+    if (/dash\+xml/i.test(mime || '')) return 'dash';
+    if (/video\/webm/i.test(mime || '')) return 'webm';
+    if (/video\/(mp4|quicktime|x-m4v)/i.test(mime || '')) return 'mp4';
+    if (text && /#EXTM3U/.test(String(text).slice(0, 64))) return 'hls';
+    if (text && /<MPD[\s>]/i.test(String(text).slice(0, 400))) return 'dash';
+    return categoryFromUrl(url, fallback);
+  }
+
+  async function resolvePlaySource(st, media, url, hop) {
+    const fallback = { url: url, category: (media && media.category) || categoryFromUrl(url, '') };
+    if (!url || (hop || 0) > 2) return fallback;
+    if (/\.(m3u8|mpd|mp4|webm|mkv|m4v|mov|m3u)(\?|#|$)/i.test(url)) {
+      return { url: url, category: sniffCategory('', '', url, fallback.category) };
+    }
+    const referer = pageReferer(st, media);
+    let origin = '';
+    try {
+      origin = referer ? new URL(referer).origin : util.origin(st.url || '');
+    } catch (_) {}
+    const headers = {};
+    if (referer) headers.Referer = referer;
+    if (origin) headers.Origin = origin;
+    try {
+      const text = await util.fetchText(url, { timeoutMs: 12000, maxBytes: 800000, headers: headers, credentials: 'include' });
+      const extracted = util.extractMediaUrl(util.safeJSON(text, null) || text);
+      if (extracted && extracted !== url) return resolvePlaySource(st, media, extracted, (hop || 0) + 1);
+      if (text && /#EXTM3U/.test(String(text).slice(0, 64))) return { url: url, category: 'hls' };
+      if (text && /<MPD[\s>]/i.test(String(text).slice(0, 400))) return { url: url, category: 'dash' };
+      return { url: url, category: sniffCategory('', text, url, fallback.category || 'hls') };
+    } catch (_) {
+      return { url: url, category: fallback.category || 'hls' };
+    }
+  }
+
   async function launchPlayer(st, itemId, urlOverride) {
+    const clicked = itemId ? st.store.byId.get(itemId) : null;
     const picked = pickPlayable(st, itemId);
-    const media = picked.item;
-    const url = urlOverride || picked.url;
+    const media = clicked || picked.item;
+    let url = urlOverride || (clicked && util.localPlayable(clicked.url, clicked.category) ? clicked.url : null) || picked.url;
     if (!url) return { ok: false, reason: t('player.needDirect') };
     if (media && media.drm) return { ok: false, reason: t('player.drm') };
+    const resolved = await resolvePlaySource(st, media, url);
+    url = resolved.url || url;
+    const mediaForSession = Object.assign({}, media || {}, { url: url, category: resolved.category || (media && media.category) || '' });
     const sid = util.uuid();
-    const session = buildPlaySession(st, media, url);
+    const session = buildPlaySession(st, mediaForSession, url);
     await api.storage.local.set({ [PLAY_PREFIX + sid]: session });
     const target = api.runtime.getURL('player/player.html?sid=' + encodeURIComponent(sid));
     const tab = await api.tabs.create({ url: target, active: true });

@@ -675,14 +675,62 @@ try {
     } catch (_) {}
   }
 
+  function categoryFromUrl(url, fallback) {
+    if (/\.m3u8(\?|#|$)/i.test(url) || /\.m3u(\?|#|$)/i.test(url)) return 'hls';
+    if (/\.mpd(\?|#|$)/i.test(url)) return 'dash';
+    if (/\.webm(\?|#|$)/i.test(url)) return 'webm';
+    if (/\.(mp4|m4v|mkv|mov)(\?|#|$)/i.test(url)) return 'mp4';
+    return fallback || '';
+  }
+
+  function sniffCategory(mime, text, url, fallback) {
+    if (/mpegurl|x-mpegurl|vnd\.apple\.mpegurl/i.test(mime || '')) return 'hls';
+    if (/dash\+xml/i.test(mime || '')) return 'dash';
+    if (/video\/webm/i.test(mime || '')) return 'webm';
+    if (/video\/(mp4|quicktime|x-m4v)/i.test(mime || '')) return 'mp4';
+    if (text && /#EXTM3U/.test(String(text).slice(0, 64))) return 'hls';
+    if (text && /<MPD[\s>]/i.test(String(text).slice(0, 400))) return 'dash';
+    return categoryFromUrl(url, fallback);
+  }
+
+  async function resolvePlaySource(st, media, url, hop) {
+    const fallback = { url: url, category: (media && media.category) || categoryFromUrl(url, '') };
+    if (!url || (hop || 0) > 2) return fallback;
+    if (/\.(m3u8|mpd|mp4|webm|mkv|m4v|mov|m3u)(\?|#|$)/i.test(url)) {
+      return { url: url, category: sniffCategory('', '', url, fallback.category) };
+    }
+    const referer = pageReferer(st, media);
+    let origin = '';
+    try {
+      origin = referer ? new URL(referer).origin : util.origin(st.url || '');
+    } catch (_) {}
+    const headers = {};
+    if (referer) headers.Referer = referer;
+    if (origin) headers.Origin = origin;
+    try {
+      const text = await util.fetchText(url, { timeoutMs: 12000, maxBytes: 800000, headers: headers, credentials: 'include' });
+      const extracted = util.extractMediaUrl(util.safeJSON(text, null) || text);
+      if (extracted && extracted !== url) return resolvePlaySource(st, media, extracted, (hop || 0) + 1);
+      if (text && /#EXTM3U/.test(String(text).slice(0, 64))) return { url: url, category: 'hls' };
+      if (text && /<MPD[\s>]/i.test(String(text).slice(0, 400))) return { url: url, category: 'dash' };
+      return { url: url, category: sniffCategory('', text, url, fallback.category || 'hls') };
+    } catch (_) {
+      return { url: url, category: fallback.category || 'hls' };
+    }
+  }
+
   async function launchPlayer(st, itemId, urlOverride) {
+    const clicked = itemId ? st.store.byId.get(itemId) : null;
     const picked = pickPlayable(st, itemId);
-    const media = picked.item;
-    const url = urlOverride || picked.url;
+    const media = clicked || picked.item;
+    let url = urlOverride || (clicked && util.localPlayable(clicked.url, clicked.category) ? clicked.url : null) || picked.url;
     if (!url) return { ok: false, reason: t('player.needDirect') };
     if (media && media.drm) return { ok: false, reason: t('player.drm') };
+    const resolved = await resolvePlaySource(st, media, url);
+    url = resolved.url || url;
+    const mediaForSession = Object.assign({}, media || {}, { url: url, category: resolved.category || (media && media.category) || '' });
     const sid = util.uuid();
-    const session = buildPlaySession(st, media, url);
+    const session = buildPlaySession(st, mediaForSession, url);
     await api.storage.local.set({ [PLAY_PREFIX + sid]: session });
     const target = api.runtime.getURL('player/player.html?sid=' + encodeURIComponent(sid));
     const tab = await api.tabs.create({ url: target, active: true });

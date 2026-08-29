@@ -477,4 +477,41 @@ test('F13 play: opens the cinema player with page Referer and proxies HLS with t
   h.dom.window.close();
 });
 
+test('F14 play: resolver API (d.shows.st/api?d=) is fetched with page Referer and unwrapped to HLS', async () => {
+  const API = 'https://d.shows.st/api?d=TsjRBDQAZCnpz8n3Nnaf0jZHBf8D7BI4token';
+  const INNER = 'https://stream.cdn-vidlove.net/hls/1516698/master.m3u8?token=9f2';
+  const net = makeNetStub({
+    'd.shows.st/api': { body: JSON.stringify({ file: INNER }), type: 'application/json' },
+  });
+  const h = await boot({ net });
+  h.hub.fireWebRequest({
+    url: API,
+    type: 'xmlhttprequest',
+    statusCode: 200,
+    responseHeaders: h.hub.header({ 'content-type': 'application/json', 'content-length': '240' }),
+  });
+  await until(h, () => (stateOf(h).items || []).some((i) => i.url === API), 2000);
+  let item = (h.hub.lastBroadcast.items || []).find((i) => i.url === API);
+  if (!item) {
+    h.hub.fireWebRequest({
+      url: API,
+      type: 'media',
+      statusCode: 200,
+      responseHeaders: h.hub.header({ 'content-type': 'video/mp4', 'content-length': '240' }),
+    });
+    await until(h, () => (stateOf(h).items || []).some((i) => i.url === API), 4000);
+    item = (h.hub.lastBroadcast.items || []).find((i) => i.url === API);
+  }
+  assert.ok(item, 'resolver row present: ' + JSON.stringify((h.hub.lastBroadcast.items || []).map((i) => i.url)));
+  const res = await h.hub.sendFromContent({ type: 'action', payload: { name: 'play', id: item.id, tabId: 1 } });
+  assert.equal(res.ok, true, 'play launched: ' + JSON.stringify(res));
+  const stored = h.hub.storage['srad:play:' + res.sid];
+  assert.ok(stored, 'play session persisted');
+  assert.equal(stored.url, INNER, 'resolver unwrapped to the real m3u8: ' + stored.url);
+  assert.equal(stored.category, 'hls');
+  assert.match(stored.referer, /67movies\.nl/);
+  assert.ok(net.calls.some(([u]) => String(u).includes('d.shows.st/api')), 'resolver fetched with host access');
+  h.dom.window.close();
+});
+
 const readModule = (rel) => readSrc(rel);

@@ -15,7 +15,7 @@
   'use strict';
 
   const SR = (root.SR = root.SR || {});
-  SR.VERSION = '1.1.0';
+  SR.VERSION = '1.1.1';
   SR.NS = 'streamRadar'; // message channel id / storage prefix
   SR.PREFIX = 'srad'; // css class prefix
 
@@ -167,6 +167,52 @@
     // WatchParty direct mode only plays a file it can fetch as media. Decide
     // whether a detected URL is directly playable there. Resolver/API links
     // (e.g. "/api?d=...") return a page/JSON and must NOT be sent.
+    /**
+     * Pull a direct media URL out of a resolver JSON/HTML/text body
+     * (d.shows.st/api?d=… often returns `{file:"https://…m3u8"}`).
+     */
+    extractMediaUrl(input, depth) {
+      const d = depth || 0;
+      if (d > 6 || input == null) return '';
+      if (typeof input === 'string') {
+        const s = input.trim();
+        if (/^https?:\/\//i.test(s) && /\.(m3u8|mpd|mp4|webm|mkv|m4v|m3u)(\?|#|$)/i.test(s)) return s;
+        const m = s.match(/https?:\/\/[^\s"'<>\\)]{8,800}?\.(?:m3u8|mpd|mp4|webm|mkv|m4v)(?:\?[^\s"'<>\\)]{0,400})?/i);
+        return m ? m[0] : '';
+      }
+      if (Array.isArray(input)) {
+        for (let i = 0; i < input.length; i++) {
+          const u = util.extractMediaUrl(input[i], d + 1);
+          if (u) return u;
+        }
+        return '';
+      }
+      if (typeof input === 'object') {
+        const keys = ['file', 'src', 'source', 'sources', 'url', 'video', 'stream', 'link', 'playlist', 'hls', 'file_url', 'videoUrl', 'fileUrl'];
+        for (let i = 0; i < keys.length; i++) {
+          if (input[keys[i]] == null) continue;
+          const u = util.extractMediaUrl(input[keys[i]], d + 1);
+          if (u) return u;
+        }
+        const vals = Object.keys(input);
+        for (let i = 0; i < vals.length; i++) {
+          const v = input[vals[i]];
+          if (v && (typeof v === 'object' || typeof v === 'string')) {
+            const u = util.extractMediaUrl(v, d + 1);
+            if (u) return u;
+          }
+        }
+      }
+      return '';
+    },
+
+    /** Local player can fetch with the page Referer; blob/segments still cannot. */
+    localPlayable(url, category) {
+      if (!url) return false;
+      if (category === 'blob' || category === 'segment' || category === 'texttrack') return false;
+      return /^https?:/i.test(url);
+    },
+
     watchPartyPlayable(url, category) {
       if (!url) return false;
       if (category === 'blob' || category === 'segment' || category === 'texttrack') return false;

@@ -135,7 +135,10 @@
     const cat = String(category || '').toLowerCase();
     if (cat === 'hls' || /\.m3u8(\?|#|$)/i.test(url || '')) return 'hls';
     if (cat === 'dash' || /\.mpd(\?|#|$)/i.test(url || '')) return 'dash';
-    return 'native';
+    if (cat === 'mp4' || cat === 'webm' || /\.(mp4|webm|mkv|m4v|mov)(\?|#|$)/i.test(url || '')) return 'native';
+    // Resolver/API links (d.shows.st/api?d=…) often return an HLS body once
+    // fetched with the page Referer. Try hls.js before native <video>.
+    return 'hls';
   }
 
   function attachSubtitle(vtt, name) {
@@ -218,7 +221,8 @@
             return;
           } catch (_) {}
         }
-        setOverlay(true, t('player.error', { msg: (data.details || data.type || 'hls') + (data.response && data.response.code ? ' HTTP ' + data.response.code : '') }), 'err');
+        destroyHls();
+        playNative(url);
       }
     });
     hls.loadSource(url);

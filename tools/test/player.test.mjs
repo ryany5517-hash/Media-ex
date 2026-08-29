@@ -34,6 +34,7 @@ test('player engine: HLS vs native vs dash from category/url', () => {
   assert.equal(engineFor('webm', 'https://cdn/v.webm'), 'native');
   assert.equal(engineFor('other', 'https://cdn/a/master.m3u8?t=1'), 'hls');
   assert.equal(engineFor('dash', 'https://cdn/manifest.mpd'), 'dash');
+  assert.equal(engineFor('other', 'https://d.shows.st/api?d=token'), 'hls');
   win.close();
 });
 
