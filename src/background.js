@@ -914,10 +914,10 @@ try {
       }
       var related =
         sameOrigin ||
-        (here && want && (here === want || here.indexOf('.' + want) === here.length - want.length - 1 || want.indexOf('.' + here) === want.length - here.length - 1 || tail(here) === tail(want)));
-      if (!related) return { played: false, reason: 'host', host: here };
+        (here &&
+          want &&
+          (here === want || here.endsWith('.' + want) || want.endsWith('.' + here) || tail(here) === tail(want)));
       if (window.__sradPlaying) return { played: true, host: here, dup: 1 };
-      window.__sradPlaying = 1;
 
       function mount(playUrl) {
         var doc = document;
@@ -978,36 +978,47 @@ try {
           (doc.head || doc.documentElement).appendChild(s);
         }
         withHls(function () {
-          var path = playUrl;
-          try {
-            path = new URL(playUrl).pathname;
-          } catch (_) {}
-          if (!/\/api\/?$/i.test(path) || /\.m3u8/i.test(playUrl)) {
-            attach(playUrl);
-            return;
-          }
-          fetch(playUrl, { credentials: 'include' })
-            .then(function (r) {
-              return r.text();
-            })
-            .then(function (text) {
-              var inner = playUrl;
-              if (text && /#EXTM3U/.test(String(text).slice(0, 8))) inner = playUrl;
-              else if (text && (text.charAt(0) === '{' || text.charAt(0) === '[')) {
-                try {
-                  var j = JSON.parse(text);
-                  inner = j.file || j.src || j.url || (j.source && (j.source.file || j.source.src)) || playUrl;
-                } catch (_) {}
-              }
-              attach(inner);
-            })
-            .catch(function () {
-              attach(playUrl);
-            });
+          attach(playUrl);
         });
       }
-      mount(url);
-      return { played: true, host: here };
+      function extract(text) {
+        if (!text) return '';
+        if (/#EXTM3U/.test(String(text).slice(0, 64))) return url;
+        if (/<MPD[\s>]/i.test(String(text).slice(0, 400))) return url;
+        try {
+          var j = JSON.parse(text);
+          return j.file || j.src || j.url || (j.source && (j.source.file || j.source.src)) || '';
+        } catch (_) {}
+        var m = String(text).match(/https?:\/\/[^\s"'<>\\)]{8,800}?\.(?:m3u8|mpd|mp4)(?:\?[^\s"'<>\\)]{0,400})?/i);
+        return m ? m[0] : '';
+      }
+      function looksMedia(text) {
+        if (!text) return false;
+        var s = String(text).slice(0, 240);
+        if (/<!DOCTYPE|<html[\s>]/i.test(s)) return false;
+        if (/#EXTM3U/.test(s) || /<MPD[\s>]/i.test(s)) return true;
+        if (s.charAt(0) === '{' || s.charAt(0) === '[') return true;
+        return false;
+      }
+      if (related) {
+        window.__sradPlaying = 1;
+        mount(url);
+        return { played: true, host: here, via: 'related' };
+      }
+      if (typeof fetch !== 'function') return { played: false, reason: 'host', host: here };
+      return fetch(url, { credentials: 'include' })
+        .then(function (r) {
+          if (!r.ok) return { played: false, status: r.status, host: here };
+          return r.text().then(function (text) {
+            if (!looksMedia(text)) return { played: false, reason: 'not-media', host: here };
+            window.__sradPlaying = 1;
+            mount(extract(text) || url);
+            return { played: true, host: here, via: 'fetch' };
+          });
+        })
+        .catch(function () {
+          return { played: false, reason: 'cors', host: here };
+        });
     } catch (e) {
       return { played: false, reason: String((e && e.message) || e) };
     }
@@ -1021,14 +1032,23 @@ try {
       hlsLib: (session && session.hlsLib) || '',
     };
     if (api.scripting && typeof api.scripting.executeScript === 'function') {
-      try {
+      const run = async (target) => {
         const results = await api.scripting.executeScript({
-          target: { tabId: tabId, allFrames: true },
+          target: target,
           world: 'MAIN',
           func: inPagePlayFunc,
           args: [payload],
         });
-        if ((results || []).some((r) => r && r.result && r.result.played)) return true;
+        return (results || []).some((r) => r && r.result && r.result.played);
+      };
+      try {
+        const fid = media && media.flags && media.flags.frameId;
+        if (fid != null && (await run({ tabId: tabId, frameIds: [fid] }))) return true;
+      } catch (e) {
+        log('inpage frame', String((e && e.message) || e));
+      }
+      try {
+        if (await run({ tabId: tabId, allFrames: true })) return true;
       } catch (e) {
         log('inpage executeScript', String((e && e.message) || e));
       }
@@ -1059,7 +1079,7 @@ try {
     for (let i = 0; i < ids.length; i++) {
       if (await ping(ids[i])) return true;
     }
-    return ping(undefined);
+    return false;
   }
 
   function stFrames(tabId) {

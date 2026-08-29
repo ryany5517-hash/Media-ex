@@ -1,6 +1,6 @@
 {
   "name": "stream-radar",
-  "version": "1.1.7",
+  "version": "1.1.8",
   "private": true,
   "description": "Stream Radar \u2014 ultra media streaming detector + WatchParty + auto Indonesian subtitles, for Chrome & Firefox (Manifest V3). Not published to any store: load it unpacked.",
   "type": "module",

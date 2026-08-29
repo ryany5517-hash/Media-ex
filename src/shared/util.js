@@ -15,7 +15,7 @@
   'use strict';
 
   const SR = (root.SR = root.SR || {});
-  SR.VERSION = '1.1.7';
+  SR.VERSION = '1.1.8';
   SR.NS = 'streamRadar'; // message channel id / storage prefix
   SR.PREFIX = 'srad'; // css class prefix
 
@@ -260,7 +260,11 @@
       if (/(^|\/)(api|resolve|redirect|gateway|link|source|get|serve)(\/|$)/i.test(path)) return false;
       // 3) A classified direct-media category (content-type/parsed manifest,
       //    served without a clean extension) is playable too.
-      if (category === 'hls' || category === 'dash' || category === 'mp4' || category === 'webm') return true;
+      if (category === 'hls' || category === 'dash' || category === 'mp4' || category === 'webm') {
+        // Token CDNs like .../mpd/<id> are not a file WatchParty can fetch.
+        if (/\/mpd\//i.test(path) && !/\.mpd(\?|#|$)/i.test(path)) return false;
+        return true;
+      }
       return false;
     },
 
