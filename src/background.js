@@ -887,10 +887,10 @@ try {
   }
 
   /**
-   * Runs in the PAGE world of every frame. Chrome forbids Referer on extension
-   * fetch(); IDM works because it uses the tab. Same-origin fetch here sends
-   * the real Referer + cookies. Serialized into scripting.executeScript — do
-   * not close over background state.
+   * Runs in the PAGE world. IDM plays because it reuses the tab request
+   * (cookies + Referer of the iframe that loaded the stream). We do the same:
+   * mount HLS.js in that frame. Do not fetch-probe (CORS/CSP hang). Serialized
+   * into scripting.executeScript — do not close over background state.
    */
   function inPagePlayFunc(session) {
     try {
@@ -917,6 +917,7 @@ try {
         (here &&
           want &&
           (here === want || here.endsWith('.' + want) || want.endsWith('.' + here) || tail(here) === tail(want)));
+      if (!session.force && !related) return { played: false, reason: 'host', host: here };
       if (window.__sradPlaying) return { played: true, host: here, dup: 1 };
 
       function mount(playUrl) {
@@ -947,7 +948,10 @@ try {
         wrap.appendChild(bar);
         wrap.appendChild(video);
         (doc.body || doc.documentElement).appendChild(wrap);
-        function attach(u) {
+        var queue = [playUrl].concat(session.alts || []).filter(function (u, i, a) {
+          return u && a.indexOf(u) === i;
+        });
+        function attach(u, rest) {
           var H = window.Hls;
           if (H && H.isSupported && H.isSupported()) {
             try {
@@ -963,23 +967,18 @@ try {
                 video.play();
               } catch (_) {}
             });
+            var errEv = H.Events && H.Events.ERROR ? H.Events.ERROR : 'hlsError';
+            hls.on(errEv, function (_e, data) {
+              if (data && data.fatal && rest && rest.length) attach(rest[0], rest.slice(1));
+            });
             return;
           }
           video.src = u;
-          video.play().catch(function () {});
+          video.play().catch(function () {
+            if (rest && rest.length) attach(rest[0], rest.slice(1));
+          });
         }
-        function withHls(cb) {
-          if (window.Hls && window.Hls.isSupported && window.Hls.isSupported()) return cb();
-          if (!session.hlsLib) return cb();
-          var s = doc.createElement('script');
-          s.src = session.hlsLib;
-          s.onload = cb;
-          s.onerror = cb;
-          (doc.head || doc.documentElement).appendChild(s);
-        }
-        withHls(function () {
-          attach(playUrl);
-        });
+        attach(queue[0], queue.slice(1));
       }
       function extract(text) {
         if (!text) return '';
@@ -992,36 +991,67 @@ try {
         var m = String(text).match(/https?:\/\/[^\s"'<>\\)]{8,800}?\.(?:m3u8|mpd|mp4)(?:\?[^\s"'<>\\)]{0,400})?/i);
         return m ? m[0] : '';
       }
-      function looksMedia(text) {
-        if (!text) return false;
-        var s = String(text).slice(0, 240);
-        if (/<!DOCTYPE|<html[\s>]/i.test(s)) return false;
-        if (/#EXTM3U/.test(s) || /<MPD[\s>]/i.test(s)) return true;
-        if (s.charAt(0) === '{' || s.charAt(0) === '[') return true;
-        return false;
+      function needsUnwrap(u) {
+        try {
+          var path = new URL(u).pathname;
+          return /\/api\/?$/i.test(path) && !/\.m3u8/i.test(u);
+        } catch (_) {
+          return false;
+        }
       }
-      if (related) {
+      if (related && needsUnwrap(url) && typeof fetch === 'function') {
         window.__sradPlaying = 1;
-        mount(url);
-        return { played: true, host: here, via: 'related' };
-      }
-      if (typeof fetch !== 'function') return { played: false, reason: 'host', host: here };
-      return fetch(url, { credentials: 'include' })
-        .then(function (r) {
-          if (!r.ok) return { played: false, status: r.status, host: here };
-          return r.text().then(function (text) {
-            if (!looksMedia(text)) return { played: false, reason: 'not-media', host: here };
-            window.__sradPlaying = 1;
+        return fetch(url, { credentials: 'include' })
+          .then(function (r) {
+            return r.text();
+          })
+          .then(function (text) {
             mount(extract(text) || url);
-            return { played: true, host: here, via: 'fetch' };
+            return { played: true, host: here, via: 'api' };
+          })
+          .catch(function () {
+            mount(url);
+            return { played: true, host: here, via: 'api-fail' };
           });
-        })
-        .catch(function () {
-          return { played: false, reason: 'cors', host: here };
-        });
+      }
+      window.__sradPlaying = 1;
+      mount(url);
+      return { played: true, host: here, via: session.force ? 'force' : 'related' };
     } catch (e) {
       return { played: false, reason: String((e && e.message) || e) };
     }
+  }
+
+  function preferPlayUrl(st, media, url) {
+    if (!url) return url;
+    try {
+      const u = new URL(url);
+      if (/\.(m3u8|mpd)(\?|#|$)/i.test(u.pathname)) return url;
+      if (!/\/mpd\//i.test(u.pathname) || !st || !st.store) return url;
+      const prefix = u.origin + u.pathname.replace(/\/$/, '');
+      let best = '';
+      for (const it of st.store.byId.values()) {
+        if (!it || !it.url || it.isAd) continue;
+        if (it.url.indexOf(prefix + '/') !== 0) continue;
+        if (!/\.m3u8(\?|#|$)/i.test(it.url)) continue;
+        best = it.url;
+        if (/v3\.m3u8/i.test(it.url) || /4k|2160/i.test(String(it.quality || ''))) return it.url;
+      }
+      if (best) return best;
+    } catch (_) {}
+    return url;
+  }
+
+  function playAlts(url) {
+    const out = [];
+    try {
+      const u = new URL(url);
+      if (/\/mpd\//i.test(u.pathname) && !/\.(m3u8|mpd)(\?|#|$)/i.test(u.pathname)) {
+        out.push(u.origin + u.pathname.replace(/\/$/, '') + '/v0.m3u8');
+        out.push(u.origin + u.pathname.replace(/\/$/, '') + '/v3.m3u8');
+      }
+    } catch (_) {}
+    return out;
   }
 
   async function tryInPagePlay(tabId, media, session) {
@@ -1030,25 +1060,50 @@ try {
       url: session && session.url,
       host: (session && session.host) || util.host((media && media.url) || '') || util.host((session && session.url) || ''),
       hlsLib: (session && session.hlsLib) || '',
+      alts: (session && session.alts) || playAlts((session && session.url) || ''),
+      force: false,
     };
     if (api.scripting && typeof api.scripting.executeScript === 'function') {
-      const run = async (target) => {
+      const injectHls = async (target) => {
+        try {
+          await api.scripting.executeScript({ target: target, world: 'MAIN', files: ['vendor/hls.light.min.js'] });
+        } catch (e) {
+          log('hls inject', String((e && e.message) || e));
+        }
+      };
+      const run = async (target, force) => {
+        await injectHls(target);
+        const args = Object.assign({}, payload, { force: !!force });
         const results = await api.scripting.executeScript({
           target: target,
           world: 'MAIN',
           func: inPagePlayFunc,
-          args: [payload],
+          args: [args],
         });
         return (results || []).some((r) => r && r.result && r.result.played);
       };
-      try {
-        const fid = media && media.flags && media.flags.frameId;
-        if (fid != null && (await run({ tabId: tabId, frameIds: [fid] }))) return true;
-      } catch (e) {
-        log('inpage frame', String((e && e.message) || e));
+      const frameIds = [];
+      const pushFid = (id) => {
+        if (id == null || frameIds.indexOf(id) >= 0) return;
+        frameIds.push(id);
+      };
+      pushFid(media && media.flags && media.flags.frameId);
+      const docUrl = (media && media.flags && (media.flags.documentUrl || media.flags.originUrl || media.flags.initiator)) || (media && media.frameUrl) || '';
+      const docHost = util.host(docUrl);
+      (stFrames(tabId) || []).forEach((f) => {
+        if (!f || f.frameId == null) return;
+        if (docUrl && f.url && String(f.url).split('#')[0] === String(docUrl).split('#')[0]) pushFid(f.frameId);
+        else if (docHost && util.host(f.url) === docHost) pushFid(f.frameId);
+      });
+      for (let i = 0; i < frameIds.length; i++) {
+        try {
+          if (await run({ tabId: tabId, frameIds: [frameIds[i]] }, true)) return true;
+        } catch (e) {
+          log('inpage frame', String((e && e.message) || e));
+        }
       }
       try {
-        if (await run({ tabId: tabId, allFrames: true })) return true;
+        if (await run({ tabId: tabId, allFrames: true }, false)) return true;
       } catch (e) {
         log('inpage executeScript', String((e && e.message) || e));
       }
@@ -1095,10 +1150,12 @@ try {
     if (!url) return { ok: false, reason: t('player.needDirect') };
     if (media && media.drm) return { ok: false, reason: t('player.drm') };
 
-    const origUrl = url;
+    const origUrl = preferPlayUrl(st, media, url);
+    url = origUrl;
     const sid = util.uuid();
     const inSession = buildPlaySession(st, media, origUrl);
     inSession.host = (media && media.host) || util.host((media && media.url) || origUrl) || inSession.host;
+    inSession.alts = playAlts(origUrl);
     try {
       inSession.hlsLib = api.runtime.getURL('vendor/hls.light.min.js');
     } catch (_) {}
