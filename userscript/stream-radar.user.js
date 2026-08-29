@@ -1739,6 +1739,9 @@
       'panel.subs.download': 'Download .vtt',
       'panel.subs.retry': 'Search again',
       'action.watchparty': 'Watch Party',
+      'action.copyAll': 'Copy every detected stream URL',
+      'action.copyAllShort': 'Copy URLs',
+      'toast.copiedAll': 'Copied {n} stream URL(s)',
       'action.copy': 'Copy URL',
       'action.copied': 'Copied',
       'action.download': 'Download',
@@ -1949,6 +1952,9 @@
       'panel.subs.download': 'Unduh .vtt',
       'panel.subs.retry': 'Cari lagi',
       'action.watchparty': 'Nonton Bareng',
+      'action.copyAll': 'Salin semua URL stream terdeteksi',
+      'action.copyAllShort': 'Salin URL',
+      'toast.copiedAll': 'Menyalin {n} URL stream',
       'action.copy': 'Salin URL',
       'action.copied': 'Tersalin',
       'action.download': 'Unduh',
@@ -4814,6 +4820,7 @@
           '<div class="srad-foot">' +
           '<span class="srad-count" data-el="count"></span>' +
           '<span class="srad-spacer"></span>' +
+          '<button class="srad-btn" data-act="copy-all" title="' + esc(t('action.copyAll')) + '" aria-label="' + esc(t('action.copyAll')) + '">' + ico('copy') + esc(t('action.copyAllShort')) + '</button>' +
           '<button class="srad-btn" data-act="ads" data-el="ads" aria-label="' + esc(t('panel.toggleAds')) + '" title="' + esc(t('panel.toggleAds')) + '"><span data-el="adslabel"></span></button>' +
           '<button class="srad-btn" data-act="clear">' + ico('trash-2') + esc(t('panel.clear')) + '</button>' +
           '<button class="srad-btn" data-act="options" title="' + esc(t('panel.openPanel')) + '">' + ico('settings-2') + '</button>' +

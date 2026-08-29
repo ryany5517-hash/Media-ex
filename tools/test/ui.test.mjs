@@ -84,6 +84,14 @@ test('panel renders every item kind without throwing', () => {
   assert.ok(true, 'full interaction cycle survived');
 });
 
+test('footer offers copy-all and watchparty uses the auto-create route strings', () => {
+  const src = readFileSync(path.join(ROOT, 'src/content/ui.js'), 'utf8');
+  assert.ok(src.includes('data-act="copy-all"'), 'footer must have a copy-all button');
+  assert.ok(src.includes('action.copyAll'), 'copy-all uses an i18n label');
+  const bg = readFileSync(path.join(ROOT, 'src/background.js'), 'utf8');
+  assert.ok(bg.includes("watchPartyCreateUrl") && bg.includes("/create?video="), 'launcher auto-creates a room');
+});
+
 test('blob rows show the no-party marker, not a Watch Party button', () => {
   const src = readFileSync(path.join(ROOT, 'src/content/ui.js'), 'utf8');
   // the marker is rendered only for blob rows; streamable rows keep the button

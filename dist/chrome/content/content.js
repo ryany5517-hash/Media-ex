@@ -247,6 +247,21 @@
           }
           toast(ok ? t('toast.copied') : t('toast.error', { msg: 'clipboard blocked' }), ok ? 'ok' : 'err');
         });
+      case 'copy-all': {
+        // one-shot grab of every shareable stream URL (blobs have no URL)
+        const urls = state.items
+          .filter((x) => x.url && x.category !== 'blob' && !x.isAd)
+          .map((x) => x.url);
+        const uniq = [...new Set(urls)];
+        if (!uniq.length) { toast(t('panel.empty'), 'warn'); return; }
+        return copyText(uniq.join('\n')).then((ok) => {
+          toast(ok ? t('toast.copiedAll', { n: uniq.length }) : t('toast.error', { msg: 'clipboard blocked' }), ok ? 'ok' : 'err');
+          if (payload.button) {
+            payload.button.setAttribute('data-done', '1');
+            setTimeout(() => payload.button.removeAttribute('data-done'), 1200);
+          }
+        });
+      }
       case 'ffmpeg': {
         const it = findItem(payload.id);
         const cmd = buildFfmpeg(it);
