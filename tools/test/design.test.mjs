@@ -24,3 +24,23 @@ test('panel keeps its design contract', async () => {
   assert.ok(ui.includes('SR.icons'), 'UI must render Lucide icons instead of glyph characters');
   assert.ok(!/[\u2605\u2713\u266a\u2192\u00b7]/.test(ui.replace(/\\u[0-9a-f]{4}/gi, '')), 'no decorative glyphs in the panel source');
 });
+
+test('comment stripping handles CRLF so arrows in // comments are not flagged', () => {
+  // Mirror the exact pipeline design-qa.mjs uses per file. Before the fix the
+  // `.*$` line-comment strip left a trailing \r on Windows checkouts, so the
+  // arrow in "isolated world -> content" below was scanned and reported.
+  const strip = (source) =>
+    source
+      .replace(/\r\n?/g, '\n')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .split('\n')
+      .map((l) => l.replace(/(^|[^:])\/\/.*$/, '$1'))
+      .join('\n');
+  const crlf = '  return;\t// isolated world \u2192 content script\r\n  const ok = 1;\r\n';
+  const out = strip(crlf);
+  assert.ok(!out.includes('\u2192'), 'arrow in a CRLF line comment must be stripped, got: ' + JSON.stringify(out));
+  const block = '/* arrow \u2192 in a\r\n block comment */\r\ncode();\r\n';
+  assert.ok(!strip(block).includes('\u2192'), 'arrow in a CRLF block comment must be stripped');
+  const url = '  fetch("https://x.test/y"); // note\r\n';
+  assert.ok(strip(url).includes('https://x.test/y'), ':// inside a string must not be eaten');
+});

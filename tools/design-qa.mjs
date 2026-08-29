@@ -157,10 +157,14 @@ const EMOJI = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u;
 for (const f of files) {
   const rel = path.relative(ROOT, f);
   if (rel.includes('icons.js') || rel.includes('title-cleaner') || rel.includes('rules.js') || rel.includes('watchparty-auto')) continue;
-  const lines = read(f).split('\n');
-  lines.forEach((line, i) => {
-    // drop comments before scanning: they are for developers, not the UI
-    line = line.replace(/\/\*?[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/, '$1');
+  // Normalise CRLF first: on a Windows checkout the old `.*$` line-comment
+  // strip left the trailing \r, so a `//` comment (e.g. "x -> y") was still
+  // scanned and flagged. Strip block comments on the whole source, then line
+  // comments per line (the [^:] guard protects the "://" inside URLs).
+  const source = read(f).replace(/\r\n?/g, '\n').replace(/\/\*[\s\S]*?\*\//g, '');
+  const lines = source.split('\n');
+  lines.forEach((rawLine, i) => {
+    const line = rawLine.replace(/(^|[^:])\/\/.*$/, '$1');
     const t = line.trim();
     if (!t || t.startsWith('*') || t.startsWith('//') || t.startsWith('/*') || t.startsWith('<!--')) return;
     if (/\br.replace\(|\.split\(|new RegExp|\/\\s/.test(line)) return; // parsing patterns legitimately list these chars
