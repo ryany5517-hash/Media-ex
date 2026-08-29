@@ -30,20 +30,21 @@ body {
 
 .p-head {
   display: flex; align-items: center; gap: var(--sr-sp-2); padding: 11px 12px;
+  flex-wrap: nowrap;
   border-bottom: 1px solid var(--sr-line); position: sticky; top: 0; z-index: 5;
   background: var(--sr-glass); backdrop-filter: saturate(1.5) blur(16px); -webkit-backdrop-filter: saturate(1.5) blur(16px);
 }
-.brand { display: flex; align-items: center; gap: 9px; min-width: 0; flex: 1 1 auto; }
+.brand { display: flex; align-items: center; gap: 9px; min-width: 0; flex: 1 1 auto; flex-wrap: nowrap; }
 .brand-ico {
-  width: 28px; height: 28px; border-radius: var(--sr-r-1); display: grid; place-items: center;
+  width: 28px; height: 28px; border-radius: var(--sr-r-1); display: grid; place-items: center; flex: none;
   color: var(--sr-glyph-on-color); background: var(--sr-brand-gradient);
   box-shadow: var(--sr-shadow-1), var(--sr-shadow-accent);
 }
 .brand-ico svg { width: 16px; height: 16px; }
-.brand-txt { min-width: 0; }
-.brand-txt strong { display: block; font-size: 13.5px; letter-spacing: .2px; }
-.brand-txt small { color: var(--sr-ink-2); font-size: 11px; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 230px; }
-.head-actions { display: flex; gap: 2px; }
+.brand-txt { min-width: 0; flex: 1 1 auto; }
+.brand-txt strong { display: block; font-size: 13.5px; letter-spacing: .2px; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.brand-txt small { color: var(--sr-ink-2); font-size: 11px; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.head-actions { display: flex; gap: 2px; flex: none; }
 .ibtn {
   width: 32px; height: 32px; min-height: 32px; border-radius: var(--sr-r-1); border: 1px solid transparent;
   background: transparent; color: var(--sr-ink); cursor: pointer; display: grid; place-items: center;
@@ -140,8 +141,13 @@ body {
 
 .p-foot {
   display: flex; align-items: center; gap: var(--sr-sp-2); padding: 9px 12px 12px;
-  border-top: 1px solid var(--sr-line); margin-top: 6px; background: var(--sr-surface);
+  flex-wrap: nowrap; position: sticky; bottom: 0; z-index: 5;
+  border-top: 1px solid var(--sr-line); margin-top: 6px; background: var(--sr-glass);
+  backdrop-filter: saturate(1.5) blur(16px); -webkit-backdrop-filter: saturate(1.5) blur(16px);
 }
+.p-foot .sw { flex: 0 1 auto; }
+.p-foot .flex { flex: 1 1 auto; min-width: 0; }
+.p-foot .btn { flex: none; }
 .sw { display: inline-flex; align-items: center; gap: 7px; font-size: 11.5px; color: var(--sr-ink-2); cursor: pointer; white-space: nowrap; min-width: 0; }
 .sw input { position: absolute; opacity: 0; pointer-events: none; }
 .slider { width: 30px; height: 18px; border-radius: var(--sr-r-pill); background: var(--sr-line-2); position: relative; transition: background var(--sr-t-mid) var(--sr-ease); flex: none; }
