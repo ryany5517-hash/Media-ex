@@ -16,7 +16,7 @@
   'use strict';
 
   const SR = (root.SR = root.SR || {});
-  SR.VERSION = '1.1.3';
+  SR.VERSION = '1.1.4';
   SR.NS = 'streamRadar'; // message channel id / storage prefix
   SR.PREFIX = 'srad'; // css class prefix
 
@@ -4228,14 +4228,16 @@
       if (v && out.indexOf(v) < 0) out.push(v);
     };
     // Exact Referer the embed sent (IDM copies this). Prefer it over the tab URL.
-    push(flags.requestReferer || live.referer, true);
+    const baked = util.parsePlayHeaders((media && media.url) || '');
+    push(flags.requestReferer || live.referer || baked.referer, true);
+    if (baked.origin) push(baked.origin);
     push(media && media.frameUrl, true);
     push(flags.documentUrl, true);
     push(flags.originUrl);
     push(flags.initiator);
+    push(media && media.url);
     (st.frames || []).forEach((f) => push(f.url));
     push(st.url);
-    push(media && media.url);
     return out;
   }
 
@@ -4273,42 +4275,77 @@
     };
   }
 
-  async function installRefererRule(tabId, referer, origin) {
+  async function installRefererRule(tabId, referer, origin, mediaUrl) {
     const dnr = api.declarativeNetRequest;
     if (!dnr || !dnr.updateSessionRules) return false;
-    const id = 9100 + (Number(tabId) % 800);
     const requestHeaders = [];
     if (referer) requestHeaders.push({ header: 'Referer', operation: 'set', value: referer });
     if (origin) requestHeaders.push({ header: 'Origin', operation: 'set', value: origin });
     if (!requestHeaders.length) return false;
-    try {
-      await dnr.updateSessionRules({
-        removeRuleIds: [id],
-        addRules: [
-          {
-            id: id,
-            priority: 1,
-            action: { type: 'modifyHeaders', requestHeaders: requestHeaders },
-            condition: {
-              tabIds: [tabId],
-              resourceTypes: ['media', 'xmlhttprequest', 'other', 'image'],
-            },
-          },
-        ],
+    const types = ['media', 'xmlhttprequest', 'other', 'image'];
+    const extId = 8899;
+    const tabRuleId = tabId != null && tabId > 0 ? 9100 + (Number(tabId) % 800) : 0;
+    const removeRuleIds = [extId];
+    if (tabRuleId) removeRuleIds.push(tabRuleId);
+
+    const extCondition = { resourceTypes: types };
+    if (api.runtime && api.runtime.id) extCondition.initiatorDomains = [String(api.runtime.id)];
+
+    const addRules = [
+      {
+        id: extId,
+        priority: 2,
+        action: { type: 'modifyHeaders', requestHeaders: requestHeaders },
+        condition: extCondition,
+      },
+    ];
+    if (tabRuleId) {
+      addRules.push({
+        id: tabRuleId,
+        priority: 1,
+        action: { type: 'modifyHeaders', requestHeaders: requestHeaders },
+        condition: { tabIds: [tabId], resourceTypes: types },
       });
+    }
+    try {
+      await dnr.updateSessionRules({ removeRuleIds: removeRuleIds, addRules: addRules });
       return true;
     } catch (e) {
       log('dnr rule failed', String((e && e.message) || e));
-      return false;
+      const host = util.host(mediaUrl || referer || '');
+      try {
+        const fallback = [
+          {
+            id: extId,
+            priority: 2,
+            action: { type: 'modifyHeaders', requestHeaders: requestHeaders },
+            condition: host ? { urlFilter: '||' + host, resourceTypes: types } : { resourceTypes: types },
+          },
+        ];
+        if (tabRuleId) {
+          fallback.push({
+            id: tabRuleId,
+            priority: 1,
+            action: { type: 'modifyHeaders', requestHeaders: requestHeaders },
+            condition: { tabIds: [tabId], resourceTypes: types },
+          });
+        }
+        await dnr.updateSessionRules({ removeRuleIds: removeRuleIds, addRules: fallback });
+        return true;
+      } catch (e2) {
+        log('dnr fallback failed', String((e2 && e2.message) || e2));
+        return false;
+      }
     }
   }
 
   async function dropRefererRule(tabId) {
     const dnr = api.declarativeNetRequest;
     if (!dnr || !dnr.updateSessionRules) return;
-    const id = 9100 + (Number(tabId) % 800);
+    const ids = [8899];
+    if (tabId != null && tabId > 0) ids.push(9100 + (Number(tabId) % 800));
     try {
-      await dnr.updateSessionRules({ removeRuleIds: [id] });
+      await dnr.updateSessionRules({ removeRuleIds: ids });
     } catch (_) {}
   }
 
@@ -4364,6 +4401,7 @@
     for (let i = 0; i < tryRefs.length; i++) {
       const referer = tryRefs[i];
       const origin = originOf(referer) || util.origin(url);
+      await installRefererRule(null, referer, origin, url);
       const headers = {};
       if (referer) headers.Referer = referer;
       if (origin) headers.Origin = origin;
@@ -4397,6 +4435,8 @@
     let url = urlOverride || (clicked && util.localPlayable(clicked.url, clicked.category) ? clicked.url : null) || picked.url;
     if (!url) return { ok: false, reason: t('player.needDirect') };
     if (media && media.drm) return { ok: false, reason: t('player.drm') };
+    const previewRef = pageReferer(st, media);
+    await installRefererRule(null, previewRef, originOf(previewRef) || util.origin(url), url);
     const resolved = await resolvePlaySource(st, media, url);
     url = resolved.url || url;
     const mediaForSession = Object.assign({}, media || {}, { url: url, category: resolved.category || (media && media.category) || '' });
@@ -4410,7 +4450,7 @@
     const tab = await api.tabs.create({ url: target, active: true });
     if (tab && tab.id > 0) {
       playTabs.set(tab.id, sid);
-      await installRefererRule(tab.id, session.referer, session.origin);
+      await installRefererRule(tab.id, session.referer, session.origin, session.url);
     }
     return { ok: true, tabId: tab && tab.id, sid: sid, session: session };
   }

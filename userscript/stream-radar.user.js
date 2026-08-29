@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Stream Radar — Ultra Media Detector + WatchParty + Subtitle Indonesia
 // @namespace    https://github.com/ryany5517-hash/Media-ex
-// @version      1.1.3
+// @version      1.1.4
 // @description  Deteksi semua stream video (HLS/DASH/MP4/WebM/blob) lewat 5 layer — fetch/XHR/WebSocket, DOM deep scan, MediaSource, Service Worker/Cache, dan heuristik player (JWPlayer/Video.js/Plyr/HLS.js/DASH.js). Membersihkan judul film/series, mencari subtitle Indonesia (SubDL / OpenSubtitles / YIFY), dan membuka WatchParty.me otomatis. Dipakai kalau tidak bisa pasang extension (mis. Firefox Android).
 // @author       Stream Radar
 // @license      MIT
@@ -92,7 +92,7 @@
   'use strict';
 
   const SR = (root.SR = root.SR || {});
-  SR.VERSION = '1.1.3';
+  SR.VERSION = '1.1.4';
   SR.NS = 'streamRadar'; // message channel id / storage prefix
   SR.PREFIX = 'srad'; // css class prefix
 
