@@ -201,13 +201,14 @@ test('F6 watch party: opens watchparty.me with media + cleaned room name + subti
   const res = await h.hub.sendFromContent({ type: 'action', payload: { name: 'watchparty', id: item.id, tabId: 1 } });
   assert.equal(res.ok, true, 'watchparty launched: ' + JSON.stringify(res));
   const tab = h.hub.tabs.created[h.hub.tabs.created.length - 1];
-  assert.equal(tab.url.startsWith('https://www.watchparty.me/watchNow?url='), true);
-  assert.ok(tab.url.includes(encodeURIComponent(MP4_URL)), 'media url passed via watchNow');
-  assert.ok(tab.url.includes('name=Dune%3A%20Part%20Two%20(2024)'), 'room name is the cleaned title');
+  assert.equal(tab.url.startsWith('https://www.watchparty.me/create?video='), true, 'auto-creates a room: ' + tab.url);
+  assert.ok(tab.url.includes(encodeURIComponent(MP4_URL)), 'media url passed as ?video=');
+  assert.ok(!tab.url.includes('watchNow'), 'legacy /watchNow hand-off is replaced by /create');
   const key = 'srad:party:' + tab.id;
   const payload = h.hub.storage[key];
   assert.ok(payload, 'hand-off payload stored for the watchparty tab');
   assert.equal(payload.mediaUrl, MP4_URL);
+  assert.ok(payload.roomName.includes('Dune'), 'cleaned room name travels in the payload: ' + payload.roomName);
   assert.equal(payload.autoJoin, true);
   assert.ok(payload.subtitle && /^WEBVTT/.test(payload.subtitle.vtt), 'subtitle travels with the room');
 
@@ -301,6 +302,7 @@ test('F9 UI: FAB opens the panel, item buttons route real actions, Esc closes', 
 
   // per-item actions
   const first = shadow.querySelector('.srad-item');
+  assert.ok(first.querySelector('[data-act="play"]'), 'Play is the primary action on a stream row');
   for (const act of ['watchparty', 'copy', 'subs', 'download', 'ffmpeg']) {
     const btn = first.querySelector(`[data-act="${act}"]`);
     assert.ok(btn, `action button present: ${act}`);
@@ -381,6 +383,7 @@ test('F11 browser surfaces: context menu, recent list, storage prune', async () 
   const h = await boot();
   assert.ok(h.hub.contextMenus.items.has('sr-watchparty'), 'context menu registered');
   assert.match(h.hub.contextMenus.items.get('sr-watchparty').title, /Watch|Nonton/);
+  assert.ok(h.hub.contextMenus.items.has('sr-play'), 'Play context menu registered');
 
   h.hub.fireWebRequest({ url: MP4_URL, type: 'media', statusCode: 200, responseHeaders: h.hub.header({ 'content-type': 'video/mp4', 'content-length': '1000' }) });
   await settle(h, 2200);
@@ -442,6 +445,35 @@ test('F12 restart resilience: state restored from storage after the worker dies'
   await new Promise((r) => setTimeout(r, 120));
   const st = h.hub.lastBroadcast;
   assert.ok(st.items.some((i) => i.url === MP4_URL), 'list rebuilt after worker restart: ' + JSON.stringify(st.items.map((i) => i.url)));
+  h.dom.window.close();
+});
+
+/* ------------------------------------------------------------------ *
+ * F13 · local player (the thing that actually plays, unlike WatchParty)
+ * ------------------------------------------------------------------ */
+test('F13 play: opens the cinema player with page Referer and proxies HLS with that Referer', async () => {
+  const h = await boot();
+  h.hub.fireWebRequest({ url: HLS_URL, type: 'xmlhttprequest', statusCode: 200, responseHeaders: h.hub.header({ 'content-type': 'application/vnd.apple.mpegurl' }) });
+  await until(h, () => (stateOf(h).items || []).some((i) => i.url === HLS_URL), 4000);
+  const item = h.hub.lastBroadcast.items.find((i) => i.url === HLS_URL);
+  const res = await h.hub.sendFromContent({ type: 'action', payload: { name: 'play', id: item.id, tabId: 1 } });
+  assert.equal(res.ok, true, 'play launched: ' + JSON.stringify(res));
+  assert.ok(res.sid, 'session id issued');
+  const tab = h.hub.tabs.created.find((t) => String(t.url).includes('player/player.html'));
+  assert.ok(tab, 'player tab opened: ' + JSON.stringify(h.hub.tabs.created.map((t) => t.url)));
+  assert.match(tab.url, /sid=/);
+  const stored = h.hub.storage['srad:play:' + res.sid];
+  assert.ok(stored, 'play session persisted');
+  assert.equal(stored.url, HLS_URL);
+  assert.match(stored.referer, /67movies\.nl/, 'Referer is the original page, not the extension: ' + stored.referer);
+
+  const got = await h.hub.sendFromContent({ type: 'get-play-session', sid: res.sid }, { tab: tab, url: tab.url });
+  assert.equal(got.ok, true);
+  assert.equal(got.session.url, HLS_URL);
+
+  const fetched = await h.hub.sendFromContent({ type: 'player-fetch', sid: res.sid, url: HLS_URL, responseType: 'text' }, { tab: tab, url: tab.url });
+  assert.equal(fetched.ok, true, 'worker fetch: ' + JSON.stringify(fetched));
+  assert.match(String(fetched.data), /#EXTM3U/, 'playlist body returned for hls.js');
   h.dom.window.close();
 });
 

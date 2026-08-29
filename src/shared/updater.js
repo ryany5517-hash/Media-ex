@@ -1,5 +1,5 @@
 /**
- * Stream Radar — live rule packs + signed hot patches
+ * Stream Radar â€” live rule packs + signed hot patches
  * ==================================================================
  * Goal: when something is broken (a new embed host, a new ad domain, a new SEO
  * junk word, a changed subtitle API) the fix ships from GitHub and the already
@@ -32,8 +32,8 @@
   const PUBLIC_KEY_JWK = {
     kty: 'EC',
     crv: 'P-256',
-    x: 'dAR-4Qdjs2zq0VFxBgyAimWA_TkwY3-pySuLXFnhp6c',
-    y: 'UoJ_C4deba9gBFfxJA534F0V0OnSbUGei7XNRDaJyIY',
+    x: 'UZ33kOysXiijfF9rVCLCU6s0JHFtlRKx3xHer-0pDmE',
+    y: '3m66hI6NDl_cJb4vE_rLEIATjYMB_T3v2i3jLSPF2kc',
     ext: true,
     key_ops: ['verify'],
   };
@@ -49,7 +49,7 @@
     return keyPromise;
   }
 
-  /** DER → raw r||s (WebCrypto wants the raw form; node's crypto.sign gives DER). */
+  /** DER â†’ raw r||s (WebCrypto wants the raw form; node's crypto.sign gives DER). */
   function normaliseSignature(bytes) {
     const u = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
     if (u.length === 64) return u;
@@ -253,7 +253,11 @@
       if (allowed && patch && patch.code && typeof patch.code === 'string' && patch.code.length <= LIMITS.patchChars) {
         // The signature was verified by the background worker before storage.
         try {
-          new Function('"use strict";\n' + patch.code)(root.SR, root);
+          // Declare BOTH parameters: new Function(body)(SR, root) discards the
+          // arguments because the function body never names them, so a patch
+          // using `root` threw ReferenceError inside this try/catch with no
+          // visible effect. The declared-parameter form passes SR and root.
+          new Function('SR', 'root', '"use strict";\n' + patch.code)(SR, root);
           SR.patchApplied = patch.version || 0;
           return true;
         } catch (e) {

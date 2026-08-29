@@ -24,11 +24,12 @@
       const res = await api.runtime.sendMessage({ type: 'get-party-payload' });
       if (res && res.ok && res.payload) return res.payload;
     } catch (_) {}
-    // Hand-opened tab? fall back to the ?url= parameter.
+    // Hand-opened tab? fall back to the URL params. /create?video= auto-creates
+    // the room (preferred); /watchNow?url= pre-fills a form (legacy fallback).
     try {
       const q = new URLSearchParams(root.location.search);
-      const url = q.get('url');
-      if (url) return { mediaUrl: url, roomName: q.get('name') || '', autoJoin: q.get('name') != null, subtitle: null };
+      const url = q.get('video') || q.get('url');
+      if (url) return { mediaUrl: url, roomName: q.get('name') || '', autoJoin: true, subtitle: null };
     } catch (_) {}
     return null;
   }

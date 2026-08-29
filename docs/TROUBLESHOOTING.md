@@ -1,5 +1,16 @@
 # Troubleshooting
 
+### Film terdeteksi (IDM juga melihatnya) tapi Play/WatchParty gagal
+
+WatchParty mengambil URL dari origin watchparty.me, jadi CDN yang cek Referer/Origin menolak. Tombol **Putar** membuka player bawaan Stream Radar: request playlist/segmen lewat extension (host access, seperti IDM) dengan Referer halaman aslinya.
+
+Kalau Putar masih gagal:
+
+1. Token di URL sudah expired - putar dulu videonya di situs, scan ulang, lalu Putar lagi.
+2. Chip **DRM protected** - tidak ada URL yang bisa diputar di luar CDM.
+3. Baris blob/MSE - tidak ada file URL; pakai Rekam buffer.
+4. DASH (.mpd) - player mencoba URL langsung; banyak MPD butuh player situs aslinya.
+
 ### “Tidak ada yang terdeteksi” di situs X
 
 Cek berurutan (buka DevTools → Console):

@@ -3,7 +3,8 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Stream Radar</title>
+    <title data-i18n-title="settings.title">Stream Radar</title>
+    <link rel="stylesheet" href="../shared/theme.css" />
     <link rel="stylesheet" href="popup.css" />
   </head>
   <body data-theme="dark">
@@ -11,49 +12,51 @@
       <div class="brand">
         <span class="brand-ico" id="brandIco" aria-hidden="true"></span>
         <div class="brand-txt">
-          <strong id="brandTitle">Stream Radar</strong>
-          <small id="brandSub">…</small>
+          <strong id="brandTitle" data-i18n="app.name">Stream Radar</strong>
+          <small id="brandSub" data-i18n="app.tagline">Ultra media detector</small>
         </div>
       </div>
       <div class="head-actions">
-        <button id="themeBtn" class="ibtn" title="Theme" aria-label="Toggle theme"></button>
-        <button id="refreshBtn" class="ibtn" title="Scan now" aria-label="Scan now"></button>
-        <button id="optionsBtn" class="ibtn" title="Settings" aria-label="Open settings"></button>
+        <button id="themeBtn" class="ibtn" data-i18n-title="common.theme" data-i18n-aria="common.theme" title="Theme" aria-label="Toggle theme"></button>
+        <button id="refreshBtn" class="ibtn" data-i18n-title="panel.refresh" data-i18n-aria="panel.refresh" title="Scan now" aria-label="Scan now"></button>
+        <button id="optionsBtn" class="ibtn" data-i18n-title="panel.settings" data-i18n-aria="panel.settings" title="Settings" aria-label="Open settings"></button>
       </div>
     </header>
 
+    <div class="p-scroll">
     <section class="layers" id="layers" aria-label="Detection layers"></section>
 
     <section class="meta">
-      <div class="meta-title" id="metaTitle">-</div>
+      <div class="meta-title" id="metaTitle" data-i18n="panel.empty">-</div>
       <div class="meta-chips" id="metaChips"></div>
     </section>
 
     <section class="subs" id="subsCard">
       <div class="subs-head">
-        <span id="subsLabel">Subtitle Indonesia</span>
+        <span id="subsLabel" data-i18n="panel.subs.title">Indonesian subtitles</span>
         <span class="status" id="subsStatus">idle</span>
       </div>
       <div class="subs-providers" id="subsProviders"></div>
       <div class="subs-list" id="subsList"></div>
       <div class="subs-actions">
-        <button class="btn" id="subsSearch" data-act="subs-search">Search now</button>
-        <button class="btn" id="subsAttach" data-act="sub-attach">Attach to page</button>
-        <button class="btn" id="subsDl" data-act="sub-download">Download .vtt</button>
+        <button class="btn" id="subsSearch" data-act="subs-search" data-i18n="panel.subs.retry">Search again</button>
+        <button class="btn" id="subsAttach" data-act="sub-attach" data-i18n="panel.subs.attach">Attach to page</button>
+        <button class="btn" id="subsDl" data-act="sub-download" data-i18n="panel.subs.download">Download .vtt</button>
       </div>
     </section>
 
     <main class="list" id="list" aria-live="polite"></main>
 
     <section class="history">
-      <button class="linklike" id="histToggle" aria-expanded="false">Recent streams in this browser</button>
+      <button class="linklike" id="histToggle" aria-expanded="false" data-i18n="popup.history">Recent streams in this browser</button>
       <div class="history-list" id="histList" hidden></div>
     </section>
+    </div>
 
     <footer class="p-foot">
-      <label class="sw"><input type="checkbox" id="enableSite" /><span class="slider"></span><span id="enableLabel">Detected on</span></label>
+      <label class="sw"><input type="checkbox" id="enableSite" /><span class="slider"></span><span id="enableLabel" data-i18n="popup.tabMedia">Detected on</span></label>
       <span class="flex"></span>
-      <button class="btn tiny" id="clearBtn">Clear</button>
+      <button class="btn tiny" id="clearBtn" data-i18n="panel.clear">Clear</button>
     </footer>
     <div class="toasts" id="toasts" aria-live="polite"></div>
 
@@ -62,6 +65,7 @@
     <script src="../shared/rules.js"></script>
     <script src="../shared/title-cleaner.js"></script>
     <script src="../shared/i18n.js"></script>
+    <script src="../shared/updater.js"></script>
     <script src="popup.js"></script>
   </body>
 </html>

@@ -73,7 +73,7 @@ dan (kalau kamu aktifkan) patch script konten. Yang tetap perlu build ulang: per
 2. Klik ⚙ (gear) → **isi API key SubDL** (gratis) → subtitle Indonesia otomatis nyari.
    - SubDL: https://subdl.com/panel/api
    - OpenSubtitles: https://www.opensubtitles.com/en/api-keys (wajib isi **User-Agent** yang sama persis seperti di form)
-3. Klik **★ Nonton Bareng** pada sebuah stream → WatchParty.me kebuka di tab baru, nama room = judul film yang sudah dibersihkan, URL stream ke-isi, subtitle ikut dipasang.
+3. Klik **Putar** pada stream yang terdeteksi. Player bawaan mengambil file dengan Referer halaman aslinya (cara yang sama IDM mendeteksi media). **Nonton Bareng** tetap membuka room WatchParty.me.
 4. Shortcut: `Alt+Shift+S` (panel) · `Alt+Shift+D` (scan ulang) · `Alt+Shift+F` (cari subtitle). Bisa diganti di `chrome://extensions/shortcuts` / `about:addons` → Manage → Shortcuts.
 
 ## 4. Fitur (checklist vs request awal)

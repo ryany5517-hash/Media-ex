@@ -16,7 +16,7 @@
   'use strict';
 
   const SR = (root.SR = root.SR || {});
-  SR.VERSION = '1.0.0';
+  SR.VERSION = '1.1.0';
   SR.NS = 'streamRadar'; // message channel id / storage prefix
   SR.PREFIX = 'srad'; // css class prefix
 
@@ -163,6 +163,27 @@
       } catch (_) {
         return String(url) + '|' + (category || '');
       }
+    },
+
+    // WatchParty direct mode only plays a file it can fetch as media. Decide
+    // whether a detected URL is directly playable there. Resolver/API links
+    // (e.g. "/api?d=...") return a page/JSON and must NOT be sent.
+    watchPartyPlayable(url, category) {
+      if (!url) return false;
+      if (category === 'blob' || category === 'segment' || category === 'texttrack') return false;
+      let path = String(url);
+      try { path = new URL(url).pathname; } catch (_) {}
+      // 1) A media extension on the PATH is directly playable. This wins over
+      //    everything: real HLS CDNs often serve .../api/playlist.m3u8, so a
+      //    resolver-looking path must not veto an explicit manifest/file.
+      if (/\.(m3u8|mpd|mp4|webm|mkv|mov|m4v|m3u)(\?|#|$)/i.test(path)) return true;
+      // 2) A classified direct-media category (content-type/parsed manifest,
+      //    served without a clean extension) is playable too.
+      if (category === 'hls' || category === 'dash' || category === 'mp4' || category === 'webm') return true;
+      // 3) Generic/other URLs that point at a resolver/gateway endpoint return a
+      //    page or JSON, not media (e.g. d.shows.st/api?d=<token>): reject those.
+      if (/(^|\/)(api|resolve|redirect|gateway|link|source|get|serve)(\/|$)/i.test(path)) return false;
+      return false;
     },
 
     formatBytes(bytes) {
@@ -408,7 +429,11 @@
     compactOnMobile: true,
     watchpartyAutoJoin: true,
     watchpartyName: '',
-    providers: { subdl: true, opensubtitles: true, yify: true },
+    providers: { wyzie: true, subdl: true, opensubtitles: true, yify: true },
+    // Wyzie Subs requires a per-user key. It must NEVER be committed: Wyzie's
+    // docs forbid shipping keys in browser extensions or public repos. The
+    // user pastes their own key in Options; it is stored only in chrome.storage.
+    wyzieApiKey: '',
     subdlApiKey: '',
     osApiKey: '',
     osUserAgent: 'StreamRadar/1.0 (media detector extension)',
@@ -1642,7 +1667,10 @@
   const ID_LANGS = new Set(['id', 'ind', 'indonesia', 'indonesian', 'bahasa indonesia', 'bahasa-indonesia']);
   const ID_RE = /(?:^|[\s._\-[(])(id|ind|indonesia|indonesian|bahasa[-_ ]?indonesia|sub[-_ ]?indo|subid)(?:$|[\s._\-)\]])/i;
 
-  const subs = (SR.subs = {});
+  // Self-registering: never assume another module ran, and never clobber a
+  // namespace a previous load (or another provider script) already built.
+  const subs = (SR.subs = SR.subs || {});
+  subs.providers = Array.isArray(subs.providers) ? subs.providers : [];
 
   /* ---------------------------------------------------------------- *
    * Decoding / unpacking
@@ -1900,6 +1928,79 @@
    * Providers
    * ---------------------------------------------------------------- */
 
+  /** sub.wyzie.io - free/libre subtitle API, searches by IMDb/TMDB id.
+   * Needs a per-user key (store.wyzie.io/redeem). The key is read from the
+   * user's settings only; it is never committed because Wyzie forbids keys in
+   * browser extensions/public repos. Returns an array of subtitle objects
+   * whose `url` is a direct SRT/ASS download. */
+  subs.wyzie = {
+    id: 'wyzie',
+    label: 'Wyzie Subs',
+    needsKey: true,
+    base: 'https://sub.wyzie.io',
+    async search(want, settings, ctx) {
+      const key = settings.wyzieApiKey;
+      if (!key) return { ok: false, skipped: true, reason: 'API key belum diisi' };
+      // Wyzie searches by IMDb (tt...) or TMDB numeric id, never by title text.
+      const id = want.imdbId || want.tmdbId;
+      if (!id) return { ok: false, skipped: true, reason: 'butuh id IMDb/TMDB' };
+      const params = new URLSearchParams();
+      params.set('id', String(id));
+      if (want.season && want.episode) {
+        params.set('season', String(want.season));
+        params.set('episode', String(want.episode));
+      }
+      const lang = settings.subtitleLang && settings.subtitleLang !== 'all' ? settings.subtitleLang : 'id';
+      params.set('language', lang);
+      params.set('format', 'srt');
+      params.set('encoding', 'utf-8');
+      params.set('source', 'all');
+      params.set('key', key);
+      const fetchImpl = ctx.fetchImpl || (util.fetchImpl ? util.fetchImpl.bind(util) : root.fetch);
+      const res = await fetchImpl(this.base + '/search?' + params.toString(), { headers: { Accept: 'application/json' } });
+      if (res.status === 401 || res.status === 403) throw new Error('Wyzie key ditolak (HTTP ' + res.status + ')');
+      if (!res.ok) throw new Error('Wyzie HTTP ' + res.status);
+      const text = await res.text();
+      const json = util.safeJSON ? util.safeJSON(text, null) : JSON.parse(text);
+      const rows = Array.isArray(json) ? json : Array.isArray(json && json.subtitles) ? json.subtitles : [];
+      const items = rows
+        .map((r) => ({
+          provider: 'wyzie',
+          providerLabel: 'Wyzie Subs',
+          id: String(r.id || r.url || ''),
+          name: r.media || want.title,
+          filename: r.fileName || (r.media ? r.media + '.srt' : 'subtitle.srt'),
+          langCode: String(r.language || 'id').slice(0, 2).toLowerCase(),
+          langName: r.display || r.language || 'Indonesian',
+          format: String(r.format || 'srt').toLowerCase(),
+          year: want.year || '',
+          season: want.season ? String(want.season) : '',
+          episode: want.episode ? String(want.episode) : '',
+          downloads: Number(r.downloadCount || 0),
+          verified: !r.ai,
+          aiTranslated: !!r.ai,
+          uploader: r.source || '',
+          pageUrl: r.url || '',
+          fileUrl: r.url || '',
+          hearingImpaired: !!r.isHearingImpaired,
+          release: r.release || r.matchedRelease || '',
+          raw: r,
+        }))
+        .filter((x) => /^https?:/.test(x.fileUrl));
+      return { ok: true, items };
+    },
+    async fetchFile(item, settings, ctx) {
+      const f = ctx.fetchImpl || (util.fetchImpl ? util.fetchImpl.bind(util) : root.fetch);
+      const key = settings.wyzieApiKey;
+      let url = item.fileUrl;
+      // Wyzie download URLs are direct; attach the key only if it was not embedded.
+      if (key && url.indexOf('key=') < 0) {
+        url += (url.indexOf('?') >= 0 ? '&' : '?') + 'key=' + encodeURIComponent(key);
+      }
+      return await subs.loadSubtitleFile(url, { fetchImpl: f, want: 'id' });
+    },
+  };
+
   /** api.subdl.com — needs a free API key from https://subdl.com/panel/api */
   subs.subdl = {
     id: 'subdl',
@@ -2095,7 +2196,12 @@
     },
   };
 
-  subs.providers = [subs.subdl, subs.opensubtitles, subs.yify];
+  // Register built-ins additively so a re-load neither wipes an externally
+  // added provider nor pushes the same built-in twice. Wyzie first: it searches
+  // by IMDb/TMDB id and gives the best Indonesian results.
+  for (const p of [subs.wyzie, subs.subdl, subs.opensubtitles, subs.yify]) {
+    if (p && !subs.providers.some(x => x && x.id === p.id)) subs.providers.push(p);
+  }
 
   /* ---------------------------------------------------------------- *
    * Orchestration
@@ -2186,7 +2292,7 @@
       'panel.title': 'Detected media',
       'panel.empty': 'No video found yet',
       'panel.emptyHint': 'Play the video, Stream Radar watches network, DOM, MSE, Service Worker and player internals at once.',
-      'panel.detecting': 'Watching…',
+      'panel.detecting': 'Watching...',
       'panel.paused': 'Auto-detect paused',
       'panel.ads': '{n} ad requests hidden',
       'panel.toggleAds': 'Toggle ad and tracker requests',
@@ -2198,7 +2304,7 @@
       'panel.openPanel': 'Open big panel',
       'panel.items': '{n} streams',
       'panel.subs.title': 'Indonesian subtitles',
-      'panel.subs.searching': 'Searching subtitles…',
+      'panel.subs.searching': 'Searching subtitles...',
       'panel.subs.found': 'Subtitle found',
       'panel.subs.none': 'No subtitle found',
       'panel.subs.error': 'Subtitle search failed',
@@ -2206,7 +2312,11 @@
       'panel.subs.attach': 'Attach here',
       'panel.subs.download': 'Download .vtt',
       'panel.subs.retry': 'Search again',
+      'action.play': 'Play',
       'action.watchparty': 'Watch Party',
+      'action.copyAll': 'Copy every detected stream URL',
+      'action.copyAllShort': 'Copy URLs',
+      'toast.copiedAll': 'Copied {n} stream URL(s)',
       'action.copy': 'Copy URL',
       'action.copied': 'Copied',
       'action.download': 'Download',
@@ -2227,21 +2337,48 @@
       'label.aes': 'AES-128 key',
       'label.mse': 'MediaSource (blob)',
       'label.mseHint': 'Blob streams cannot be downloaded directly, use Record buffer or open the source page.',
+      'watchparty.noBlob': 'No Watch Party: blob stream has no shareable URL',
+      'player.title': 'Stream Radar Player',
+      'player.loading': 'Loading stream...',
+      'player.error': 'Could not play this stream: {msg}',
+      'player.noUrl': 'No playable stream URL.',
+      'player.drm': 'This stream is DRM protected and cannot play here.',
+      'player.blob': 'Blob/MSE streams have no file URL. Use Record buffer on the page.',
+      'player.hint': 'Playing with the original page Referer, the same way a download manager fetches the file.',
+      'player.quality': 'Quality',
+      'player.qualityAuto': 'Auto',
+      'player.fullscreen': 'Full screen',
+      'player.subsOn': 'Subtitles on',
+      'player.subsOff': 'Subtitles off',
+      'player.dashHint': 'DASH is best played on the original page. Trying the file URL anyway.',
+      'player.needDirect': 'No playable stream URL. Use Copy on the real .m3u8/.mp4 row.',
+      'toast.player': 'Opening player...',
+      'watchparty.needDirect': 'No direct stream URL found for Watch Party - open the video in the room VBrowser, or use the Copy/ffmpeg button on the real .m3u8/.mp4 row.',
+      'watchparty.opening': 'Opening room',
+      'watchparty.fallback': 'The room could not open. The tab may not be ready yet. Try reloading the tab then press Watch Party again.',
+      'watchparty.reattach': 'Re-detect this tab',
+      'watchparty.reloadTab': 'Reload tab',
       'toast.found': '{n} media detected on this page',
       'toast.newmedia': 'New {type} stream detected',
       'toast.subs': 'Indonesian subtitle found: {name}',
       'toast.subsNone': 'No Indonesian subtitle found for {title}',
       'toast.copied': 'URL copied to clipboard',
       'toast.error': 'Error: {msg}',
-      'toast.watchparty': 'Opening WatchParty…',
+      'toast.watchparty': 'Opening WatchParty...',
       'toast.paused': 'Detection paused on this site',
       'toast.resumed': 'Detection resumed',
-      'toast.recording': 'Recording the MediaSource buffer…',
+      'toast.recording': 'Recording the MediaSource buffer...',
       'toast.recordSaved': 'Recording saved ({size})',
       'toast.recordEmpty': 'Nothing buffered yet, play the video first',
       'settings.title': 'Stream Radar settings',
       'settings.subtitle': 'Everything is stored locally in your browser. No account, no tracking.',
       'theme.system': 'System',
+      'theme.nextSystem': 'Switch to system (follow device)',
+      'theme.nextLight': 'Switch to light',
+      'theme.nextDark': 'Switch to dark',
+      'theme.nowLight': 'light',
+      'theme.nowDark': 'dark',
+      'theme.btnLabel': 'Theme: {pref}, showing {effective}. {next}',
       'theme.dark': 'Dark',
       'theme.light': 'Light',
       'common.close': 'Close',
@@ -2255,12 +2392,14 @@
       'common.tab': 'Tab',
       'common.search': 'Search',
       'popup.title': 'Stream Radar',
+      'popup.history': 'Recent streams in this browser',
       'popup.tabMedia': 'Media in this tab',
       'popup.empty': 'Nothing detected yet in this tab.',
       'popup.disabled': 'Detection is disabled for this site',
       'popup.enableHere': 'Enable on this site',
       'popup.disableHere': 'Disable on this site',
       'popup.watchpartyNote': 'Watch Party opens watchparty.me in a new tab and fills the room for you.',
+      'popup.playNote': 'Play opens a local player that fetches the file with this page Referer, so CDNs that IDM can grab also play here.',
       'update.applied': 'Rule pack {v} applied',
       'update.current': 'Rule pack is up to date',
       'update.failed': 'Update check failed: {msg}',
@@ -2271,6 +2410,19 @@
       'update.state': 'Status',
       'update.pack': 'Rule pack',
       'update.patch': 'Code patch',
+      'update.stateIdle': 'Idle',
+      'update.stateChecking': 'Checking...',
+      'update.stateCurrent': 'Up to date',
+      'update.stateUpdated': 'Rule pack updated',
+      'update.stateError': 'Update failed',
+      'update.stateDisabled': 'Automatic updates off',
+      'update.stateIncompat': 'Pack incompatible with this build',
+      'update.packVersion': 'Rule pack v{v}',
+      'update.hostsAdded': '+{n} hosts',
+      'update.adsAdded': '+{n} ad rules',
+      'update.sigOk': 'Signature verified',
+      'update.sigNone': 'No pack yet',
+      'update.patchVersion': 'Code patch v{v}',
       'toast.title': 'Stream Radar notifications',
       'panel.tabMedia': 'Media',
       'panel.tabSubs': 'Subtitles',
@@ -2305,14 +2457,64 @@
       'settings.reset': 'Reset position',
       'settings.openOptions': 'Full settings',
       'privacy.note': 'Detection stays on your device. Nothing is uploaded to us.',
-      'label.type': 'Type',
-      'action.recordStop': 'Stop and save recording',
-      'update.hint': 'Signed, data-only rule packs.',
       'options.tabGeneral': 'General',
       'options.tabDetection': 'Detection layers',
       'options.tabSubs': 'Subtitles & API keys',
       'options.tabAdvanced': 'Advanced',
       'options.tabHelp': 'Help',
+      'common.all': 'All',
+      'options.interface': 'Interface',
+      'options.langAuto': 'Auto',
+      'options.showFab': 'Show the floating button on pages',
+      'options.showAds': 'List ad and tracker video requests too',
+      'options.detection': 'Detection',
+      'options.maxItems': 'Maximum items kept per tab',
+      'options.layersLead': 'Five independent layers. Keep all on for maximum coverage.',
+      'options.colLayer': 'Layer',
+      'options.colHooks': 'What it hooks',
+      'options.colNeeds': 'Needs',
+      'options.layer1': '1. Network',
+      'options.layer2': '2. DOM',
+      'options.layer3': '3. MSE',
+      'options.layer4': '4. Service worker',
+      'options.layer5': '5. Heuristics',
+      'options.scanScripts': 'Regex-scan scripts and JSON for hidden stream URLs',
+      'options.recordCap': 'Recording cap (MB)',
+      'options.subsLead': 'Wyzie, SubDL and OpenSubtitles need a free key; YIFY works without one. Keys stay in your browser.',
+      'options.providers': 'Providers',
+      'options.wyzieNote': '(Indonesian, needs IMDb/TMDB id)',
+      'options.yifyNote': '(no key, often offline)',
+      'options.wyzieHint': 'Free key at store.wyzie.io/redeem. Paste it below; never commit or share it.',
+      'options.subdlHint': 'subdl.com then Account then API. Paste the key below.',
+      'options.osHint': 'api.opensubtitles.com, Developers, Create App.',
+      'options.langFilter': 'Language filter',
+      'options.langIdOnly': 'Indonesian only',
+      'options.langEn': 'English',
+      'options.testSearch': 'Test the search',
+      'options.fTitle': 'Title',
+      'options.fYear': 'Year',
+      'options.fSeason': 'Season',
+      'options.fEpisode': 'Episode',
+      'options.updateAuto': 'Fetch the rule pack automatically',
+      'options.updatePatch': 'Allow signed code patches (advanced)',
+      'options.updateUrl': 'Update source',
+      'options.updateHours': 'Check every (hours)',
+      'options.perSiteOpt': 'Per-site opt-out',
+      'options.perSiteHint': 'Hosts listed here are fully skipped.',
+      'options.export': 'Export settings',
+      'options.import': 'Import settings',
+      'options.resetAll': 'Reset everything',
+      'options.debugLog': 'Debug logging in the console',
+      'options.storage': 'Storage',
+      'options.wipeHistory': 'Clear recent-streams list',
+      'options.setupTitle': 'First-time setup',
+      'options.help1': 'Load <code>dist/chrome</code> or <code>dist/firefox</code> as unpacked or temporary add-on.',
+      'options.help2': 'Paste a free <b>Wyzie</b> or <b>SubDL</b> key in <em>Subtitles and API keys</em>.',
+      'options.help3': 'Open a video, press play, then use the floating button or <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd>.',
+      'options.help4': 'Click <b>Watch Party</b> on a stream to open watchparty.me with your title as the room name.',
+      'options.shortcuts': 'Shortcuts',
+      'options.shortcutList': '<kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> panel, <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>D</kbd> re-scan, <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd> subtitles, <kbd>Esc</kbd> close panel',
+      'options.privacy': 'Privacy',
     },
     id: {
       'app.name': 'Stream Radar',
@@ -2321,7 +2523,7 @@
       'panel.title': 'Media terdeteksi',
       'panel.empty': 'Belum ada video terdeteksi',
       'panel.emptyHint': 'Putar videonya, Stream Radar memantau jaringan, DOM, MSE, Service Worker dan internal player secara bersamaan.',
-      'panel.detecting': 'Mendeteksi…',
+      'panel.detecting': 'Mendeteksi...',
       'panel.paused': 'Deteksi otomatis dijeda',
       'panel.ads': '{n} request iklan disembunyikan',
       'panel.toggleAds': 'Tampilkan atau sembunyikan request iklan dan tracker',
@@ -2333,7 +2535,7 @@
       'panel.openPanel': 'Buka panel besar',
       'panel.items': '{n} stream',
       'panel.subs.title': 'Subtitle Indonesia',
-      'panel.subs.searching': 'Mencari subtitle…',
+      'panel.subs.searching': 'Mencari subtitle...',
       'panel.subs.found': 'Subtitle ditemukan',
       'panel.subs.none': 'Subtitle tidak ditemukan',
       'panel.subs.error': 'Pencarian subtitle gagal',
@@ -2341,7 +2543,11 @@
       'panel.subs.attach': 'Pasang di sini',
       'panel.subs.download': 'Unduh .vtt',
       'panel.subs.retry': 'Cari lagi',
+      'action.play': 'Putar',
       'action.watchparty': 'Nonton Bareng',
+      'action.copyAll': 'Salin semua URL stream terdeteksi',
+      'action.copyAllShort': 'Salin URL',
+      'toast.copiedAll': 'Menyalin {n} URL stream',
       'action.copy': 'Salin URL',
       'action.copied': 'Tersalin',
       'action.download': 'Unduh',
@@ -2362,21 +2568,48 @@
       'label.aes': 'Kunci AES-128',
       'label.mse': 'MediaSource (blob)',
       'label.mseHint': 'Stream blob tidak bisa diunduh langsung, pakai Rekam buffer atau buka halaman sumbernya.',
+      'watchparty.noBlob': 'Tidak bisa Nonton Bareng: stream blob tidak punya URL yang bisa dibagikan',
+      'player.title': 'Player Stream Radar',
+      'player.loading': 'Memuat stream...',
+      'player.error': 'Tidak bisa memutar stream ini: {msg}',
+      'player.noUrl': 'Tidak ada URL stream yang bisa diputar.',
+      'player.drm': 'Stream ini terproteksi DRM dan tidak bisa diputar di sini.',
+      'player.blob': 'Stream blob/MSE tidak punya URL file. Pakai Rekam buffer di halaman aslinya.',
+      'player.hint': 'Diputar dengan Referer halaman asli, cara yang sama download manager mengambil filenya.',
+      'player.quality': 'Kualitas',
+      'player.qualityAuto': 'Otomatis',
+      'player.fullscreen': 'Layar penuh',
+      'player.subsOn': 'Subtitle nyala',
+      'player.subsOff': 'Subtitle mati',
+      'player.dashHint': 'DASH paling baik diputar di halaman asli. Mencoba URL filenya saja.',
+      'player.needDirect': 'Tidak ada URL stream yang bisa diputar. Pakai Salin pada baris .m3u8/.mp4 yang asli.',
+      'toast.player': 'Membuka player...',
+      'watchparty.needDirect': 'Tidak ada URL stream langsung untuk Nonton Bareng - buka videonya lewat VBrowser di room, atau pakai tombol Salin/ffmpeg pada baris .m3u8/.mp4 yang asli.',
+      'watchparty.opening': 'Membuka room',
+      'watchparty.fallback': 'Room gagal dibuka. Tab mungkin belum siap. Coba muat ulang tab lalu tekan Nonton Bareng lagi.',
+      'watchparty.reattach': 'Deteksi ulang tab ini',
+      'watchparty.reloadTab': 'Muat ulang tab',
       'toast.found': '{n} media terdeteksi di halaman ini',
       'toast.newmedia': 'Stream {type} baru terdeteksi',
       'toast.subs': 'Subtitle Indonesia ditemukan: {name}',
       'toast.subsNone': 'Subtitle Indonesia tidak ditemukan untuk {title}',
       'toast.copied': 'URL disalin ke clipboard',
       'toast.error': 'Error: {msg}',
-      'toast.watchparty': 'Membuka WatchParty…',
+      'toast.watchparty': 'Membuka WatchParty...',
       'toast.paused': 'Deteksi dijeda di situs ini',
       'toast.resumed': 'Deteksi dilanjutkan',
-      'toast.recording': 'Merekam buffer MediaSource…',
+      'toast.recording': 'Merekam buffer MediaSource...',
       'toast.recordSaved': 'Rekaman disimpan ({size})',
       'toast.recordEmpty': 'Belum ada buffer, putar dulu videonya',
       'settings.title': 'Pengaturan Stream Radar',
       'settings.subtitle': 'Semua disimpan lokal di browser Anda. Tanpa akun, tanpa tracking.',
       'theme.system': 'Sistem',
+      'theme.nextSystem': 'Beralih ke sistem (ikut perangkat)',
+      'theme.nextLight': 'Beralih ke terang',
+      'theme.nextDark': 'Beralih ke gelap',
+      'theme.nowLight': 'terang',
+      'theme.nowDark': 'gelap',
+      'theme.btnLabel': 'Tema: {pref}, tampil {effective}. {next}',
       'theme.dark': 'Gelap',
       'theme.light': 'Terang',
       'common.close': 'Tutup',
@@ -2390,12 +2623,14 @@
       'common.tab': 'Tab',
       'common.search': 'Cari',
       'popup.title': 'Stream Radar',
+      'popup.history': 'Stream terbaru di browser ini',
       'popup.tabMedia': 'Media di tab ini',
       'popup.empty': 'Belum ada yang terdeteksi di tab ini.',
       'popup.disabled': 'Deteksi dimatikan untuk situs ini',
       'popup.enableHere': 'Aktifkan di situs ini',
       'popup.disableHere': 'Matikan di situs ini',
       'popup.watchpartyNote': 'Watch Party membuka watchparty.me di tab baru dan mengisi room untuk Anda.',
+      'popup.playNote': 'Putar membuka player lokal yang mengambil file dengan Referer halaman ini, jadi CDN yang IDM bisa ambil juga bisa diputar di sini.',
       'update.applied': 'Paket rule {v} dipasang',
       'update.current': 'Paket rule sudah paling baru',
       'update.failed': 'Cek update gagal: {msg}',
@@ -2406,6 +2641,19 @@
       'update.state': 'Status',
       'update.pack': 'Paket rule',
       'update.patch': 'Code patch',
+      'update.stateIdle': 'Siaga',
+      'update.stateChecking': 'Memeriksa...',
+      'update.stateCurrent': 'Terbaru',
+      'update.stateUpdated': 'Pak aturan diperbarui',
+      'update.stateError': 'Pembaruan gagal',
+      'update.stateDisabled': 'Pembaruan otomatis mati',
+      'update.stateIncompat': 'Pak tidak cocok dengan build ini',
+      'update.packVersion': 'Pak aturan v{v}',
+      'update.hostsAdded': '+{n} host',
+      'update.adsAdded': '+{n} aturan iklan',
+      'update.sigOk': 'Tanda tangan terverifikasi',
+      'update.sigNone': 'Belum ada pak',
+      'update.patchVersion': 'Tambalan kode v{v}',
       'toast.title': 'Notifikasi Stream Radar',
       'panel.tabMedia': 'Media',
       'panel.tabSubs': 'Subtitle',
@@ -2440,17 +2688,77 @@
       'settings.reset': 'Reset posisi',
       'settings.openOptions': 'Pengaturan lengkap',
       'privacy.note': 'Deteksi hanya terjadi di perangkatmu. Tidak ada yang diunggah ke kami.',
-      'action.recordStop': 'Hentikan dan simpan rekaman',
-      'update.hint': 'Paket rule bertanda tangan, hanya data.',
       'options.tabGeneral': 'Umum',
       'options.tabDetection': 'Layer deteksi',
       'options.tabSubs': 'Subtitle & API key',
       'options.tabAdvanced': 'Lanjutan',
       'options.tabHelp': 'Bantuan',
+      'common.all': 'Semua',
+      'options.interface': 'Antarmuka',
+      'options.langAuto': 'Otomatis',
+      'options.showFab': 'Tampilkan tombol mengambang di halaman',
+      'options.showAds': 'Tampilkan juga request video iklan dan tracker',
+      'options.detection': 'Deteksi',
+      'options.maxItems': 'Maksimal item yang disimpan per tab',
+      'options.layersLead': 'Lima layer terpisah. Biarkan semua aktif untuk jangkauan maksimal.',
+      'options.colLayer': 'Layer',
+      'options.colHooks': 'Yang di-hook',
+      'options.colNeeds': 'Butuh',
+      'options.layer1': '1. Jaringan',
+      'options.layer2': '2. DOM',
+      'options.layer3': '3. MSE',
+      'options.layer4': '4. Service worker',
+      'options.layer5': '5. Heuristik',
+      'options.scanScripts': 'Pindai script dan JSON dengan regex untuk URL stream tersembunyi',
+      'options.recordCap': 'Batas rekam (MB)',
+      'options.subsLead': 'Wyzie, SubDL dan OpenSubtitles butuh kunci gratis; YIFY tanpa kunci. Kunci hanya tersimpan di browsermu.',
+      'options.providers': 'Penyedia',
+      'options.wyzieNote': '(Indonesia, butuh id IMDb/TMDB)',
+      'options.yifyNote': '(tanpa kunci, sering mati)',
+      'options.wyzieHint': 'Kunci gratis di store.wyzie.io/redeem. Tempel di bawah; jangan di-commit atau dibagikan.',
+      'options.subdlHint': 'subdl.com lalu Account lalu API. Tempel kuncinya di bawah.',
+      'options.osHint': 'api.opensubtitles.com, Developers, Create App.',
+      'options.langFilter': 'Filter bahasa',
+      'options.langIdOnly': 'Hanya Indonesia',
+      'options.langEn': 'Inggris',
+      'options.testSearch': 'Uji pencarian',
+      'options.fTitle': 'Judul',
+      'options.fYear': 'Tahun',
+      'options.fSeason': 'Musim',
+      'options.fEpisode': 'Episode',
+      'options.updateAuto': 'Ambil paket aturan otomatis',
+      'options.updatePatch': 'Izinkan code patch bertanda tangan (lanjutan)',
+      'options.updateUrl': 'Sumber update',
+      'options.updateHours': 'Cek tiap (jam)',
+      'options.perSiteOpt': 'Opt-out per situs',
+      'options.perSiteHint': 'Host di sini dilewati total.',
+      'options.export': 'Ekspor pengaturan',
+      'options.import': 'Impor pengaturan',
+      'options.resetAll': 'Reset semua',
+      'options.debugLog': 'Log debug di konsol',
+      'options.storage': 'Penyimpanan',
+      'options.wipeHistory': 'Hapus daftar stream terbaru',
+      'options.setupTitle': 'Persiapan pertama',
+      'options.help1': 'Muat <code>dist/chrome</code> atau <code>dist/firefox</code> sebagai ekstensi unpacked atau add-on sementara.',
+      'options.help2': 'Tempel kunci <b>Wyzie</b> atau <b>SubDL</b> gratis di <em>Subtitle dan API key</em>.',
+      'options.help3': 'Buka video, putar, lalu pakai tombol mengambang atau <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd>.',
+      'options.help4': 'Klik <b>Nonton Bareng</b> pada stream untuk membuka watchparty.me dengan judulmu sebagai nama room.',
+      'options.shortcuts': 'Pintasan',
+      'options.shortcutList': '<kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> panel, <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>D</kbd> scan ulang, <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd> subtitle, <kbd>Esc</kbd> tutup panel',
+      'options.privacy': 'Privasi',
     },
   };
 
   let lang = 'en';
+
+  function safeParse(s) {
+    try {
+      return JSON.parse(s) || {};
+    } catch (_) {
+      return {};
+    }
+  }
+
   SR.i18n = {
     set(l) {
       lang = DICT[l] ? l : 'en';
@@ -2469,6 +2777,43 @@
         s = String(s).replace(/\{(\w+)\}/g, (m, k) => (vars[k] != null ? vars[k] : m));
       }
       return s;
+    },
+
+    /**
+     * Translate all data-i18n* hooks under `rootEl` (defaults to the document).
+     * Call AFTER dynamic render finishes so injected nodes are translated too.
+     * Supported attributes (no fifth mechanism):
+     *   data-i18n        -> textContent
+     *   data-i18n-title  -> title attribute
+     *   data-i18n-aria   -> aria-label attribute
+     *   data-i18n-html   -> innerHTML, ONLY for dictionary strings containing
+     *                       <kbd>/<code>; the value always comes from our dict.
+     * Vars may be supplied via data-i18n-vars as JSON; otherwise {}.
+     * Document title follows the key in data-i18n-title on <title> or the
+     * settings.title key.
+     */
+    apply(rootEl, vars) {
+      const scope = rootEl || (typeof document !== 'undefined' ? document : null);
+      if (!scope) return;;
+      const v = vars || {};
+      const set = (el, key, attr) => {
+        if (!key) return;
+        const val = this.t(key, el.dataset && el.dataset.i18nVars ? safeParse(el.dataset.i18nVars) : v);
+        if (attr === 'html') el.innerHTML = val;
+        else if (attr) el.setAttribute(attr, val);
+        else el.textContent = val;
+      };
+      scope.querySelectorAll('[data-i18n]').forEach(el => set(el, el.getAttribute('data-i18n')));
+      scope.querySelectorAll('[data-i18n-title]').forEach(el => set(el, el.getAttribute('data-i18n-title'), 'title'));
+      scope.querySelectorAll('[data-i18n-aria]').forEach(el => set(el, el.getAttribute('data-i18n-aria'), 'aria-label'));
+      scope.querySelectorAll('[data-i18n-html]').forEach(el => set(el, el.getAttribute('data-i18n-html'), 'html'));
+      if (typeof scope.title === 'string' || scope.querySelector) {
+        const titleEl = scope.querySelector ? scope.querySelector('title[data-i18n-title], title[data-i18n]') : null;
+        if (titleEl) {
+          const k = titleEl.getAttribute('data-i18n-title') || titleEl.getAttribute('data-i18n');
+          scope.title = this.t(k, v);
+        }
+      }
     },
     dict: DICT,
   };
@@ -2861,7 +3206,7 @@
 
 /* ===== inlined: src/shared/updater.js ===== */
 /**
- * Stream Radar — live rule packs + signed hot patches
+ * Stream Radar â€” live rule packs + signed hot patches
  * ==================================================================
  * Goal: when something is broken (a new embed host, a new ad domain, a new SEO
  * junk word, a changed subtitle API) the fix ships from GitHub and the already
@@ -2894,8 +3239,8 @@
   const PUBLIC_KEY_JWK = {
     kty: 'EC',
     crv: 'P-256',
-    x: 'dAR-4Qdjs2zq0VFxBgyAimWA_TkwY3-pySuLXFnhp6c',
-    y: 'UoJ_C4deba9gBFfxJA534F0V0OnSbUGei7XNRDaJyIY',
+    x: 'UZ33kOysXiijfF9rVCLCU6s0JHFtlRKx3xHer-0pDmE',
+    y: '3m66hI6NDl_cJb4vE_rLEIATjYMB_T3v2i3jLSPF2kc',
     ext: true,
     key_ops: ['verify'],
   };
@@ -2911,7 +3256,7 @@
     return keyPromise;
   }
 
-  /** DER → raw r||s (WebCrypto wants the raw form; node's crypto.sign gives DER). */
+  /** DER â†’ raw r||s (WebCrypto wants the raw form; node's crypto.sign gives DER). */
   function normaliseSignature(bytes) {
     const u = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
     if (u.length === 64) return u;
@@ -3115,7 +3460,11 @@
       if (allowed && patch && patch.code && typeof patch.code === 'string' && patch.code.length <= LIMITS.patchChars) {
         // The signature was verified by the background worker before storage.
         try {
-          new Function('"use strict";\n' + patch.code)(root.SR, root);
+          // Declare BOTH parameters: new Function(body)(SR, root) discards the
+          // arguments because the function body never names them, so a patch
+          // using `root` threw ReferenceError inside this try/catch with no
+          // visible effect. The declared-parameter form passes SR and root.
+          new Function('SR', 'root', '"use strict";\n' + patch.code)(SR, root);
           SR.patchApplied = patch.version || 0;
           return true;
         } catch (e) {
@@ -3161,7 +3510,9 @@
   const api = util.api();
   const TAB_PREFIX = 'srad:tab:';
   const PARTY_PREFIX = 'srad:party:';
+  const PLAY_PREFIX = 'srad:play:';
   const HISTORY_KEY = 'srad:history';
+  const playTabs = new Map();
   const t = (k, v) => SR.i18n.t(k, v);
 
   let settings = Object.assign({}, SR.defaults);
@@ -3441,7 +3792,11 @@
   async function loadRemote(packFromStorage) {
     try {
       const stored = packFromStorage || (await api.storage.local.get([RULES_KEY, PATCH_KEY]));
-      if (stored[RULES_KEY] && stored[RULES_KEY].pack) SR.updater.applyRemote(stored[RULES_KEY].pack, null);
+      if (stored[RULES_KEY] && stored[RULES_KEY].pack) {
+        // the patch is signature-verified at fetch time; applyRemote re-checks the
+        // autoPatch opt-in and size cap before running it in this worker too.
+        SR.updater.applyRemote(stored[RULES_KEY].pack, stored[PATCH_KEY] || null, settings);
+      }
       return stored;
     } catch (_) {
       return {};
@@ -3634,17 +3989,49 @@
 
   function shorten(s, n) {
     s = String(s || '');
-    return s.length > (n || 42) ? s.slice(0, (n || 42) - 1) + '…' : s;
+    return s.length > (n || 42) ? s.slice(0, (n || 42) - 1) + '...' : s;
   }
 
   /* ================================================================== *
    * WatchParty (PART 3)
    * ================================================================== */
+  // /create?video= auto-creates the room server-side and redirects into it.
+  function watchPartyCreateUrl(mediaUrl) {
+    return 'https://www.watchparty.me/create?video=' + encodeURIComponent(mediaUrl);
+  }
+
+  // WatchParty's direct-URL mode only plays a file it can fetch as media
+  // (.m3u8/.mpd/.mp4/.webm/...). A resolver/API link such as
+  // "d.shows.st/api?d=...." returns JSON/an HTML page, so WatchParty shows
+  // "it doesn't look like this is a media file". Pick a truly playable item:
+  // prefer a media-extension direct manifest/file and never send an API link.
+  function playableUrlFrom(item) {
+    if (!item || !item.url || item.isAd) return null;
+    return util.watchPartyPlayable(item.url, item.category) ? item.url : null;
+  }
+  function pickPlayable(st, itemId) {
+    const first = itemId && st.store.byId.get(itemId);
+    const direct = playableUrlFrom(first);
+    if (direct) return { url: direct, item: first };
+    // fall back to the best detected stream that is genuinely playable
+    const items = st.store.view ? st.store.view().items : [...st.store.byId.values()];
+    const weights = (SR.rules && SR.rules.CATEGORY_WEIGHT) || { mp4: 100, hls: 95, dash: 90, webm: 85, other: 70 };
+    const scored = items
+      .map((it) => ({ it, u: playableUrlFrom(it) }))
+      .filter((x) => x.u)
+      .sort((a, b) => (weights[b.it.category] || 0) - (weights[a.it.category] || 0) || (b.it.size || 0) - (a.it.size || 0));
+    return scored.length ? { url: scored[0].u, item: scored[0].it } : { url: null, item: first || null };
+  }
+
   async function launchWatchParty(st, itemId) {
-    const media = (itemId && st.store.byId.get(itemId)) || st.store.best();
-    const url = media && media.url;
-    if (!url) return { ok: false, reason: t('panel.empty') };
-    if (media.category === 'blob') return { ok: false, reason: t('label.mseHint') };
+    const picked = pickPlayable(st, itemId);
+    const media = picked.item;
+    const url = picked.url;
+    if (!url) {
+      // No direct-playable stream found. A resolver/API link (or blob/segments)
+      // cannot be used by WatchParty direct mode; VBrowser can open the page.
+      return { ok: false, reason: t('watchparty.needDirect'), hint: 'vbrowser' };
+    }
     const ti = st.title || {};
     const roomName = String(
       ti.title ? ti.title + (ti.year ? ' (' + ti.year + ')' : '') + (ti.episode ? ' S' + (ti.season || '01') + 'E' + ti.episode : '') : ti.raw || util.domain(st.url) || 'Stream Radar room'
@@ -3660,20 +4047,160 @@
       autoJoin: settings.watchpartyAutoJoin !== false,
       createdAt: Date.now(),
     };
-    // WatchParty exposes no public room-creation REST API (only `watchNow?url=`
-    // and the Discord bot's `/watch video <url>`), so we hand over through the
-    // supported URL param and let the watchparty helper fill the room form.
-    const target = 'https://www.watchparty.me/watchNow?url=' + encodeURIComponent(url) + '&name=' + encodeURIComponent(roomName);
+    // WatchParty's /create?video=<url> route auto-creates a room and loads the
+    // video (it POSTs /createRoom then redirects to /watch<room>), exactly like
+    // the "Watch Party" button on rivestream etc. That is strictly better than
+    // /watchNow?url= which only pre-fills a form, so we open /create and keep the
+    // payload for the on-site adapter (user name + subtitle attach).
+    const target = watchPartyCreateUrl(url);
     const tab = await api.tabs.create({ url: target, active: true }).catch(async () => await api.tabs.create({ url: target }));
     if (tab && tab.id > 0) await api.storage.local.set({ [PARTY_PREFIX + tab.id]: payload });
     return { ok: true, tabId: tab && tab.id, payload: payload };
   }
 
   /* ================================================================== *
+   * Local cinema player
+   *
+   * WatchParty fetches from watchparty.me, so CDNs that require the original
+   * page Referer (the ones IDM still downloads) refuse to play. The extension
+   * player is an extension page: host_permissions bypass CORS, and we attach
+   * the page Referer on every playlist/segment fetch.
+   * ================================================================== */
+  function pageReferer(st, media) {
+    const flags = (media && media.flags) || {};
+    const raw = media && media.frameUrl ? media.frameUrl : flags.initiator || st.url || '';
+    try {
+      const u = new URL(raw);
+      if (/^https?:$/i.test(u.protocol)) return u.origin + '/';
+    } catch (_) {}
+    try {
+      if (st.url) return new URL(st.url).origin + '/';
+    } catch (_) {}
+    return raw || '';
+  }
+
+  function buildPlaySession(st, media, urlOverride) {
+    const url = urlOverride || (media && media.url) || '';
+    const referer = pageReferer(st, media);
+    let origin = '';
+    try {
+      origin = referer ? new URL(referer).origin : util.origin(st.url || '');
+    } catch (_) {
+      origin = util.origin(st.url || '');
+    }
+    return {
+      url: url,
+      category: (media && media.category) || '',
+      quality: (media && media.quality) || '',
+      host: (media && media.host) || util.host(url),
+      name: (media && media.name) || '',
+      mime: (media && media.mime) || '',
+      drm: (media && media.drm) || st.drm || null,
+      aes: (media && media.aes) || '',
+      variants: (media && media.variants) || null,
+      title: st.title || null,
+      pageUrl: st.url || '',
+      referer: referer,
+      origin: origin,
+      subtitle: st.pendingSub ? { vtt: st.pendingSub.vtt, name: st.pendingSub.name } : null,
+      theme: settings.theme || 'dark',
+      lang: settings.lang && settings.lang !== 'auto' ? settings.lang : SR.i18n.get(),
+      createdAt: Date.now(),
+    };
+  }
+
+  async function installRefererRule(tabId, referer, origin) {
+    const dnr = api.declarativeNetRequest;
+    if (!dnr || !dnr.updateSessionRules) return false;
+    const id = 9100 + (Number(tabId) % 800);
+    const requestHeaders = [];
+    if (referer) requestHeaders.push({ header: 'Referer', operation: 'set', value: referer });
+    if (origin) requestHeaders.push({ header: 'Origin', operation: 'set', value: origin });
+    if (!requestHeaders.length) return false;
+    try {
+      await dnr.updateSessionRules({
+        removeRuleIds: [id],
+        addRules: [
+          {
+            id: id,
+            priority: 1,
+            action: { type: 'modifyHeaders', requestHeaders: requestHeaders },
+            condition: {
+              tabIds: [tabId],
+              resourceTypes: ['media', 'xmlhttprequest', 'other', 'image'],
+            },
+          },
+        ],
+      });
+      return true;
+    } catch (e) {
+      log('dnr rule failed', String((e && e.message) || e));
+      return false;
+    }
+  }
+
+  async function dropRefererRule(tabId) {
+    const dnr = api.declarativeNetRequest;
+    if (!dnr || !dnr.updateSessionRules) return;
+    const id = 9100 + (Number(tabId) % 800);
+    try {
+      await dnr.updateSessionRules({ removeRuleIds: [id] });
+    } catch (_) {}
+  }
+
+  async function launchPlayer(st, itemId, urlOverride) {
+    const picked = pickPlayable(st, itemId);
+    const media = picked.item;
+    const url = urlOverride || picked.url;
+    if (!url) return { ok: false, reason: t('player.needDirect') };
+    if (media && media.drm) return { ok: false, reason: t('player.drm') };
+    const sid = util.uuid();
+    const session = buildPlaySession(st, media, url);
+    await api.storage.local.set({ [PLAY_PREFIX + sid]: session });
+    const target = api.runtime.getURL('player/player.html?sid=' + encodeURIComponent(sid));
+    const tab = await api.tabs.create({ url: target, active: true });
+    if (tab && tab.id > 0) {
+      playTabs.set(tab.id, sid);
+      await installRefererRule(tab.id, session.referer, session.origin);
+    }
+    return { ok: true, tabId: tab && tab.id, sid: sid, session: session };
+  }
+
+  async function playerFetch(sid, url, responseType, range) {
+    if (!sid || !url || !/^https?:/i.test(url)) return { ok: false, reason: 'bad url', status: 0 };
+    const stored = await api.storage.local.get(PLAY_PREFIX + sid);
+    const session = stored[PLAY_PREFIX + sid];
+    if (!session) return { ok: false, reason: 'session expired', status: 0 };
+    const headers = {};
+    if (session.referer) headers.Referer = session.referer;
+    if (session.origin) headers.Origin = session.origin;
+    if (range && range.start != null && range.end != null) headers.Range = 'bytes=' + range.start + '-' + range.end;
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), responseType === 'arraybuffer' ? 25000 : 15000);
+    try {
+      const res = await util.fetchImpl(url, { headers: headers, credentials: 'include', redirect: 'follow', signal: ctrl.signal });
+      const status = res.status || 0;
+      if (!res.ok && status >= 400) return { ok: false, reason: 'HTTP ' + status, status: status };
+      const mime = (res.headers && res.headers.get && res.headers.get('content-type')) || '';
+      if (responseType === 'arraybuffer') {
+        const data = await res.arrayBuffer();
+        return { ok: true, status: status || 200, mime: mime, data: data };
+      }
+      let text = await res.text();
+      if (text.length > 2_000_000) text = text.slice(0, 2_000_000);
+      return { ok: true, status: status || 200, mime: mime, data: text };
+    } catch (e) {
+      return { ok: false, reason: String((e && e.message) || e), status: 0 };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  /* ================================================================== *
    * actions (popup + panel + options all land here)
    * ================================================================== */
   async function handleAction(msg, sender) {
-    const tabId = sender.tab && sender.tab.id != null ? sender.tab.id : msg.tabId;
+    const tabId = sender.tab && sender.tab.id != null ? sender.tab.id : (msg.tabId != null ? msg.tabId : (msg.payload && msg.payload.tabId != null ? msg.payload.tabId : undefined));
     const st = await restore(tabId);
     if (!st) return { ok: false, reason: 'no tab' };
     switch (msg.name) {
@@ -3710,8 +4237,16 @@
         if (!v) return { ok: false, reason: 'no such variant' };
         return { ok: true, id: await api.downloads.download({ url: v.uri, filename: downloadName(it, st), saveAs: false, conflictAction: 'uniquify' }) };
       }
-      case 'watchparty':
-        return await launchWatchParty(st, msg.id);
+      case 'play': {
+        const res = await launchPlayer(st, msg.id);
+        if (!res.ok) toastTo(tabId, res.reason || t('player.needDirect'), 'warn');
+        return res;
+      }
+      case 'watchparty': {
+        const res = await launchWatchParty(st, msg.id);
+        if (!res.ok) toastTo(tabId, res.reason || t('panel.empty'), 'warn');
+        return res;
+      }
       case 'subs-search':
         scheduleSubSearch(tabId, true);
         return { ok: true };
@@ -3867,7 +4402,7 @@
     api.runtime.onMessage.addListener((msg, sender, respond) => {
       if (!msg || !msg.type) return;
       (async () => {
-        const tabId = sender.tab && sender.tab.id != null ? sender.tab.id : msg.tabId;
+        const tabId = sender.tab && sender.tab.id != null ? sender.tab.id : (msg.tabId != null ? msg.tabId : (msg.payload && msg.payload.tabId != null ? msg.payload.tabId : undefined));
         const st = getTab(tabId);
         switch (msg.type) {
           case 'page-event':
@@ -3928,6 +4463,13 @@
           }
           case 'wake':
             return { ok: true };
+          case 'get-live': {
+            // Hand the already-verified pack (and, only when the user opted into
+            // signed code patches, the patch) to extension pages (popup/options)
+            // so live fixes can reach the whole UI, not just content scripts.
+            const [pack, patch] = await Promise.all([storedPack(), storedPatch()]);
+            return { ok: true, pack: pack || null, patch: settings.autoPatch ? patch || null : null, settings: settings };
+          }
           case 'action':
             // canonical: {type:'action', payload:{name,…}}; also accept the flat
             // shape so an old content script in a stale tab never breaks silently.
@@ -3941,6 +4483,29 @@
               return { ok: true, payload: payload };
             }
             return { ok: false };
+          }
+          case 'get-play-session': {
+            const sid = msg.sid || (msg.payload && msg.payload.sid);
+            if (!sid) return { ok: false };
+            const stored = await api.storage.local.get(PLAY_PREFIX + sid);
+            const session = stored[PLAY_PREFIX + sid];
+            if (session && Date.now() - (session.createdAt || 0) < 6 * 60 * 60 * 1000) {
+              return { ok: true, session: session };
+            }
+            return { ok: false };
+          }
+          case 'player-bind': {
+            const sid = msg.sid;
+            if (tabId != null && sid) {
+              playTabs.set(tabId, sid);
+              const stored = await api.storage.local.get(PLAY_PREFIX + sid);
+              const session = stored[PLAY_PREFIX + sid];
+              if (session) await installRefererRule(tabId, session.referer, session.origin);
+            }
+            return { ok: true };
+          }
+          case 'player-fetch': {
+            return await playerFetch(msg.sid, msg.url, msg.responseType, msg.range);
           }
           case 'party-status':
             toastTo(msg.tabId != null ? msg.tabId : tabId, msg.text, msg.kind || 'info');
@@ -3977,6 +4542,7 @@
     try {
       api.contextMenus.removeAll(() => {
         api.contextMenus.create({ id: 'sr-root', title: 'Stream Radar', contexts: ['page', 'video', 'frame', 'link', 'selection'] });
+        api.contextMenus.create({ id: 'sr-play', parentId: 'sr-root', title: t('action.play'), contexts: ['page', 'video', 'frame', 'link'] });
         api.contextMenus.create({ id: 'sr-watchparty', parentId: 'sr-root', title: t('action.watchparty'), contexts: ['page', 'video', 'frame', 'link'] });
         api.contextMenus.create({ id: 'sr-copy', parentId: 'sr-root', title: t('action.copy'), contexts: ['video', 'link', 'image'] });
         api.contextMenus.create({ id: 'sr-download', parentId: 'sr-root', title: t('action.download'), contexts: ['video', 'link'] });
@@ -4017,6 +4583,12 @@
         tabs.delete(id);
         subTimers.delete(id);
         api.storage.local.remove(TAB_PREFIX + id);
+        const sid = playTabs.get(id);
+        if (sid) {
+          playTabs.delete(id);
+          api.storage.local.remove(PLAY_PREFIX + sid);
+          dropRefererRule(id);
+        }
       });
     }
     if (api.tabs.onUpdated) {
@@ -4061,7 +4633,7 @@
         const url = info.srcUrl || info.linkUrl || '';
         if (info.menuItemId === 'sr-watchparty') {
           const best = st.store.best() || {};
-          if (url) await api.storage.local.set({ [PARTY_PREFIX + (await api.tabs.create({ url: 'https://www.watchparty.me/watchNow?url=' + encodeURIComponent(url) })).id]: { mediaUrl: url, roomName: (st.title && st.title.title) || 'Stream Radar room', autoJoin: true, createdAt: Date.now() } });
+          if (url) await api.storage.local.set({ [PARTY_PREFIX + (await api.tabs.create({ url: watchPartyCreateUrl(url) })).id]: { mediaUrl: url, roomName: (st.title && st.title.title) || 'Stream Radar room', autoJoin: true, createdAt: Date.now() } });
           else await launchWatchParty(st, best.id);
         } else if (info.menuItemId === 'sr-copy' && url) {
           api.tabs.sendMessage(tab.id, { type: 'copy-clipboard', text: url }).catch(() => {});
@@ -4100,7 +4672,7 @@
             const open = new Set((await api.tabs.query({})).map((x) => x.id));
             const all = await api.storage.local.get(null);
             for (const k of Object.keys(all)) {
-              if (k.indexOf(TAB_PREFIX) !== 0 && k.indexOf(PARTY_PREFIX) !== 0) continue;
+              if (k.indexOf(TAB_PREFIX) !== 0 && k.indexOf(PARTY_PREFIX) !== 0 && k.indexOf(PLAY_PREFIX) !== 0) continue;
               const id = Number(k.split(':').pop());
               const rec = all[k] || {};
               const age = now - (rec.savedAt || rec.createdAt || 0);

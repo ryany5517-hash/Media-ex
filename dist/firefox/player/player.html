@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title data-i18n-title="player.title">Stream Radar Player</title>
+    <link rel="stylesheet" href="../shared/theme.css" />
+    <link rel="stylesheet" href="player.css" />
+  </head>
+  <body data-theme="dark">
+    <header class="srp-bar">
+      <div class="srp-brand" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M19.07 4.93A10 10 0 0 0 6.99 3.34" />
+          <path d="M2.29 9.62A10 10 0 1 0 21.31 8.35" />
+          <circle cx="12" cy="12" r="2" />
+        </svg>
+      </div>
+      <div class="srp-headtxt">
+        <h1 id="title">Stream Radar</h1>
+        <p id="sub"></p>
+      </div>
+      <span class="srp-spacer"></span>
+      <label class="srp-quality" id="qualityWrap" hidden>
+        <span id="qualityLab">Quality</span>
+        <select id="quality" aria-label="Quality"></select>
+      </label>
+      <button type="button" class="srp-btn" id="subsBtn" hidden>CC</button>
+      <button type="button" class="srp-btn" id="fsBtn">Full screen</button>
+    </header>
+    <main class="srp-stage">
+      <video id="video" controls playsinline></video>
+      <div class="srp-overlay" id="overlay" data-show="1">
+        <div class="srp-spinner" aria-hidden="true"></div>
+        <p id="status">Loading stream...</p>
+      </div>
+    </main>
+    <p class="srp-hint" id="hint"></p>
+    <script src="../shared/util.js"></script>
+    <script src="../shared/i18n.js"></script>
+    <script src="../vendor/hls.light.min.js"></script>
+    <script src="player.js"></script>
+  </body>
+</html>

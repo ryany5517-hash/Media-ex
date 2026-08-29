@@ -1,5 +1,5 @@
 {
-  "version": 2026082801,
+  "version": 2026082802,
   "minAppVersion": "1.0.0",
   "notes": "Bawaan repo. Yang diubah di sini akan terbit ke branch 'live' dan ditarik semua install yang ada.",
   "embedHosts": [

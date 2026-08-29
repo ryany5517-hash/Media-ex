@@ -172,6 +172,7 @@
           '<div class="srad-foot">' +
           '<span class="srad-count" data-el="count"></span>' +
           '<span class="srad-spacer"></span>' +
+          '<button class="srad-btn" data-act="copy-all" title="' + esc(t('action.copyAll')) + '" aria-label="' + esc(t('action.copyAll')) + '">' + ico('copy') + esc(t('action.copyAllShort')) + '</button>' +
           '<button class="srad-btn" data-act="ads" data-el="ads" aria-label="' + esc(t('panel.toggleAds')) + '" title="' + esc(t('panel.toggleAds')) + '"><span data-el="adslabel"></span></button>' +
           '<button class="srad-btn" data-act="clear">' + ico('trash-2') + esc(t('panel.clear')) + '</button>' +
           '<button class="srad-btn" data-act="options" title="' + esc(t('panel.openPanel')) + '">' + ico('settings-2') + '</button>' +
@@ -343,7 +344,10 @@
           '<div class="srad-url" title="' + esc(it.url) + '">' + esc(shortenUrl(it.url)) + '</div>' +
           '<div class="srad-tags">' + tags.join('') + '</div>' +
           '<div class="srad-actions">' +
-          '<button class="srad-btn" data-act="watchparty" data-primary="1">' + ico('users') + esc(t('action.watchparty')) + '</button>' +
+          (cat === 'blob'
+            ? '<span class="srad-no-party" title="' + esc(t('watchparty.noBlob')) + '">' + ico('info') + esc(t('watchparty.noBlob')) + '</span>'
+            : '<button class="srad-btn" data-act="play" data-primary="1">' + ico('play') + esc(t('action.play')) + '</button>' +
+              '<button class="srad-btn" data-act="watchparty">' + ico('users') + esc(t('action.watchparty')) + '</button>') +
           '<button class="srad-btn" data-act="copy">' + ico('copy') + esc(t('action.copy')) + '</button>' +
           '<button class="srad-btn" data-act="download">' + ico('download') + esc(it.category === 'hls' || it.category === 'dash' ? t('action.downloadPlaylist') : t('action.download')) + '</button>' +
           '<button class="srad-btn" data-act="subs">' + ico('captions') + esc(t('action.subs')) + '</button>' +
@@ -370,7 +374,7 @@
       }
       function shortenUrl(u) {
         u = String(u || '');
-        return u.length > 118 ? u.slice(0, 56) + '…' + u.slice(-46) : u;
+        return u.length > 118 ? u.slice(0, 56) + '...' + u.slice(-46) : u;
       }
       function urlName(u) {
         try {
@@ -606,7 +610,7 @@
           if (panelEl) animate(panelEl, { opacity: [0, 1], transform: ['translateY(-4px)', 'none'] }, { duration: 0.2 });
           return;
         }
-        if (!id && ['copy', 'download', 'watchparty', 'subs', 'ffmpeg', 'record', 'open'].indexOf(act) >= 0) return;
+        if (!id && ['copy', 'download', 'watchparty', 'play', 'subs', 'ffmpeg', 'record', 'open'].indexOf(act) >= 0) return;
         if (act === 'copy') {
           btn.setAttribute('data-done', '1');
           const original = btn.innerHTML;
@@ -641,7 +645,10 @@
             toggle.click();
           } else if (e.key === 'Enter') {
             e.preventDefault();
-            row.querySelector('[data-act="watchparty"]').click();
+            const play = row.querySelector('[data-act="play"]');
+            const wp = row.querySelector('[data-act="watchparty"]');
+            if (play) play.click();
+            else if (wp) wp.click();
           }
         }
         if (e.key === 'c') {

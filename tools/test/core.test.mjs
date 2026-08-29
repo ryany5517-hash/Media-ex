@@ -244,11 +244,77 @@ test('subs.search: provider orchestration with fake fetch', async () => {
 });
 
 test('subs.search: missing API key marks provider as skipped, never throws', async () => {
-  const settings = Object.assign({}, SR.defaults, { subdlApiKey: '', osApiKey: '', providers: { subdl: true, opensubtitles: true, yify: false } });
+  const settings = Object.assign({}, SR.defaults, { subdlApiKey: '', osApiKey: '', wyzieApiKey: '', providers: { subdl: true, opensubtitles: true, yify: false, wyzie: true } });
   const res = await subs.search({ title: 'X' }, settings, { fetchImpl: async () => { throw new Error('nope'); } });
   assert.equal(res.results.length, 0);
   assert.equal(res.providerInfo.subdl.status, 'skipped');
   assert.equal(res.providerInfo.opensubtitles.status, 'skipped');
+  assert.equal(res.providerInfo.wyzie.status, 'skipped', 'wyzie with no key is skipped, never throws');
+});
+
+test('wyzie: searches by IMDb id, maps Indonesian srt result, requires key and id', async () => {
+  const wyzieRows = [
+    { id: 'a1', url: 'https://sub.wyzie.io/c/abc/id/a1?format=srt&encoding=UTF-8', language: 'id', display: 'Indonesian', format: 'srt', media: 'The Martian', fileName: 'martian.id.srt', source: 'opensubtitles', ai: false, downloadCount: 50 },
+    { id: 'a2', url: 'https://sub.wyzie.io/c/abc/en/a2?format=srt', language: 'en', display: 'English', format: 'srt', media: 'The Martian', fileName: 'martian.en.srt', ai: false },
+  ];
+  let requestedUrl = '';
+  const fakeFetch = async (url) => {
+    requestedUrl = String(url);
+    if (requestedUrl.startsWith('https://sub.wyzie.io/search')) {
+      return { ok: true, status: 200, async text() { return JSON.stringify(wyzieRows); }, async json() { return wyzieRows; } };
+    }
+    if (requestedUrl.includes('/c/abc/id/a1')) {
+      return { ok: true, status: 200, async text() { return '1\n00:00:01,000 --> 00:00:03,000\nHalo dunia'; } };
+    }
+    throw new Error('network blocked: ' + url);
+  };
+
+  // 1. no key -> skipped
+  let settings = Object.assign({}, SR.defaults, { wyzieApiKey: '', providers: { wyzie: true, subdl: false, opensubtitles: false, yify: false } });
+  let res = await subs.search({ title: 'The Martian', imdbId: 'tt3659388' }, settings, { fetchImpl: fakeFetch });
+  assert.equal(res.providerInfo.wyzie.status, 'skipped');
+
+  // 2. key but no id -> skipped (wyzie cannot search by title text)
+  settings = Object.assign({}, SR.defaults, { wyzieApiKey: 'k', providers: { wyzie: true, subdl: false, opensubtitles: false, yify: false } });
+  res = await subs.search({ title: 'No Id Movie' }, settings, { fetchImpl: fakeFetch });
+  assert.equal(res.providerInfo.wyzie.status, 'skipped');
+
+  // 3. key + id -> Indonesian result mapped
+  settings = Object.assign({}, SR.defaults, { wyzieApiKey: 'k', subtitleLang: 'id', providers: { wyzie: true, subdl: false, opensubtitles: false, yify: false } });
+  res = await subs.search({ title: 'The Martian', year: '2015', imdbId: 'tt3659388' }, settings, { fetchImpl: fakeFetch });
+  assert.equal(res.providerInfo.wyzie.status, 'ok');
+  assert.match(requestedUrl, /id=tt3659388/);
+  assert.match(requestedUrl, /language=id/);
+  assert.match(requestedUrl, /format=srt/);
+  assert.match(requestedUrl, /key=k/);
+  assert.equal(res.results.length, 1, 'Indonesian result kept, English filtered for subtitleLang=id');
+  assert.equal(res.results[0].provider, 'wyzie');
+  assert.equal(res.results[0].langCode, 'id');
+  assert.equal(res.results[0].fileUrl.includes('a1'), true);
+
+  // 4. fetchFile resolves the SRT text through the load/convert path
+  const text = await subs.resolve(Object.assign({}, res.results[0]), settings, {
+    fetchImpl: async (url) => ({
+      ok: true,
+      status: 200,
+      headers: { get: () => 'application/x-subrip' },
+      async text() { return '1\n00:00:01,000 --> 00:00:03,000\nHalo dunia'; },
+      async arrayBuffer() { return new TextEncoder().encode('1\n00:00:01,000 --> 00:00:03,000\nHalo dunia').buffer; },
+    }),
+  });
+  assert.match(String(text), /WEBVTT|Halo dunia/);
+
+  // 5. TV episode passes season & episode
+  res = await subs.search({ title: 'South Park', imdbId: 'tt0121955', season: 1, episode: 1 }, settings, { fetchImpl: fakeFetch });
+  assert.match(requestedUrl, /season=1/);
+  assert.match(requestedUrl, /episode=1/);
+
+  // 6. 401/403 surfaces an error, not a silent skip
+  const badKey = Object.assign({}, settings);
+  const failFetch = async () => ({ ok: false, status: 401, async text() { return '{}'; } });
+  res = await subs.search({ title: 'X', imdbId: 'tt1' }, badKey, { fetchImpl: failFetch });
+  assert.equal(res.providerInfo.wyzie.status, 'error');
+  assert.match(res.providerInfo.wyzie.reason, /key|401/);
 });
 
 /* ------------------------------------------------------------------ *
@@ -260,6 +326,31 @@ test('settings.merge: unknown keys dropped, nested providers merged', () => {
   assert.equal(merged.nope, undefined);
   assert.equal(merged.providers.subdl, true);
   assert.equal(merged.providers.yify, true);
+});
+
+test('util.watchPartyPlayable: direct media yes, resolver/API links no', () => {
+  const yes = [
+    ['https://cdn.x/a/master.m3u8', 'hls'],
+    ['https://cdn.x/a/play.mp4?t=1', 'mp4'],
+    ['https://cdn.x/manifest.mpd', 'dash'],
+    ['https://cdn.x/v.webm', 'webm'],
+    ['https://cdn.x/noext-but-hls', 'hls'],
+    // real HLS CDNs frequently serve the manifest through an /api path;
+    // a real .m3u8 on the path must still play despite "api" in the URL
+    ['https://a2.shows.st/api/playlist/aBc.m3u8?token=x', 'hls'],
+    ['https://cdn.x/api/manifest/master.m3u8', 'hls'],
+  ];
+  for (const [u, c] of yes) assert.equal(util.watchPartyPlayable(u, c), true, 'should play ' + u);
+  const no = [
+    ['https://d.shows.st/api?d=fC1Oq-resolver-token-very-long', 'other'],
+    ['https://x.com/redirect?to=https%3A%2F%2Fcdn%2Fa.m3u8', 'other'],
+    // a gateway with no media path AND no direct-media category is a resolver
+    ['https://x.com/gateway/v1/stream?id=9', 'other'],
+    ['blob:https://x/1-2-3', 'blob'],
+    ['https://cdn.x/seg0.ts', 'segment'],
+    ['https://x.com/page/123', 'other'],
+  ];
+  for (const [u, c] of no) assert.equal(util.watchPartyPlayable(u, c), false, 'must reject ' + u);
 });
 
 test('util: pattern compiler + matching', () => {

@@ -15,7 +15,7 @@
   'use strict';
 
   const SR = (root.SR = root.SR || {});
-  SR.VERSION = '1.0.0';
+  SR.VERSION = '1.1.0';
   SR.NS = 'streamRadar'; // message channel id / storage prefix
   SR.PREFIX = 'srad'; // css class prefix
 
@@ -162,6 +162,27 @@
       } catch (_) {
         return String(url) + '|' + (category || '');
       }
+    },
+
+    // WatchParty direct mode only plays a file it can fetch as media. Decide
+    // whether a detected URL is directly playable there. Resolver/API links
+    // (e.g. "/api?d=...") return a page/JSON and must NOT be sent.
+    watchPartyPlayable(url, category) {
+      if (!url) return false;
+      if (category === 'blob' || category === 'segment' || category === 'texttrack') return false;
+      let path = String(url);
+      try { path = new URL(url).pathname; } catch (_) {}
+      // 1) A media extension on the PATH is directly playable. This wins over
+      //    everything: real HLS CDNs often serve .../api/playlist.m3u8, so a
+      //    resolver-looking path must not veto an explicit manifest/file.
+      if (/\.(m3u8|mpd|mp4|webm|mkv|mov|m4v|m3u)(\?|#|$)/i.test(path)) return true;
+      // 2) A classified direct-media category (content-type/parsed manifest,
+      //    served without a clean extension) is playable too.
+      if (category === 'hls' || category === 'dash' || category === 'mp4' || category === 'webm') return true;
+      // 3) Generic/other URLs that point at a resolver/gateway endpoint return a
+      //    page or JSON, not media (e.g. d.shows.st/api?d=<token>): reject those.
+      if (/(^|\/)(api|resolve|redirect|gateway|link|source|get|serve)(\/|$)/i.test(path)) return false;
+      return false;
     },
 
     formatBytes(bytes) {
@@ -407,7 +428,11 @@
     compactOnMobile: true,
     watchpartyAutoJoin: true,
     watchpartyName: '',
-    providers: { subdl: true, opensubtitles: true, yify: true },
+    providers: { wyzie: true, subdl: true, opensubtitles: true, yify: true },
+    // Wyzie Subs requires a per-user key. It must NEVER be committed: Wyzie's
+    // docs forbid shipping keys in browser extensions or public repos. The
+    // user pastes their own key in Options; it is stored only in chrome.storage.
+    wyzieApiKey: '',
     subdlApiKey: '',
     osApiKey: '',
     osUserAgent: 'StreamRadar/1.0 (media detector extension)',

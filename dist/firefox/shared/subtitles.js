@@ -18,7 +18,10 @@
   const ID_LANGS = new Set(['id', 'ind', 'indonesia', 'indonesian', 'bahasa indonesia', 'bahasa-indonesia']);
   const ID_RE = /(?:^|[\s._\-[(])(id|ind|indonesia|indonesian|bahasa[-_ ]?indonesia|sub[-_ ]?indo|subid)(?:$|[\s._\-)\]])/i;
 
-  const subs = (SR.subs = {});
+  // Self-registering: never assume another module ran, and never clobber a
+  // namespace a previous load (or another provider script) already built.
+  const subs = (SR.subs = SR.subs || {});
+  subs.providers = Array.isArray(subs.providers) ? subs.providers : [];
 
   /* ---------------------------------------------------------------- *
    * Decoding / unpacking
@@ -276,6 +279,79 @@
    * Providers
    * ---------------------------------------------------------------- */
 
+  /** sub.wyzie.io - free/libre subtitle API, searches by IMDb/TMDB id.
+   * Needs a per-user key (store.wyzie.io/redeem). The key is read from the
+   * user's settings only; it is never committed because Wyzie forbids keys in
+   * browser extensions/public repos. Returns an array of subtitle objects
+   * whose `url` is a direct SRT/ASS download. */
+  subs.wyzie = {
+    id: 'wyzie',
+    label: 'Wyzie Subs',
+    needsKey: true,
+    base: 'https://sub.wyzie.io',
+    async search(want, settings, ctx) {
+      const key = settings.wyzieApiKey;
+      if (!key) return { ok: false, skipped: true, reason: 'API key belum diisi' };
+      // Wyzie searches by IMDb (tt...) or TMDB numeric id, never by title text.
+      const id = want.imdbId || want.tmdbId;
+      if (!id) return { ok: false, skipped: true, reason: 'butuh id IMDb/TMDB' };
+      const params = new URLSearchParams();
+      params.set('id', String(id));
+      if (want.season && want.episode) {
+        params.set('season', String(want.season));
+        params.set('episode', String(want.episode));
+      }
+      const lang = settings.subtitleLang && settings.subtitleLang !== 'all' ? settings.subtitleLang : 'id';
+      params.set('language', lang);
+      params.set('format', 'srt');
+      params.set('encoding', 'utf-8');
+      params.set('source', 'all');
+      params.set('key', key);
+      const fetchImpl = ctx.fetchImpl || (util.fetchImpl ? util.fetchImpl.bind(util) : root.fetch);
+      const res = await fetchImpl(this.base + '/search?' + params.toString(), { headers: { Accept: 'application/json' } });
+      if (res.status === 401 || res.status === 403) throw new Error('Wyzie key ditolak (HTTP ' + res.status + ')');
+      if (!res.ok) throw new Error('Wyzie HTTP ' + res.status);
+      const text = await res.text();
+      const json = util.safeJSON ? util.safeJSON(text, null) : JSON.parse(text);
+      const rows = Array.isArray(json) ? json : Array.isArray(json && json.subtitles) ? json.subtitles : [];
+      const items = rows
+        .map((r) => ({
+          provider: 'wyzie',
+          providerLabel: 'Wyzie Subs',
+          id: String(r.id || r.url || ''),
+          name: r.media || want.title,
+          filename: r.fileName || (r.media ? r.media + '.srt' : 'subtitle.srt'),
+          langCode: String(r.language || 'id').slice(0, 2).toLowerCase(),
+          langName: r.display || r.language || 'Indonesian',
+          format: String(r.format || 'srt').toLowerCase(),
+          year: want.year || '',
+          season: want.season ? String(want.season) : '',
+          episode: want.episode ? String(want.episode) : '',
+          downloads: Number(r.downloadCount || 0),
+          verified: !r.ai,
+          aiTranslated: !!r.ai,
+          uploader: r.source || '',
+          pageUrl: r.url || '',
+          fileUrl: r.url || '',
+          hearingImpaired: !!r.isHearingImpaired,
+          release: r.release || r.matchedRelease || '',
+          raw: r,
+        }))
+        .filter((x) => /^https?:/.test(x.fileUrl));
+      return { ok: true, items };
+    },
+    async fetchFile(item, settings, ctx) {
+      const f = ctx.fetchImpl || (util.fetchImpl ? util.fetchImpl.bind(util) : root.fetch);
+      const key = settings.wyzieApiKey;
+      let url = item.fileUrl;
+      // Wyzie download URLs are direct; attach the key only if it was not embedded.
+      if (key && url.indexOf('key=') < 0) {
+        url += (url.indexOf('?') >= 0 ? '&' : '?') + 'key=' + encodeURIComponent(key);
+      }
+      return await subs.loadSubtitleFile(url, { fetchImpl: f, want: 'id' });
+    },
+  };
+
   /** api.subdl.com — needs a free API key from https://subdl.com/panel/api */
   subs.subdl = {
     id: 'subdl',
@@ -471,7 +547,12 @@
     },
   };
 
-  subs.providers = [subs.subdl, subs.opensubtitles, subs.yify];
+  // Register built-ins additively so a re-load neither wipes an externally
+  // added provider nor pushes the same built-in twice. Wyzie first: it searches
+  // by IMDb/TMDB id and gives the best Indonesian results.
+  for (const p of [subs.wyzie, subs.subdl, subs.opensubtitles, subs.yify]) {
+    if (p && !subs.providers.some(x => x && x.id === p.id)) subs.providers.push(p);
+  }
 
   /* ---------------------------------------------------------------- *
    * Orchestration

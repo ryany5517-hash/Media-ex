@@ -484,10 +484,12 @@ test('integration: 67movies-style page is detected end to end', async () => {
 
   // 10) WatchParty hand-off payload (what the background worker stores for the
   //     watchparty.me helper) — media url + cleaned room name
+  // /create?video= auto-creates the room server-side (matches the rivestream /
+  // watchparty "Watch Party" button); the cleaned name rides in the payload.
+  const target = 'https://www.watchparty.me/create?video=' + encodeURIComponent(hls.url);
+  assert.ok(target.startsWith('https://www.watchparty.me/create?video=https%3A%2F%2Fstream.cdn-vidlove.net'), target);
   const roomName = String(info.title + (info.year ? ' (' + info.year + ')' : '')).slice(0, 90);
-  const target = 'https://www.watchparty.me/watchNow?url=' + encodeURIComponent(hls.url) + '&name=' + encodeURIComponent(roomName);
-  assert.ok(target.includes('watchparty.me/watchNow?url=https%3A%2F%2Fstream.cdn-vidlove.net'));
-  assert.ok(target.includes('name=Dune%3A%20Part%20Two%20(2024)'));
+  assert.ok(roomName.includes('Dune') && roomName.includes('2024'), roomName);
 
   world.embedDom.window.close();
   world.innerDom.window.close();

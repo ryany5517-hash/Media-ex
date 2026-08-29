@@ -20,6 +20,26 @@
 (function (root) {
   'use strict';
   const SR = (root.SR = root.SR || {});
+
+  // If a content_scripts js entry is missing (build drift / a module failed to
+  // load), `util.api()` below would throw a TypeError on every frame and flood
+  // the console with dozens of "Cannot read properties of undefined" errors.
+  // Fail once, with a message that names the missing module and points at the
+  // manifest order instead of throwing per frame.
+  const REQUIRED = [
+    ['util', x => x && typeof x.api === 'function'],
+    ['i18n', x => x && typeof x.t === 'function'],
+    ['domScan', x => x && typeof x.create === 'function'],
+    ['ui', x => x && typeof x.create === 'function'],
+  ];
+  const missingMods = REQUIRED.filter(([name]) => !SR[name]).map(([name]) => name);
+  if (missingMods.length) {
+    try {
+      console.warn('[Stream Radar] content script stopped: missing shared module(s): ' + missingMods.join(', ') + '. Check the js order of this content_scripts entry in src/manifest.json and rebuild.');
+    } catch (_) {}
+    return;
+  }
+
   const util = SR.util;
   const api = util.api();
   const doc = root.document;
@@ -227,6 +247,21 @@
           }
           toast(ok ? t('toast.copied') : t('toast.error', { msg: 'clipboard blocked' }), ok ? 'ok' : 'err');
         });
+      case 'copy-all': {
+        // one-shot grab of every shareable stream URL (blobs have no URL)
+        const urls = state.items
+          .filter((x) => x.url && x.category !== 'blob' && !x.isAd)
+          .map((x) => x.url);
+        const uniq = [...new Set(urls)];
+        if (!uniq.length) { toast(t('panel.empty'), 'warn'); return; }
+        return copyText(uniq.join('\n')).then((ok) => {
+          toast(ok ? t('toast.copiedAll', { n: uniq.length }) : t('toast.error', { msg: 'clipboard blocked' }), ok ? 'ok' : 'err');
+          if (payload.button) {
+            payload.button.setAttribute('data-done', '1');
+            setTimeout(() => payload.button.removeAttribute('data-done'), 1200);
+          }
+        });
+      }
       case 'ffmpeg': {
         const it = findItem(payload.id);
         const cmd = buildFfmpeg(it);
@@ -242,6 +277,33 @@
         postCmd(on ? 'record-start' : 'record-stop');
         toast(on ? t('toast.recording') : t('toast.recordSaved', { size: '' }), 'info');
         return;
+      }
+      case 'play': {
+        const btn = payload.button;
+        if (btn) {
+          if (btn.getAttribute('data-busy') === '1') return;
+          btn.setAttribute('data-busy', '1');
+          btn.setAttribute('disabled', '');
+          setTimeout(() => { btn.removeAttribute('data-busy'); btn.removeAttribute('disabled'); }, 900);
+        }
+        const it = findItem(payload.id);
+        if (it && it.category === 'blob') { toast(t('player.blob'), 'warn'); return; }
+        toast(t('toast.player'), 'ok');
+        return void send('action', { name: 'play', id: payload.id });
+      }
+      case 'watchparty': {
+        // disable 900ms so a double click cannot open two rooms
+        const btn = payload.button;
+        if (btn) {
+          if (btn.getAttribute('data-busy') === '1') return;
+          btn.setAttribute('data-busy', '1');
+          btn.setAttribute('disabled', '');
+          setTimeout(() => { btn.removeAttribute('data-busy'); btn.removeAttribute('disabled'); }, 900);
+        }
+        const it = findItem(payload.id);
+        if (it && it.category === 'blob') { toast(t('watchparty.noBlob'), 'warn'); return; }
+        // fire-and-forget; background reports failure back over 'party-status'
+        return void send('action', { name: 'watchparty', id: payload.id });
       }
       case 'scan-now':
         postCmd('scan');

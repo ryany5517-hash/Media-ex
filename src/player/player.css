@@ -1,0 +1,206 @@
+/* Stream Radar cinema player. Tokens come from shared/theme.css. ASCII only. */
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  background: #05070e;
+  color: var(--sr-ink);
+  font-family: var(--sr-font);
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background:
+    radial-gradient(1200px 480px at 50% -10%, rgba(91, 80, 230, 0.18), transparent 60%),
+    #05070e;
+}
+
+.srp-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  padding-top: calc(10px + env(safe-area-inset-top, 0px));
+  border-bottom: 1px solid var(--sr-line);
+  background: rgba(12, 15, 26, 0.88);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.srp-brand {
+  width: 36px;
+  height: 36px;
+  border-radius: 11px;
+  display: grid;
+  place-items: center;
+  flex: none;
+  color: #fff;
+  background: var(--sr-brand-gradient);
+  box-shadow: var(--sr-shadow-accent);
+}
+.srp-brand svg {
+  width: 18px;
+  height: 18px;
+}
+
+.srp-headtxt {
+  min-width: 0;
+}
+.srp-headtxt h1 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: min(52vw, 520px);
+}
+.srp-headtxt p {
+  margin: 1px 0 0;
+  font-size: 11.5px;
+  color: var(--sr-ink-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: min(52vw, 520px);
+}
+
+.srp-spacer {
+  flex: 1 1 auto;
+}
+
+.srp-quality {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--sr-ink-2);
+}
+.srp-quality[hidden] {
+  display: none;
+}
+.srp-quality select {
+  min-height: 40px;
+  padding: 0 10px;
+  border-radius: 10px;
+  border: 1px solid var(--sr-line);
+  background: var(--sr-surface-2);
+  color: var(--sr-ink);
+  font: 600 12.5px/1 var(--sr-font);
+}
+
+.srp-btn {
+  min-height: 40px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid var(--sr-line);
+  background: transparent;
+  color: var(--sr-ink);
+  font: 620 12.5px/1 var(--sr-font);
+  cursor: pointer;
+}
+.srp-btn:hover {
+  border-color: var(--sr-accent);
+  background: var(--sr-accent-soft);
+}
+.srp-btn:focus-visible {
+  outline: 2px solid var(--sr-accent);
+  outline-offset: 2px;
+}
+.srp-btn[data-on='1'] {
+  color: var(--sr-accent-ink);
+  background: var(--sr-brand-gradient);
+  border-color: transparent;
+}
+
+.srp-stage {
+  position: relative;
+  flex: 1 1 auto;
+  display: grid;
+  place-items: center;
+  background: #000;
+  min-height: 0;
+}
+
+#video {
+  width: 100%;
+  height: 100%;
+  max-height: calc(100vh - 96px);
+  background: #000;
+  outline: none;
+}
+
+.srp-overlay {
+  position: absolute;
+  inset: 0;
+  display: none;
+  place-items: center;
+  align-content: center;
+  text-align: center;
+  gap: 12px;
+  padding: 24px;
+  background: rgba(5, 7, 14, 0.55);
+  color: #e9edf7;
+  pointer-events: none;
+}
+.srp-overlay[data-show='1'] {
+  display: grid;
+}
+.srp-overlay[data-kind='err'] {
+  background: rgba(12, 8, 10, 0.78);
+  pointer-events: auto;
+}
+.srp-overlay p {
+  margin: 0;
+  max-width: 36rem;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.srp-spinner {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-top-color: #8b93ff;
+  margin: 0 auto 8px;
+  animation: srp-spin 0.8s linear infinite;
+}
+.srp-overlay[data-kind='err'] .srp-spinner {
+  display: none;
+}
+@keyframes srp-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.srp-hint {
+  margin: 0;
+  padding: 8px 14px calc(10px + env(safe-area-inset-bottom, 0px));
+  font-size: 11.5px;
+  color: var(--sr-ink-3);
+  border-top: 1px solid var(--sr-line);
+}
+
+@media (max-width: 720px), (pointer: coarse) {
+  .srp-btn,
+  .srp-quality select {
+    min-height: 44px;
+  }
+  .srp-headtxt h1 {
+    max-width: 42vw;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .srp-spinner {
+    animation: none;
+    border-top-color: #8b93ff;
+  }
+}

@@ -37,7 +37,9 @@ try {
   const api = util.api();
   const TAB_PREFIX = 'srad:tab:';
   const PARTY_PREFIX = 'srad:party:';
+  const PLAY_PREFIX = 'srad:play:';
   const HISTORY_KEY = 'srad:history';
+  const playTabs = new Map();
   const t = (k, v) => SR.i18n.t(k, v);
 
   let settings = Object.assign({}, SR.defaults);
@@ -317,7 +319,11 @@ try {
   async function loadRemote(packFromStorage) {
     try {
       const stored = packFromStorage || (await api.storage.local.get([RULES_KEY, PATCH_KEY]));
-      if (stored[RULES_KEY] && stored[RULES_KEY].pack) SR.updater.applyRemote(stored[RULES_KEY].pack, null);
+      if (stored[RULES_KEY] && stored[RULES_KEY].pack) {
+        // the patch is signature-verified at fetch time; applyRemote re-checks the
+        // autoPatch opt-in and size cap before running it in this worker too.
+        SR.updater.applyRemote(stored[RULES_KEY].pack, stored[PATCH_KEY] || null, settings);
+      }
       return stored;
     } catch (_) {
       return {};
@@ -510,17 +516,49 @@ try {
 
   function shorten(s, n) {
     s = String(s || '');
-    return s.length > (n || 42) ? s.slice(0, (n || 42) - 1) + '…' : s;
+    return s.length > (n || 42) ? s.slice(0, (n || 42) - 1) + '...' : s;
   }
 
   /* ================================================================== *
    * WatchParty (PART 3)
    * ================================================================== */
+  // /create?video= auto-creates the room server-side and redirects into it.
+  function watchPartyCreateUrl(mediaUrl) {
+    return 'https://www.watchparty.me/create?video=' + encodeURIComponent(mediaUrl);
+  }
+
+  // WatchParty's direct-URL mode only plays a file it can fetch as media
+  // (.m3u8/.mpd/.mp4/.webm/...). A resolver/API link such as
+  // "d.shows.st/api?d=...." returns JSON/an HTML page, so WatchParty shows
+  // "it doesn't look like this is a media file". Pick a truly playable item:
+  // prefer a media-extension direct manifest/file and never send an API link.
+  function playableUrlFrom(item) {
+    if (!item || !item.url || item.isAd) return null;
+    return util.watchPartyPlayable(item.url, item.category) ? item.url : null;
+  }
+  function pickPlayable(st, itemId) {
+    const first = itemId && st.store.byId.get(itemId);
+    const direct = playableUrlFrom(first);
+    if (direct) return { url: direct, item: first };
+    // fall back to the best detected stream that is genuinely playable
+    const items = st.store.view ? st.store.view().items : [...st.store.byId.values()];
+    const weights = (SR.rules && SR.rules.CATEGORY_WEIGHT) || { mp4: 100, hls: 95, dash: 90, webm: 85, other: 70 };
+    const scored = items
+      .map((it) => ({ it, u: playableUrlFrom(it) }))
+      .filter((x) => x.u)
+      .sort((a, b) => (weights[b.it.category] || 0) - (weights[a.it.category] || 0) || (b.it.size || 0) - (a.it.size || 0));
+    return scored.length ? { url: scored[0].u, item: scored[0].it } : { url: null, item: first || null };
+  }
+
   async function launchWatchParty(st, itemId) {
-    const media = (itemId && st.store.byId.get(itemId)) || st.store.best();
-    const url = media && media.url;
-    if (!url) return { ok: false, reason: t('panel.empty') };
-    if (media.category === 'blob') return { ok: false, reason: t('label.mseHint') };
+    const picked = pickPlayable(st, itemId);
+    const media = picked.item;
+    const url = picked.url;
+    if (!url) {
+      // No direct-playable stream found. A resolver/API link (or blob/segments)
+      // cannot be used by WatchParty direct mode; VBrowser can open the page.
+      return { ok: false, reason: t('watchparty.needDirect'), hint: 'vbrowser' };
+    }
     const ti = st.title || {};
     const roomName = String(
       ti.title ? ti.title + (ti.year ? ' (' + ti.year + ')' : '') + (ti.episode ? ' S' + (ti.season || '01') + 'E' + ti.episode : '') : ti.raw || util.domain(st.url) || 'Stream Radar room'
@@ -536,20 +574,160 @@ try {
       autoJoin: settings.watchpartyAutoJoin !== false,
       createdAt: Date.now(),
     };
-    // WatchParty exposes no public room-creation REST API (only `watchNow?url=`
-    // and the Discord bot's `/watch video <url>`), so we hand over through the
-    // supported URL param and let the watchparty helper fill the room form.
-    const target = 'https://www.watchparty.me/watchNow?url=' + encodeURIComponent(url) + '&name=' + encodeURIComponent(roomName);
+    // WatchParty's /create?video=<url> route auto-creates a room and loads the
+    // video (it POSTs /createRoom then redirects to /watch<room>), exactly like
+    // the "Watch Party" button on rivestream etc. That is strictly better than
+    // /watchNow?url= which only pre-fills a form, so we open /create and keep the
+    // payload for the on-site adapter (user name + subtitle attach).
+    const target = watchPartyCreateUrl(url);
     const tab = await api.tabs.create({ url: target, active: true }).catch(async () => await api.tabs.create({ url: target }));
     if (tab && tab.id > 0) await api.storage.local.set({ [PARTY_PREFIX + tab.id]: payload });
     return { ok: true, tabId: tab && tab.id, payload: payload };
   }
 
   /* ================================================================== *
+   * Local cinema player
+   *
+   * WatchParty fetches from watchparty.me, so CDNs that require the original
+   * page Referer (the ones IDM still downloads) refuse to play. The extension
+   * player is an extension page: host_permissions bypass CORS, and we attach
+   * the page Referer on every playlist/segment fetch.
+   * ================================================================== */
+  function pageReferer(st, media) {
+    const flags = (media && media.flags) || {};
+    const raw = media && media.frameUrl ? media.frameUrl : flags.initiator || st.url || '';
+    try {
+      const u = new URL(raw);
+      if (/^https?:$/i.test(u.protocol)) return u.origin + '/';
+    } catch (_) {}
+    try {
+      if (st.url) return new URL(st.url).origin + '/';
+    } catch (_) {}
+    return raw || '';
+  }
+
+  function buildPlaySession(st, media, urlOverride) {
+    const url = urlOverride || (media && media.url) || '';
+    const referer = pageReferer(st, media);
+    let origin = '';
+    try {
+      origin = referer ? new URL(referer).origin : util.origin(st.url || '');
+    } catch (_) {
+      origin = util.origin(st.url || '');
+    }
+    return {
+      url: url,
+      category: (media && media.category) || '',
+      quality: (media && media.quality) || '',
+      host: (media && media.host) || util.host(url),
+      name: (media && media.name) || '',
+      mime: (media && media.mime) || '',
+      drm: (media && media.drm) || st.drm || null,
+      aes: (media && media.aes) || '',
+      variants: (media && media.variants) || null,
+      title: st.title || null,
+      pageUrl: st.url || '',
+      referer: referer,
+      origin: origin,
+      subtitle: st.pendingSub ? { vtt: st.pendingSub.vtt, name: st.pendingSub.name } : null,
+      theme: settings.theme || 'dark',
+      lang: settings.lang && settings.lang !== 'auto' ? settings.lang : SR.i18n.get(),
+      createdAt: Date.now(),
+    };
+  }
+
+  async function installRefererRule(tabId, referer, origin) {
+    const dnr = api.declarativeNetRequest;
+    if (!dnr || !dnr.updateSessionRules) return false;
+    const id = 9100 + (Number(tabId) % 800);
+    const requestHeaders = [];
+    if (referer) requestHeaders.push({ header: 'Referer', operation: 'set', value: referer });
+    if (origin) requestHeaders.push({ header: 'Origin', operation: 'set', value: origin });
+    if (!requestHeaders.length) return false;
+    try {
+      await dnr.updateSessionRules({
+        removeRuleIds: [id],
+        addRules: [
+          {
+            id: id,
+            priority: 1,
+            action: { type: 'modifyHeaders', requestHeaders: requestHeaders },
+            condition: {
+              tabIds: [tabId],
+              resourceTypes: ['media', 'xmlhttprequest', 'other', 'image'],
+            },
+          },
+        ],
+      });
+      return true;
+    } catch (e) {
+      log('dnr rule failed', String((e && e.message) || e));
+      return false;
+    }
+  }
+
+  async function dropRefererRule(tabId) {
+    const dnr = api.declarativeNetRequest;
+    if (!dnr || !dnr.updateSessionRules) return;
+    const id = 9100 + (Number(tabId) % 800);
+    try {
+      await dnr.updateSessionRules({ removeRuleIds: [id] });
+    } catch (_) {}
+  }
+
+  async function launchPlayer(st, itemId, urlOverride) {
+    const picked = pickPlayable(st, itemId);
+    const media = picked.item;
+    const url = urlOverride || picked.url;
+    if (!url) return { ok: false, reason: t('player.needDirect') };
+    if (media && media.drm) return { ok: false, reason: t('player.drm') };
+    const sid = util.uuid();
+    const session = buildPlaySession(st, media, url);
+    await api.storage.local.set({ [PLAY_PREFIX + sid]: session });
+    const target = api.runtime.getURL('player/player.html?sid=' + encodeURIComponent(sid));
+    const tab = await api.tabs.create({ url: target, active: true });
+    if (tab && tab.id > 0) {
+      playTabs.set(tab.id, sid);
+      await installRefererRule(tab.id, session.referer, session.origin);
+    }
+    return { ok: true, tabId: tab && tab.id, sid: sid, session: session };
+  }
+
+  async function playerFetch(sid, url, responseType, range) {
+    if (!sid || !url || !/^https?:/i.test(url)) return { ok: false, reason: 'bad url', status: 0 };
+    const stored = await api.storage.local.get(PLAY_PREFIX + sid);
+    const session = stored[PLAY_PREFIX + sid];
+    if (!session) return { ok: false, reason: 'session expired', status: 0 };
+    const headers = {};
+    if (session.referer) headers.Referer = session.referer;
+    if (session.origin) headers.Origin = session.origin;
+    if (range && range.start != null && range.end != null) headers.Range = 'bytes=' + range.start + '-' + range.end;
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), responseType === 'arraybuffer' ? 25000 : 15000);
+    try {
+      const res = await util.fetchImpl(url, { headers: headers, credentials: 'include', redirect: 'follow', signal: ctrl.signal });
+      const status = res.status || 0;
+      if (!res.ok && status >= 400) return { ok: false, reason: 'HTTP ' + status, status: status };
+      const mime = (res.headers && res.headers.get && res.headers.get('content-type')) || '';
+      if (responseType === 'arraybuffer') {
+        const data = await res.arrayBuffer();
+        return { ok: true, status: status || 200, mime: mime, data: data };
+      }
+      let text = await res.text();
+      if (text.length > 2_000_000) text = text.slice(0, 2_000_000);
+      return { ok: true, status: status || 200, mime: mime, data: text };
+    } catch (e) {
+      return { ok: false, reason: String((e && e.message) || e), status: 0 };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  /* ================================================================== *
    * actions (popup + panel + options all land here)
    * ================================================================== */
   async function handleAction(msg, sender) {
-    const tabId = sender.tab && sender.tab.id != null ? sender.tab.id : msg.tabId;
+    const tabId = sender.tab && sender.tab.id != null ? sender.tab.id : (msg.tabId != null ? msg.tabId : (msg.payload && msg.payload.tabId != null ? msg.payload.tabId : undefined));
     const st = await restore(tabId);
     if (!st) return { ok: false, reason: 'no tab' };
     switch (msg.name) {
@@ -586,8 +764,16 @@ try {
         if (!v) return { ok: false, reason: 'no such variant' };
         return { ok: true, id: await api.downloads.download({ url: v.uri, filename: downloadName(it, st), saveAs: false, conflictAction: 'uniquify' }) };
       }
-      case 'watchparty':
-        return await launchWatchParty(st, msg.id);
+      case 'play': {
+        const res = await launchPlayer(st, msg.id);
+        if (!res.ok) toastTo(tabId, res.reason || t('player.needDirect'), 'warn');
+        return res;
+      }
+      case 'watchparty': {
+        const res = await launchWatchParty(st, msg.id);
+        if (!res.ok) toastTo(tabId, res.reason || t('panel.empty'), 'warn');
+        return res;
+      }
       case 'subs-search':
         scheduleSubSearch(tabId, true);
         return { ok: true };
@@ -743,7 +929,7 @@ try {
     api.runtime.onMessage.addListener((msg, sender, respond) => {
       if (!msg || !msg.type) return;
       (async () => {
-        const tabId = sender.tab && sender.tab.id != null ? sender.tab.id : msg.tabId;
+        const tabId = sender.tab && sender.tab.id != null ? sender.tab.id : (msg.tabId != null ? msg.tabId : (msg.payload && msg.payload.tabId != null ? msg.payload.tabId : undefined));
         const st = getTab(tabId);
         switch (msg.type) {
           case 'page-event':
@@ -804,6 +990,13 @@ try {
           }
           case 'wake':
             return { ok: true };
+          case 'get-live': {
+            // Hand the already-verified pack (and, only when the user opted into
+            // signed code patches, the patch) to extension pages (popup/options)
+            // so live fixes can reach the whole UI, not just content scripts.
+            const [pack, patch] = await Promise.all([storedPack(), storedPatch()]);
+            return { ok: true, pack: pack || null, patch: settings.autoPatch ? patch || null : null, settings: settings };
+          }
           case 'action':
             // canonical: {type:'action', payload:{name,…}}; also accept the flat
             // shape so an old content script in a stale tab never breaks silently.
@@ -817,6 +1010,29 @@ try {
               return { ok: true, payload: payload };
             }
             return { ok: false };
+          }
+          case 'get-play-session': {
+            const sid = msg.sid || (msg.payload && msg.payload.sid);
+            if (!sid) return { ok: false };
+            const stored = await api.storage.local.get(PLAY_PREFIX + sid);
+            const session = stored[PLAY_PREFIX + sid];
+            if (session && Date.now() - (session.createdAt || 0) < 6 * 60 * 60 * 1000) {
+              return { ok: true, session: session };
+            }
+            return { ok: false };
+          }
+          case 'player-bind': {
+            const sid = msg.sid;
+            if (tabId != null && sid) {
+              playTabs.set(tabId, sid);
+              const stored = await api.storage.local.get(PLAY_PREFIX + sid);
+              const session = stored[PLAY_PREFIX + sid];
+              if (session) await installRefererRule(tabId, session.referer, session.origin);
+            }
+            return { ok: true };
+          }
+          case 'player-fetch': {
+            return await playerFetch(msg.sid, msg.url, msg.responseType, msg.range);
           }
           case 'party-status':
             toastTo(msg.tabId != null ? msg.tabId : tabId, msg.text, msg.kind || 'info');
@@ -853,6 +1069,7 @@ try {
     try {
       api.contextMenus.removeAll(() => {
         api.contextMenus.create({ id: 'sr-root', title: 'Stream Radar', contexts: ['page', 'video', 'frame', 'link', 'selection'] });
+        api.contextMenus.create({ id: 'sr-play', parentId: 'sr-root', title: t('action.play'), contexts: ['page', 'video', 'frame', 'link'] });
         api.contextMenus.create({ id: 'sr-watchparty', parentId: 'sr-root', title: t('action.watchparty'), contexts: ['page', 'video', 'frame', 'link'] });
         api.contextMenus.create({ id: 'sr-copy', parentId: 'sr-root', title: t('action.copy'), contexts: ['video', 'link', 'image'] });
         api.contextMenus.create({ id: 'sr-download', parentId: 'sr-root', title: t('action.download'), contexts: ['video', 'link'] });
@@ -893,6 +1110,12 @@ try {
         tabs.delete(id);
         subTimers.delete(id);
         api.storage.local.remove(TAB_PREFIX + id);
+        const sid = playTabs.get(id);
+        if (sid) {
+          playTabs.delete(id);
+          api.storage.local.remove(PLAY_PREFIX + sid);
+          dropRefererRule(id);
+        }
       });
     }
     if (api.tabs.onUpdated) {
@@ -937,7 +1160,7 @@ try {
         const url = info.srcUrl || info.linkUrl || '';
         if (info.menuItemId === 'sr-watchparty') {
           const best = st.store.best() || {};
-          if (url) await api.storage.local.set({ [PARTY_PREFIX + (await api.tabs.create({ url: 'https://www.watchparty.me/watchNow?url=' + encodeURIComponent(url) })).id]: { mediaUrl: url, roomName: (st.title && st.title.title) || 'Stream Radar room', autoJoin: true, createdAt: Date.now() } });
+          if (url) await api.storage.local.set({ [PARTY_PREFIX + (await api.tabs.create({ url: watchPartyCreateUrl(url) })).id]: { mediaUrl: url, roomName: (st.title && st.title.title) || 'Stream Radar room', autoJoin: true, createdAt: Date.now() } });
           else await launchWatchParty(st, best.id);
         } else if (info.menuItemId === 'sr-copy' && url) {
           api.tabs.sendMessage(tab.id, { type: 'copy-clipboard', text: url }).catch(() => {});
@@ -976,7 +1199,7 @@ try {
             const open = new Set((await api.tabs.query({})).map((x) => x.id));
             const all = await api.storage.local.get(null);
             for (const k of Object.keys(all)) {
-              if (k.indexOf(TAB_PREFIX) !== 0 && k.indexOf(PARTY_PREFIX) !== 0) continue;
+              if (k.indexOf(TAB_PREFIX) !== 0 && k.indexOf(PARTY_PREFIX) !== 0 && k.indexOf(PLAY_PREFIX) !== 0) continue;
               const id = Number(k.split(':').pop());
               const rec = all[k] || {};
               const age = now - (rec.savedAt || rec.createdAt || 0);

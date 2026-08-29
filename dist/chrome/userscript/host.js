@@ -341,6 +341,92 @@
   }
 
   /* ------------------------------------------------------------------ *
+   * Local player overlay — same-page <video> so the browser sends this
+   * page as Referer (the same trick IDM uses). HLS uses the site's own
+   * Hls.js when present; otherwise native src (Safari / some Android).
+   * ------------------------------------------------------------------ */
+  function playLocal(item) {
+    const url = item && item.url;
+    if (!url) return toast(t('player.noUrl'), 'warn');
+    if (item.category === 'blob') return toast(t('player.blob'), 'warn');
+    if (item.drm) return toast(t('player.drm'), 'warn');
+    const prev = doc.getElementById('srad-player-overlay');
+    if (prev) prev.remove();
+    const wrap = doc.createElement('div');
+    wrap.id = 'srad-player-overlay';
+    wrap.setAttribute('role', 'dialog');
+    wrap.setAttribute('aria-label', t('player.title'));
+    wrap.style.cssText =
+      'position:fixed;inset:0;z-index:2147483000;display:flex;flex-direction:column;background:#07080d;color:#e9edf7;font:14px/1.4 system-ui,sans-serif';
+    const title = (state.title && state.title.title) || item.name || t('player.title');
+    wrap.innerHTML =
+      '<div style="display:flex;align-items:center;gap:12px;padding:10px 14px;background:#10131c">' +
+      '<b style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +
+      esc(title) +
+      '</b><button type="button" data-srad-close="1" style="min-height:40px;padding:0 14px;border:0;border-radius:10px;background:#6d5efc;color:#fff;font-weight:700;cursor:pointer">' +
+      esc(t('common.close')) +
+      '</button></div>';
+    const video = doc.createElement('video');
+    video.controls = true;
+    video.autoplay = true;
+    video.playsInline = true;
+    video.setAttribute('playsinline', '');
+    video.style.cssText = 'flex:1 1 auto;width:100%;height:auto;min-height:0;background:#000;object-fit:contain';
+    wrap.appendChild(video);
+    if (pendingSub && pendingSub.vtt) {
+      try {
+        const track = doc.createElement('track');
+        track.kind = 'subtitles';
+        track.srclang = 'id';
+        track.label = 'Indonesian';
+        track.default = true;
+        track.src = URL.createObjectURL(new Blob([pendingSub.vtt], { type: 'text/vtt' }));
+        video.appendChild(track);
+      } catch (_) {}
+    }
+    function close() {
+      try {
+        video.pause();
+      } catch (_) {}
+      wrap.remove();
+    }
+    wrap.addEventListener('click', (e) => {
+      if (e.target && e.target.getAttribute && e.target.getAttribute('data-srad-close')) close();
+    });
+    doc.addEventListener('keydown', function onEsc(e) {
+      if (e.key === 'Escape') {
+        close();
+        doc.removeEventListener('keydown', onEsc);
+      }
+    });
+    (doc.body || doc.documentElement).appendChild(wrap);
+    const Hls = W.Hls || root.Hls;
+    const wantHls = item.category === 'hls' || /\.m3u8(\?|#|$)/i.test(url);
+    if (wantHls && Hls && Hls.isSupported && Hls.isSupported()) {
+      try {
+        const hls = new Hls({ enableWorker: false });
+        hls.loadSource(url);
+        hls.attachMedia(video);
+        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+          video.play().catch(() => {});
+        });
+        hls.on(Hls.Events.ERROR, (_ev, data) => {
+          if (data && data.fatal) toast(t('player.error', { msg: String(data.details || 'hls') }), 'err');
+        });
+      } catch (e) {
+        toast(t('player.error', { msg: String((e && e.message) || e) }), 'err');
+      }
+    } else {
+      video.src = url;
+      video.play().catch(() => {});
+      video.addEventListener('error', () => {
+        toast(t('player.error', { msg: wantHls ? 'HLS' : 'media' }), 'err');
+      });
+    }
+    toast(t('toast.player'), 'ok');
+  }
+
+  /* ------------------------------------------------------------------ *
    * UI
    * ------------------------------------------------------------------ */
   function toast(text, kind, action) {
