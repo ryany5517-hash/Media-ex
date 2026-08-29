@@ -514,4 +514,53 @@ test('F14 play: resolver API (d.shows.st/api?d=) is fetched with page Referer an
   h.dom.window.close();
 });
 
+test('F15 play: page Referer 403 then retry with stream origin like IDM', async () => {
+  const API = 'https://d.shows.st/api?d=TsjRBDQAZCnpz8n3Nnaf0jZHBf8D7BI4token';
+  const PLAYLIST = '#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=2200000,RESOLUTION=1280x720\n720/index.m3u8\n';
+  const calls = [];
+  const net = async (url, init) => {
+    const u = String(url);
+    const headers = (init && init.headers) || {};
+    const ref = String(headers.Referer || headers.referer || '');
+    calls.push([u, ref]);
+    net.calls = calls;
+    if (u.includes('d.shows.st/api')) {
+      if (!/shows\.st/i.test(ref)) throw new Error('HTTP 403 for ' + u);
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: (k) => (String(k).toLowerCase() === 'content-type' ? 'application/vnd.apple.mpegurl' : null) },
+        async text() {
+          return PLAYLIST;
+        },
+        async arrayBuffer() {
+          return new TextEncoder().encode(PLAYLIST).buffer;
+        },
+      };
+    }
+    throw new Error('net stub: unexpected ' + u);
+  };
+  net.calls = calls;
+  const h = await boot({ net, settings: { autoSubtitle: false, lastUpdateCheck: Date.now() } });
+  h.hub.fireWebRequest({
+    url: API,
+    type: 'xmlhttprequest',
+    statusCode: 200,
+    initiator: 'https://fzmovies.net',
+    responseHeaders: h.hub.header({ 'content-type': 'application/vnd.apple.mpegurl', 'content-length': '240' }),
+  });
+  await until(h, () => (stateOf(h).items || []).some((i) => i.url === API), 4000);
+  const item = (h.hub.lastBroadcast.items || []).find((i) => i.url === API);
+  assert.ok(item, 'hls resolver row present');
+  const res = await h.hub.sendFromContent({ type: 'action', payload: { name: 'play', id: item.id, tabId: 1 } });
+  assert.equal(res.ok, true, 'play launched: ' + JSON.stringify(res));
+  const stored = h.hub.storage['srad:play:' + res.sid];
+  assert.ok(stored, 'play session persisted');
+  assert.equal(stored.url, API);
+  assert.equal(stored.category, 'hls');
+  assert.match(stored.referer, /shows\.st/, 'Referer fell through to the stream host after the page 403: ' + stored.referer);
+  assert.ok(calls.some(([u, r]) => u.includes('d.shows.st/api') && /shows\.st/i.test(r)), 'worker retried with stream-origin Referer');
+  h.dom.window.close();
+});
+
 const readModule = (rel) => readSrc(rel);

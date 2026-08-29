@@ -117,7 +117,12 @@ try {
     const run = util.debounce(async () => {
       manifestQueue.delete(item.key);
       try {
-        const text = await util.fetchText(item.url, { timeoutMs: 9000, maxBytes: 700000 });
+        const flags = item.flags || {};
+        const headers = {};
+        if (flags.requestReferer) headers.Referer = flags.requestReferer;
+        else if (flags.initiator) headers.Referer = asReferer(flags.initiator) || flags.initiator;
+        if (flags.requestOrigin) headers.Origin = flags.requestOrigin;
+        const text = await util.fetchText(item.url, { timeoutMs: 9000, maxBytes: 700000, headers: headers, credentials: 'include' });
         if (!text) return;
         st.store.parseManifest(item, text);
         item.needsManifest = false;
@@ -136,6 +141,8 @@ try {
    * LAYER 1b — network observer
    * ================================================================== */
   const REPORTED = new Map();
+  /** Last Referer/Origin the page actually sent for a URL (what IDM copies). */
+  const REQUEST_HDRS = new Map();
 
   function shouldTrack(url, type) {
     if (!url) return false;
@@ -223,7 +230,11 @@ try {
             attachment: /attachment/i.test(disposition),
             fileName: (disposition.match(/filename\*?=(?:UTF-8'')?"?([^";]+)/i) || [])[1] || '',
             fromCache: !!details.fromCache,
-            initiator: details.initiator || '',
+            initiator: details.initiator || details.originUrl || '',
+            documentUrl: details.documentUrl || details.originUrl || '',
+            originUrl: details.originUrl || details.initiator || '',
+            requestReferer: (REQUEST_HDRS.get(url) || {}).referer || '',
+            requestOrigin: (REQUEST_HDRS.get(url) || {}).origin || '',
             frameId: details.frameId,
           },
         },
@@ -234,11 +245,41 @@ try {
     }
   }
 
+  function rememberRequestHeaders(details) {
+    try {
+      if (!settings.enabled || !settings.layerNetwork) return;
+      const tabId = details.tabId;
+      if (tabId == null || tabId < 0) return;
+      const url = details.url;
+      if (!url) return;
+      const referer = headerVal(details.requestHeaders, 'referer');
+      const origin = headerVal(details.requestHeaders, 'origin');
+      if (!referer && !origin) return;
+      REQUEST_HDRS.set(url, { referer: referer, origin: origin, at: Date.now() });
+      if (REQUEST_HDRS.size > 2000) {
+        const now = Date.now();
+        for (const [k, v] of REQUEST_HDRS) if (now - (v.at || 0) > 180000) REQUEST_HDRS.delete(k);
+      }
+    } catch (_) {}
+  }
+
   if (api.webRequest && api.webRequest.onHeadersReceived && api.webRequest.onHeadersReceived.addListener) {
     try {
       api.webRequest.onHeadersReceived.addListener(onHeadersReceived, { urls: ['<all_urls>'] }, ['responseHeaders']);
     } catch (e) {
       console.warn('[StreamRadar] could not install the webRequest listener', e);
+    }
+  }
+  if (api.webRequest && api.webRequest.onBeforeSendHeaders && api.webRequest.onBeforeSendHeaders.addListener) {
+    const wrFilter = { urls: ['<all_urls>'] };
+    try {
+      api.webRequest.onBeforeSendHeaders.addListener(rememberRequestHeaders, wrFilter, ['requestHeaders', 'extraHeaders']);
+    } catch (_) {
+      try {
+        api.webRequest.onBeforeSendHeaders.addListener(rememberRequestHeaders, wrFilter, ['requestHeaders']);
+      } catch (e) {
+        log('onBeforeSendHeaders failed', String((e && e.message) || e));
+      }
     }
   }
 
@@ -593,17 +634,46 @@ try {
    * player is an extension page: host_permissions bypass CORS, and we attach
    * the page Referer on every playlist/segment fetch.
    * ================================================================== */
-  function pageReferer(st, media) {
-    const flags = (media && media.flags) || {};
-    const raw = media && media.frameUrl ? media.frameUrl : flags.initiator || st.url || '';
+  function asReferer(raw) {
     try {
       const u = new URL(raw);
       if (/^https?:$/i.test(u.protocol)) return u.origin + '/';
     } catch (_) {}
+    return '';
+  }
+
+  function originOf(raw) {
     try {
-      if (st.url) return new URL(st.url).origin + '/';
-    } catch (_) {}
-    return raw || '';
+      return new URL(raw).origin;
+    } catch (_) {
+      return '';
+    }
+  }
+
+  function refererCandidates(st, media) {
+    const flags = (media && media.flags) || {};
+    const live = (media && media.url && REQUEST_HDRS.get(media.url)) || {};
+    const out = [];
+    const push = (raw, keepPath) => {
+      if (!raw || typeof raw !== 'string') return;
+      if (!/^https?:/i.test(raw)) return;
+      const v = keepPath ? raw : asReferer(raw) || raw;
+      if (v && out.indexOf(v) < 0) out.push(v);
+    };
+    // Exact Referer the embed sent (IDM copies this). Prefer it over the tab URL.
+    push(flags.requestReferer || live.referer, true);
+    push(media && media.frameUrl, true);
+    push(flags.documentUrl, true);
+    push(flags.originUrl);
+    push(flags.initiator);
+    (st.frames || []).forEach((f) => push(f.url));
+    push(st.url);
+    push(media && media.url);
+    return out;
+  }
+
+  function pageReferer(st, media) {
+    return refererCandidates(st, media)[0] || '';
   }
 
   function buildPlaySession(st, media, urlOverride) {
@@ -693,30 +763,54 @@ try {
     return categoryFromUrl(url, fallback);
   }
 
+  function looksLikeHtml(text) {
+    const s = String(text || '').slice(0, 240);
+    return /<!DOCTYPE|<html[\s>]|<head[\s>]/i.test(s);
+  }
+
   async function resolvePlaySource(st, media, url, hop) {
-    const fallback = { url: url, category: (media && media.category) || categoryFromUrl(url, '') };
+    const refs = refererCandidates(st, media);
+    const live = (media && media.url && REQUEST_HDRS.get(media.url)) || {};
+    const flags = (media && media.flags) || {};
+    const fallback = {
+      url: url,
+      category: (media && media.category) || categoryFromUrl(url, ''),
+      referer: refs[0] || '',
+      origin: flags.requestOrigin || live.origin || originOf(refs[0]) || util.origin(url || ''),
+      referers: refs,
+    };
     if (!url || (hop || 0) > 2) return fallback;
     if (/\.(m3u8|mpd|mp4|webm|mkv|m4v|mov|m3u)(\?|#|$)/i.test(url)) {
-      return { url: url, category: sniffCategory('', '', url, fallback.category) };
+      return Object.assign({}, fallback, { url: url, category: sniffCategory('', '', url, fallback.category) });
     }
-    const referer = pageReferer(st, media);
-    let origin = '';
-    try {
-      origin = referer ? new URL(referer).origin : util.origin(st.url || '');
-    } catch (_) {}
-    const headers = {};
-    if (referer) headers.Referer = referer;
-    if (origin) headers.Origin = origin;
-    try {
-      const text = await util.fetchText(url, { timeoutMs: 12000, maxBytes: 800000, headers: headers, credentials: 'include' });
-      const extracted = util.extractMediaUrl(util.safeJSON(text, null) || text);
-      if (extracted && extracted !== url) return resolvePlaySource(st, media, extracted, (hop || 0) + 1);
-      if (text && /#EXTM3U/.test(String(text).slice(0, 64))) return { url: url, category: 'hls' };
-      if (text && /<MPD[\s>]/i.test(String(text).slice(0, 400))) return { url: url, category: 'dash' };
-      return { url: url, category: sniffCategory('', text, url, fallback.category || 'hls') };
-    } catch (_) {
-      return { url: url, category: fallback.category || 'hls' };
+    const tryRefs = refs.length ? refs : [''];
+    for (let i = 0; i < tryRefs.length; i++) {
+      const referer = tryRefs[i];
+      const origin = originOf(referer) || util.origin(url);
+      const headers = {};
+      if (referer) headers.Referer = referer;
+      if (origin) headers.Origin = origin;
+      try {
+        const text = await util.fetchText(url, { timeoutMs: 10000, maxBytes: 800000, headers: headers, credentials: 'include' });
+        if (looksLikeHtml(text)) continue;
+        const extracted = util.extractMediaUrl(util.safeJSON(text, null) || text);
+        if (extracted && extracted !== url) {
+          const inner = await resolvePlaySource(st, media, extracted, (hop || 0) + 1);
+          return {
+            url: inner.url,
+            category: inner.category,
+            referer: referer || inner.referer,
+            origin: origin || inner.origin,
+            referers: refs,
+          };
+        }
+        if (text && /#EXTM3U/.test(String(text).slice(0, 64))) return { url: url, category: 'hls', referer: referer, origin: origin, referers: refs };
+        if (text && /<MPD[\s>]/i.test(String(text).slice(0, 400))) return { url: url, category: 'dash', referer: referer, origin: origin, referers: refs };
+        if (i < tryRefs.length - 1) continue;
+        return { url: url, category: sniffCategory('', text, url, fallback.category || 'hls'), referer: referer, origin: origin, referers: refs };
+      } catch (_) {}
     }
+    return fallback;
   }
 
   async function launchPlayer(st, itemId, urlOverride) {
@@ -731,6 +825,9 @@ try {
     const mediaForSession = Object.assign({}, media || {}, { url: url, category: resolved.category || (media && media.category) || '' });
     const sid = util.uuid();
     const session = buildPlaySession(st, mediaForSession, url);
+    if (resolved.referer) session.referer = resolved.referer;
+    if (resolved.origin) session.origin = resolved.origin;
+    if (resolved.referers && resolved.referers.length) session.referers = resolved.referers;
     await api.storage.local.set({ [PLAY_PREFIX + sid]: session });
     const target = api.runtime.getURL('player/player.html?sid=' + encodeURIComponent(sid));
     const tab = await api.tabs.create({ url: target, active: true });

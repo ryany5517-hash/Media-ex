@@ -100,7 +100,10 @@ export function makeHub() {
       onAlarm: { addListener: (cb) => hub.alarms.handlers.push(cb) },
     },
     windows: { async update() { return {}; }, async getCurrent() { return { id: 1 }; } },
-    webRequest: { onHeadersReceived: { addListener: (cb, filter) => hub.webRequest.listeners.push({ cb, filter }) } },
+    webRequest: {
+      onHeadersReceived: { addListener: (cb, filter) => hub.webRequest.listeners.push({ cb, filter }) },
+      onBeforeSendHeaders: { addListener: (cb, filter) => hub.webRequest.listeners.push({ cb, filter, kind: 'before' }) },
+    },
     tabs: {
       async query() {
         return [hub.contentTab];
