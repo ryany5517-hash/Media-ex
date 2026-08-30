@@ -1854,6 +1854,15 @@
       out.tmdbId = qOther[1];
       out.kind = out.kind || 'movie';
     }
+    const qBareId = s.match(/[?&#](?:id|mid|movie|film|media|video|tmdbid)\s*=\s*(\d{5,8})\b/i);
+    if (qBareId && !isNoiseId(qBareId[1]) && !out.tmdbId) {
+      out.tmdbId = qBareId[1];
+      out.kind = out.kind || 'movie';
+    }
+    if (qOther && !isNoiseId(qOther[1]) && !out.tmdbId) {
+      out.tmdbId = qOther[1];
+      out.kind = out.kind || 'movie';
+    }
     const tvPath = s.match(/\/(?:embed\/|player\/|play\/|watch\/|stream\/|nonton\/)?(?:tv|series|shows?|episode)\/(?:tmdb\/)?(\d{2,8})(?:\/|\.html?|$|\?|#|&)/i);
     if (tvPath && !isNoiseId(tvPath[1])) {
       out.tmdbId = out.tmdbId || tvPath[1];
@@ -1873,7 +1882,7 @@
       out.kind = /\/(?:tv|series|shows?)\//i.test(s) ? 'episode' : out.kind || 'movie';
     }
     // short media prefixes:  /film/1234  /detail/1234  /view/1234  /show/1234
-    const mediaPath = s.match(/\/(?:film|detail|view|show|videos?|media|episode|ep)\/(\d{2,8})(?:\/|\.html?|$|\?|#)/i);
+    const mediaPath = s.match(/\/(?:film|detail|view|show|videos?|media|episode|ep|title)\/(\d{2,8})(?:\/|\.html?|$|\?|#)/i);
     if (mediaPath && !isNoiseId(mediaPath[1]) && !out.tmdbId) {
       out.tmdbId = mediaPath[1];
       out.kind = /\/(?:episode|ep)\//i.test(s) ? 'episode' : out.kind || 'movie';
@@ -2279,7 +2288,8 @@
       'toast.newmedia': 'New {type} stream detected',
       'toast.subs': 'Subtitle found: {name}',
       'toast.subsSearching': 'Searching Indonesian subtitles...',
-      'toast.subsNoTitle': 'No title detected yet - play the video first, then retry.',
+      'toast.subsNoStream': 'No video stream detected yet - play the video first, then retry.',
+      'toast.subsNoTitle': 'Stream detected but the site exposes no movie title/ID - subtitles cannot be searched for this page.',
       'toast.subsNone': 'No subtitle found for {title}',
       'toast.copied': 'URL copied to clipboard',
       'toast.error': 'Error: {msg}',
@@ -2523,7 +2533,8 @@
       'toast.newmedia': 'Stream {type} baru terdeteksi',
       'toast.subs': 'Subtitle ditemukan: {name}',
       'toast.subsSearching': 'Mencari subtitle Indonesia...',
-      'toast.subsNoTitle': 'Judul film belum terdeteksi - putar dulu videonya, baru coba lagi.',
+      'toast.subsNoStream': 'Belum ada stream yang terdeteksi - putar dulu videonya, baru coba lagi.',
+      'toast.subsNoTitle': 'Stream terdeteksi tapi situs ini tidak menampilkan judul/ID film - subtitle tidak bisa dicari dari halaman ini.',
       'toast.subsNone': 'Subtitle tidak ditemukan untuk {title}',
       'toast.copied': 'URL disalin ke clipboard',
       'toast.error': 'Error: {msg}',

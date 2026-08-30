@@ -191,9 +191,11 @@
     $('#subsStatus').textContent = labels[sub.status] || sub.status;
     $('#subsStatus').setAttribute('data-s', sub.status);
     const pv = sub.providers || {};
-    $('#subsProviders').innerHTML = Object.keys(pv)
+    let pvHtml = Object.keys(pv)
       .map((k) => `<span class="pv" data-s="${esc(pv[k].status)}" title="${esc(pv[k].reason || '')}">${esc(pv[k].label || k)}: ${esc(pv[k].count != null ? pv[k].count : pv[k].status)}</span>`)
       .join('');
+    if (sub.error) pvHtml += `<span class="pv" data-s="err" title="${esc(sub.error)}">${esc(sub.error)}</span>`;
+    $('#subsProviders').innerHTML = pvHtml;
     $('#subsList').innerHTML = (sub.items || [])
       .slice(0, 5)
       .map(

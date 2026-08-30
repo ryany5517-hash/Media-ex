@@ -264,6 +264,10 @@ test('title.idsFromUrl: catalog ids on any watch-site path / query / embed', () 
   assert.equal(title.idsFromUrl('https://a2.shows.st/hls/10389/master.m3u8?token=9f2').tmdbId, '10389');
   assert.equal(title.idsFromUrl('https://cdn.x/dash/1396/manifest.mpd').tmdbId, '1396');
   assert.equal(title.idsFromUrl('https://x.cdn/player/10389/index.m3u8').tmdbId, '10389');
+  assert.equal(title.idsFromUrl('https://cdn.example/hls/tok123/master.m3u8?id=10389&token=9f2').tmdbId, '10389');
+  assert.equal(title.idsFromUrl('https://x.example/movie/watch?mid=13962').tmdbId, '13962');
+  assert.equal(title.idsFromUrl('https://x.example/title/10389').tmdbId, '10389');
+  assert.equal(title.idsFromUrl('https://x.example/watch?id=abc123').tmdbId || '', '');
   assert.equal(title.idsFromUrl('https://cdn.x/hls/1080/index.m3u8').tmdbId || '', '');
   assert.equal(title.idsFromUrl('https://cdn.x/dash/2160/manifest.mpd').tmdbId || '', '');
   assert.equal(title.namesMatch('The Eye', 'The Eye (2002)'), true);

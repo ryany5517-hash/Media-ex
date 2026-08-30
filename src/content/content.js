@@ -318,10 +318,11 @@
         toast(t('toast.subsSearching'), 'info');
         const info = state.title || {};
         const hasStream = (state.items || []).some((i) => i.url && !i.isAd);
-        // Only warn when there is truly nothing to work with: the background can
-        // still recover the id from a detected stream URL (/hls/10389/master.m3u8).
-        if (!info.title && !info.imdbId && !info.tmdbId && !info.urlTmdbId && !hasStream) {
-          toast(t('toast.subsNoTitle'), 'warn');
+        // Accurate feedback: warn only when there is truly nothing to work with.
+        // With a stream present the background can still recover the movie id
+        // from the stream URL (/hls/10389/master.m3u8), so no warning here.
+        if (!info.title && !info.imdbId && !info.tmdbId && !info.urlTmdbId) {
+          toast(hasStream ? t('toast.subsNoTitle') : t('toast.subsNoStream'), 'warn');
         }
         return void send('action', { name: 'subs-search' });
       }

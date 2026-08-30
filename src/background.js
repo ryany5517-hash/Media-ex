@@ -521,13 +521,16 @@ try {
       if (force) toastTo(tabId, reason, 'warn');
       return false;
     };
-    if (!st || !st.title) return blocked(t('toast.subsNoTitle'));
+    if (!st) return blocked(t('toast.subsNoTitle'));
     if (!force && !settings.autoSubtitle) return false;
-    // A usable title/id, OR a detected stream whose URL may carry the id
-    // (/hls/10389/master.m3u8) — runSubSearch recovers the id from the URL.
-    const hasTitleId = !!(st.title.title && !st.title.isJunk) || st.title.imdbId || st.title.tmdbId || st.title.urlTmdbId;
+    // A detected stream is enough to run: runSubSearch recovers the movie id
+    // from the stream URL (/hls/10389/master.m3u8) when the page exposes no
+    // title/id. st.title may be null/junk (content script not injected yet,
+    // SPA not hydrated) - that must NOT block the search.
     const hasStream = !!st.store.best();
-    if (!hasTitleId && !hasStream) return blocked(t('toast.subsNoTitle'));
+    const t0 = st.title || {};
+    const hasTitleId = (t0.title && !t0.isJunk) || t0.imdbId || t0.tmdbId || t0.urlTmdbId;
+    if (!hasTitleId && !hasStream) return blocked(t('toast.subsNoStream'));
     if (!force && st.sub && (st.sub.status === 'searching' || (st.sub.status === 'found' && Date.now() - st.sub.at < 600000))) return false;
     const prev = subTimers.get(tabId);
     if (prev) prev.cancel();
@@ -575,8 +578,10 @@ try {
     };
     if (!want.title && !want.imdbId && !want.tmdbId && !want.urlTmdbId) {
       // Nothing to search with (no title, no id, no id in the stream URL).
-      if (force) toastTo(tabId, t('toast.subsNoTitle'), 'warn');
-      st.sub = { status: 'none', items: st.sub.items || [], error: t('toast.subsNoTitle'), query: '', at: Date.now() };
+      const hasStreamNow = !!st.store.best();
+      const msg = hasStreamNow ? t('toast.subsNoTitle') : t('toast.subsNoStream');
+      if (force) toastTo(tabId, msg, 'warn');
+      st.sub = { status: 'none', items: st.sub.items || [], error: msg, query: '', at: Date.now() };
       broadcast(tabId, 'sub');
       return;
     }
@@ -1659,6 +1664,25 @@ try {
   /* ================================================================== *
    * actions (popup + panel + options all land here)
    * ================================================================== */
+  /** Re-inject the content script (and MAIN-world page hooks) into a tab that
+   *  was opened before the extension reloaded - without it the title is never
+   *  read and clicks can feel dead. Best-effort, never throws. */
+  async function ensureContentAlive(tabId) {
+    try {
+      await api.tabs.sendMessage(tabId, { type: 'ping' });
+      return true;
+    } catch (_) {}
+    const iso = ['shared/util.js', 'shared/rules.js', 'shared/title-cleaner.js', 'shared/i18n.js', 'shared/icons.js', 'shared/updater.js', 'shared/dom-scanner.js', 'vendor/motion.min.js', 'content/ui-styles.js', 'content/ui.js', 'content/content.js'];
+    const main = ['shared/util.js', 'shared/rules.js', 'shared/title-cleaner.js', 'page/inject.js'];
+    try {
+      await api.scripting.executeScript({ target: { tabId }, files: iso });
+    } catch (_) {}
+    try {
+      await api.scripting.executeScript({ target: { tabId }, files: main, world: 'MAIN' });
+    } catch (_) {}
+    return true;
+  }
+
   async function handleAction(msg, sender) {
     const tabId = sender.tab && sender.tab.id != null ? sender.tab.id : (msg.tabId != null ? msg.tabId : (msg.payload && msg.payload.tabId != null ? msg.payload.tabId : undefined));
     const st = await restore(tabId);
@@ -1712,8 +1736,12 @@ try {
         // The panel/popup rows send 'subs'; the dedicated retry buttons send
         // 'subs-search'. Both mean "search subtitles for the current title".
         {
+          // A tab that was open before the extension was reloaded has no content
+          // script anymore (title detection dead). Re-inject it so the title can
+          // be read; the search itself also recovers ids from stream URLs.
+          await ensureContentAlive(tabId);
           const ok = scheduleSubSearch(tabId, true);
-          return ok ? { ok: true } : { ok: false, reason: t('toast.subsNoTitle') };
+          return ok ? { ok: true } : { ok: false, reason: t('toast.subsNoStream') };
         }
       case 'sub-attach': {
         if (!st.pendingSub) await runSubSearch(tabId);

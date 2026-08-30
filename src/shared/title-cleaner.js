@@ -587,6 +587,15 @@
       out.tmdbId = qOther[1];
       out.kind = out.kind || 'movie';
     }
+    const qBareId = s.match(/[?&#](?:id|mid|movie|film|media|video|tmdbid)\s*=\s*(\d{5,8})\b/i);
+    if (qBareId && !isNoiseId(qBareId[1]) && !out.tmdbId) {
+      out.tmdbId = qBareId[1];
+      out.kind = out.kind || 'movie';
+    }
+    if (qOther && !isNoiseId(qOther[1]) && !out.tmdbId) {
+      out.tmdbId = qOther[1];
+      out.kind = out.kind || 'movie';
+    }
     const tvPath = s.match(/\/(?:embed\/|player\/|play\/|watch\/|stream\/|nonton\/)?(?:tv|series|shows?|episode)\/(?:tmdb\/)?(\d{2,8})(?:\/|\.html?|$|\?|#|&)/i);
     if (tvPath && !isNoiseId(tvPath[1])) {
       out.tmdbId = out.tmdbId || tvPath[1];
@@ -606,7 +615,7 @@
       out.kind = /\/(?:tv|series|shows?)\//i.test(s) ? 'episode' : out.kind || 'movie';
     }
     // short media prefixes:  /film/1234  /detail/1234  /view/1234  /show/1234
-    const mediaPath = s.match(/\/(?:film|detail|view|show|videos?|media|episode|ep)\/(\d{2,8})(?:\/|\.html?|$|\?|#)/i);
+    const mediaPath = s.match(/\/(?:film|detail|view|show|videos?|media|episode|ep|title)\/(\d{2,8})(?:\/|\.html?|$|\?|#)/i);
     if (mediaPath && !isNoiseId(mediaPath[1]) && !out.tmdbId) {
       out.tmdbId = mediaPath[1];
       out.kind = /\/(?:episode|ep)\//i.test(s) ? 'episode' : out.kind || 'movie';

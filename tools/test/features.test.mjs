@@ -292,6 +292,22 @@ test('F4g junk page title: stream URL id recovers title and still finds subtitle
   h.dom.window.close();
 });
 
+test('F4h junk page + stream WITHOUT id: click subs must not say "play the video first", status none with reason', async () => {
+  const html = `<!doctype html><html lang="id"><head><meta charset="utf-8">
+<title>Watch Movies &amp; TV Shows in HD Online</title>
+</head><body><p>Finding the best source</p><video id="p"></video></body></html>`;
+  const h = await boot({ html, url: 'https://generic.example/watch/some-token', net: makeNetStub(), settings: { autoSubtitle: false } });
+  // stream whose URL carries NO recognizable movie id
+  h.hub.fireWebRequest({ url: 'https://cdn.example/hls/token-abc-xyz/master.m3u8?token=9f2', type: 'media', statusCode: 200, responseHeaders: h.hub.header({ 'content-type': 'application/vnd.apple.mpegurl', 'content-length': '1000' }) });
+  await until(h, () => (stateOf(h).items || []).some((i) => i.url.includes('master.m3u8')));
+  await h.hub.sendFromContent({ type: 'action', payload: { name: 'subs', tabId: 1 } });
+  await until(h, () => (stateOf(h).sub || {}).status === 'none', 8000);
+  const sub = stateOf(h).sub || {};
+  assert.ok(sub.error, 'a reason is recorded: ' + JSON.stringify(sub));
+  assert.ok(!/play the video first|putar dulu/.test(sub.error), 'misleading "play the video first" message is NOT used when a stream exists: ' + sub.error);
+  h.dom.window.close();
+});
+
 /* ------------------------------------------------------------------ *
  * F5 · auto Indonesian subtitle: search → download zip → SRT→VTT → attach
  * ------------------------------------------------------------------ */
