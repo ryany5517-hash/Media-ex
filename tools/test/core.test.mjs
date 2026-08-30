@@ -334,6 +334,13 @@ test('wyzie: searches by IMDb id, maps Indonesian srt result, requires key and i
   res = await subs.search({ title: 'X', imdbId: 'tt1' }, badKey, { fetchImpl: failFetch });
   assert.equal(res.providerInfo.wyzie.status, 'error');
   assert.match(res.providerInfo.wyzie.reason, /key|401/);
+
+  // 7. English filter still asks Wyzie for id,en and keeps both (Watch Party can pick ID)
+  settings = Object.assign({}, SR.defaults, { wyzieApiKey: 'k', subtitleLang: 'en', providers: { wyzie: true, subdl: false, opensubtitles: false, yify: false } });
+  res = await subs.search({ title: 'The Martian', year: '2015', imdbId: 'tt3659388' }, settings, { fetchImpl: fakeFetch });
+  assert.match(requestedUrl, /language=id%2Cen|language=id,en/);
+  assert.equal(res.results.length, 2, 'English + Indonesian kept when subtitleLang=en');
+  assert.equal(res.results[0].langCode, 'en', 'selected language ranks first');
 });
 
 /* ------------------------------------------------------------------ *

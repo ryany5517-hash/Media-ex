@@ -415,7 +415,7 @@
                   (it, i) =>
                     '<div class="srad-sub-row" data-picked="' + ((sub.chosen && sub.chosen.index === i) || (i === 0 && sub.chosen) ? 1 : 0) + '">' +
                     '<span title="' + esc(it.name || it.filename || '') + '">' + esc(it.name || it.filename || t('panel.subs.found')) + '</span>' +
-                    '<em>' + esc((it.providerLabel || it.provider || '') + ' ' + (it.format || 'srt')) + '</em>' +
+                    '<em>' + esc(((it.langCode || it.lang || '').toUpperCase() ? (it.langCode || it.lang || '').toUpperCase() + ' / ' : '') + (it.providerLabel || it.provider || '') + ' ' + (it.format || 'srt')) + '</em>' +
                     '<button class="srad-btn" data-act="sub-pick" data-index="' + i + '">' + esc(i === 0 ? t('action.use') : t('action.pick')) + '</button></div>'
                 )
                 .join('') +

@@ -274,6 +274,28 @@ test('F6c watch party: silent v0.m3u8 is replaced by master with AUDIO', async (
   h.dom.window.close();
 });
 
+test('F13d play: silent v0.m3u8 is replaced by master with AUDIO', async () => {
+  const V0 = 'https://cdn.cineplex.test/mpd/tok/v0.m3u8';
+  const MASTER = 'https://cdn.cineplex.test/mpd/tok/index.m3u8';
+  const net = makeNetStub({
+    '/mpd/tok/v0.m3u8': { body: '#EXTM3U\\n#EXT-X-TARGETDURATION:4\\n#EXTINF:4.0,\\nseg.ts\\n#EXT-X-ENDLIST\\n', type: 'application/vnd.apple.mpegurl' },
+    '/mpd/tok/index.m3u8': {
+      body: '#EXTM3U\\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="a",NAME="eng",DEFAULT=YES,URI="a0.m3u8"\\n#EXT-X-STREAM-INF:BANDWIDTH=800000,CODECS="avc1.4d401f,mp4a.40.2",AUDIO="a"\\nv0.m3u8\\n',
+      type: 'application/vnd.apple.mpegurl',
+    },
+  });
+  const h = await boot({ net, settings: { autoSubtitle: false, lastUpdateCheck: Date.now() } });
+  h.hub.fireWebRequest({ url: V0, type: 'media', statusCode: 200, responseHeaders: h.hub.header({ 'content-type': 'application/vnd.apple.mpegurl' }) });
+  await until(h, () => (stateOf(h).items || []).some((i) => i.url === V0));
+  const item = h.hub.lastBroadcast.items.find((i) => i.url === V0);
+  const res = await h.hub.sendFromContent({ type: 'action', payload: { name: 'play', id: item.id, tabId: 1 } });
+  assert.equal(res.ok, true, 'play launched: ' + JSON.stringify(res));
+  const stored = h.hub.storage['srad:play:' + res.sid] || (res.session || {});
+  const playUrl = stored.url || (res.session && res.session.url);
+  assert.equal(playUrl, MASTER, 'play uses master with audio, not silent v0: ' + playUrl);
+  h.dom.window.close();
+});
+
 /* ------------------------------------------------------------------ *
  * F7 · downloads: file naming from the cleaned title, playlist for HLS
  * ------------------------------------------------------------------ */

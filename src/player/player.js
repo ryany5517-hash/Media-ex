@@ -150,8 +150,8 @@
       const url = URL.createObjectURL(blob);
       const track = document.createElement('track');
       track.kind = 'subtitles';
-      track.label = name || 'Indonesian';
-      track.srclang = 'id';
+      track.label = name || 'Subtitles';
+      track.srclang = (session && session.subtitle && session.subtitle.lang) || 'id';
       track.default = true;
       track.setAttribute('data-srad', '1');
       track.src = url;
@@ -208,8 +208,29 @@
     });
     hls.on(Hls.Events.MANIFEST_PARSED, () => {
       const levels = (hls.levels || []).map((lv) => ({ height: lv.height, quality: lv.height ? lv.height + 'p' : '' }));
+      let best = -1;
+      let bestH = -1;
+      for (let i = 0; i < (hls.levels || []).length; i++) {
+        const lv = hls.levels[i];
+        const codecs = String((lv.attrs && lv.attrs.CODECS) || lv.videoCodec || lv.codecSet || '').toLowerCase();
+        if (/hvc1|hev1|hevc|dvh1|dvhe|av01/.test(codecs)) continue;
+        const h = Number(lv.height || 0);
+        if (h > 1080) continue;
+        if (h >= bestH) {
+          bestH = h;
+          best = i;
+        }
+      }
+      if (best >= 0) {
+        try {
+          hls.currentLevel = best;
+        } catch (_) {}
+      }
       fillQuality(levels, hls.currentLevel);
       setOverlay(false);
+      try {
+        video.muted = false;
+      } catch (_) {}
       video.play().catch(() => {});
     });
     let netTries = 0;

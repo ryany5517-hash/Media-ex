@@ -355,7 +355,7 @@ try {
       if (e && !e.isAd) count++;
     }
     try {
-      api.action.setBadgeBackgroundColor({ color: count ? '#6d5efc' : '#94a3b8' });
+      api.action.setBadgeBackgroundColor({ color: count ? '#14b8a6' : '#94a3b8' });
       api.action.setBadgeText({ tabId: tabId, text: count ? (count > 99 ? '99+' : String(count)) : '' });
       api.action.setTitle({ tabId: tabId, title: count ? t('fab.label', { n: count }) : 'Stream Radar: ' + t('panel.empty') });
     } catch (_) {}
@@ -518,7 +518,7 @@ try {
     const st = getTab(tabId);
     if (!st || !st.title) return;
     if (!force && !settings.autoSubtitle) return;
-    if (!st.title.title && !st.title.imdbId) return;
+    if (!st.title.title && !st.title.imdbId && !st.title.tmdbId) return;
     if (!force && st.sub && (st.sub.status === 'searching' || (st.sub.status === 'found' && Date.now() - st.sub.at < 600000))) return;
     const prev = subTimers.get(tabId);
     if (prev) prev.cancel();
@@ -548,7 +548,7 @@ try {
         const best = res.results[0];
         try {
           const vtt = await SR.subs.resolve(best, settings, {});
-          st.pendingSub = { vtt: vtt, name: best.filename || best.name, provider: best.provider };
+          st.pendingSub = { vtt: vtt, name: best.filename || best.name, provider: best.provider, lang: best.langCode || '' };
           st.sub.chosen = { index: 0, name: best.name };
           toastTo(tabId, t('toast.subs', { name: shorten(best.name || best.filename) }), 'ok', { id: 'sub-attach', label: t('panel.subs.attach') });
         } catch (e) {
@@ -625,6 +625,38 @@ try {
     return scored.length ? { url: scored[0].u, item: scored[0].it } : { url: null, item: first || null };
   }
 
+  function pickIndoItem(items) {
+    return (items || []).find((x) => SR.subs && SR.subs.isIndonesian(x)) || null;
+  }
+
+  async function ensurePartySubtitle(st) {
+    if (!st) return null;
+    if (!st.pendingSub && st.title && (st.title.title || st.title.imdbId || st.title.tmdbId)) {
+      try {
+        await runSubSearch(st.tabId);
+      } catch (_) {}
+    }
+    const items = (st.sub && st.sub.items) || [];
+    const indo = pickIndoItem(items);
+    if (indo) {
+      const already =
+        st.pendingSub &&
+        (st.pendingSub.lang === 'id' ||
+          (SR.subs &&
+            SR.subs.isIndonesian({
+              langCode: st.pendingSub.lang,
+              name: st.pendingSub.name,
+              filename: st.pendingSub.name,
+            })));
+      if (already) return { vtt: st.pendingSub.vtt, name: st.pendingSub.name, lang: 'id' };
+      try {
+        const vtt = await SR.subs.resolve(indo, settings, {});
+        return { vtt: vtt, name: indo.filename || indo.name, lang: 'id' };
+      } catch (_) {}
+    }
+    return st.pendingSub ? { vtt: st.pendingSub.vtt, name: st.pendingSub.name, lang: st.pendingSub.lang || '' } : null;
+  }
+
   async function launchWatchParty(st, itemId) {
     const clicked = itemId ? st.store.byId.get(itemId) : null;
     let picked = pickPlayable(st, itemId);
@@ -649,6 +681,7 @@ try {
     ).slice(0, 90);
     const referer = pageReferer(st, media);
     const origin = originOf(referer) || util.origin(url);
+    const partySub = await ensurePartySubtitle(st);
     const payload = {
       mediaUrl: url,
       roomName: roomName,
@@ -656,7 +689,7 @@ try {
       category: media.category,
       quality: media.quality || '',
       title: st.title || null,
-      subtitle: st.pendingSub ? { vtt: st.pendingSub.vtt, name: st.pendingSub.name } : null,
+      subtitle: partySub,
       autoJoin: settings.watchpartyAutoJoin !== false,
       referer: referer,
       origin: origin,
@@ -746,7 +779,7 @@ try {
       pageUrl: st.url || '',
       referer: referer,
       origin: origin,
-      subtitle: st.pendingSub ? { vtt: st.pendingSub.vtt, name: st.pendingSub.name } : null,
+      subtitle: st.pendingSub ? { vtt: st.pendingSub.vtt, name: st.pendingSub.name, lang: st.pendingSub.lang || '' } : null,
       theme: settings.theme || 'dark',
       lang: settings.lang && settings.lang !== 'auto' ? settings.lang : SR.i18n.get(),
       createdAt: Date.now(),
@@ -1096,6 +1129,7 @@ try {
             } catch (_) {}
             var hls = new H({ enableWorker: false, capLevelToPlayerSize: true, startLevel: -1 });
             window.__sradInpageHls = hls;
+            try { video.muted = false; } catch (_) {}
             hls.loadSource(u);
             hls.attachMedia(video);
             var ev = H.Events && H.Events.MANIFEST_PARSED ? H.Events.MANIFEST_PARSED : 'hlsManifestParsed';
@@ -1219,22 +1253,29 @@ try {
   function ensureWpHlsUrl(url) {
     if (!url) return url;
     if (/\.m3u8/i.test(url)) return url;
+    // Only token paths without a media extension need a fake .m3u8 suffix.
+    if (!/\/mpd\//i.test(url)) return url;
+    if (/\.(mp4|webm|mpd|mkv|m4v|mov)(\?|#|$)/i.test(url)) return url;
     return url + (url.indexOf('?') >= 0 ? '&' : '?') + 'srad=playlist.m3u8';
   }
 
-  // v0.m3u8 on token CDNs is often video-only. WP needs the master (AUDIO= group).
-  async function preferWatchPartyUrl(st, media, url) {
+  // v0.m3u8 on token CDNs is often video-only. Prefer the master (AUDIO= group).
+  async function preferAudioMaster(st, media, url) {
     if (!url) return url;
     const referer = pageReferer(st, media);
     const origin = originOf(referer) || util.origin(url);
     const body = await fetchPlaylistText(url, referer, origin);
-    if (playlistHasAudio(body) || /CODECS="[^"]*mp4a/i.test(body)) return ensureWpHlsUrl(url);
+    if (playlistHasAudio(body) || /CODECS="[^"]*mp4a/i.test(body)) return url;
     const alts = hlsMasterAlts(st, url);
     for (let i = 0; i < alts.length; i++) {
       const text = await fetchPlaylistText(alts[i], referer, origin);
-      if (playlistHasAudio(text) || /#EXT-X-STREAM-INF/i.test(text)) return ensureWpHlsUrl(alts[i]);
+      if (playlistHasAudio(text) || /#EXT-X-STREAM-INF/i.test(text)) return alts[i];
     }
     return url;
+  }
+
+  async function preferWatchPartyUrl(st, media, url) {
+    return ensureWpHlsUrl(await preferAudioMaster(st, media, url));
   }
 
   function preferPlayUrl(st, media, url) {
@@ -1376,7 +1417,7 @@ try {
     if (!url) return { ok: false, reason: t('player.needDirect') };
     if (media && media.drm) return { ok: false, reason: t('player.drm') };
 
-    const origUrl = preferPlayUrl(st, media, url);
+    const origUrl = await preferAudioMaster(st, media, url);
     url = origUrl;
     const sid = util.uuid();
     const inSession = buildPlaySession(st, media, origUrl);
@@ -1394,7 +1435,12 @@ try {
     const previewRef = pageReferer(st, media);
     await installRefererRule(null, previewRef, originOf(previewRef) || util.origin(url), url);
     const resolved = await resolvePlaySource(st, media, url);
-    url = resolved.url || url;
+    url = await preferAudioMaster(st, media, resolved.url || url);
+    if (!st.pendingSub) {
+      try {
+        await ensurePartySubtitle(st);
+      } catch (_) {}
+    }
     const mediaForSession = Object.assign({}, media || {}, { url: url, category: resolved.category || (media && media.category) || '' });
     const session = buildPlaySession(st, mediaForSession, url);
     if (resolved.referer) session.referer = resolved.referer;
@@ -1528,6 +1574,7 @@ try {
       case 'set-setting': {
         settings = await SR.settings.save({ [msg.key]: msg.value });
         applySettings();
+plySettings();
         return { ok: true, settings: settings };
       }
       case 'toggle-site': {
