@@ -244,6 +244,31 @@ test('F4e clicking the panel Subs button (retry) triggers a subtitle search', as
   h.dom.window.close();
 });
 
+test('F4f clicking the Subtitles button on a stream row responds visibly (toast + pane switch + search)', async () => {
+  const h = await boot({ settings: { autoSubtitle: false } });
+  const win = h.dom.window;
+  // a detected stream so a row with a Subtitles button exists
+  h.hub.fireWebRequest({ url: MP4_URL, type: 'media', statusCode: 200, responseHeaders: h.hub.header({ 'content-type': 'video/mp4', 'content-length': '1000' }) });
+  await until(h, () => (stateOf(h).items || []).some((i) => i.url === MP4_URL));
+  await h.wait(80);
+  const shadow = win.document.getElementById('stream-radar-host').shadowRoot;
+  const row = shadow.querySelector('.srad-item');
+  const btn = row && row.querySelector('[data-act="subs"]');
+  assert.ok(btn, 'row Subtitles button exists');
+  btn.dispatchEvent(new win.MouseEvent('click', { bubbles: true }));
+  // immediate visible response: panel switched to the subtitles pane
+  await until(h, () => {
+    const tab = shadow.querySelector('[data-act="tab"][data-tab="subs"]');
+    return tab && tab.getAttribute('aria-selected') === 'true';
+  }, 4000);
+  assert.ok(shadow.querySelector('.srad-sub-card'), 'subtitles pane is shown after clicking row Subtitles');
+  // a toast appeared
+  assert.ok(shadow.querySelector('.srad-toast'), 'a toast appeared on click');
+  // and the search actually ran
+  assert.ok(await until(h, () => (stateOf(h).sub || {}).status === 'found'), 'search ran from row Subtitles click: ' + JSON.stringify(stateOf(h).sub));
+  h.dom.window.close();
+});
+
 /* ------------------------------------------------------------------ *
  * F5 · auto Indonesian subtitle: search → download zip → SRT→VTT → attach
  * ------------------------------------------------------------------ */
@@ -530,20 +555,31 @@ test('F9 UI: FAB opens the panel, item buttons route real actions, Esc closes', 
   assert.ok(shadow.querySelector('.srad-item'), 'list rendered');
   assert.equal(shadow.querySelector('.srad-badge').textContent, '1');
 
-  // per-item actions
+  // per-item actions. 'subs' is clicked LAST: it switches the panel to the
+  // subtitles pane (visible response), which detaches the row list.
   const first = shadow.querySelector('.srad-item');
   assert.ok(first.querySelector('[data-act="play"]'), 'Play is the primary action on a stream row');
-  for (const act of ['watchparty', 'copy', 'subs', 'download', 'ffmpeg']) {
+  for (const act of ['watchparty', 'copy', 'download', 'ffmpeg']) {
     const btn = first.querySelector(`[data-act="${act}"]`);
     assert.ok(btn, `action button present: ${act}`);
     btn.dispatchEvent(new win.MouseEvent('click', { bubbles: true }));
   }
   await until(h, () => h.hub.tabs.created.some((t) => t.url.includes('watchparty.me')));
   assert.ok(h.hub.downloads.calls.some((d) => d.filename === 'Dune Part Two.mp4'), 'download action reached the background');
+  const subsBtn = first.querySelector('[data-act="subs"]');
+  assert.ok(subsBtn, 'subs action button present');
+  subsBtn.dispatchEvent(new win.MouseEvent('click', { bubbles: true }));
   assert.ok(
     await until(h, () => h.fetchImpl.calls.some(([u]) => u.includes('subdl.com')), 8000),
     'subtitle action searched (net calls: ' + h.fetchImpl.calls.map((c) => c[0].slice(0, 40)).join(' | ') + ')'
   );
+  // the click visibly responded: panel is now on the subtitles pane
+  assert.equal(
+    shadow.querySelector('[data-act="tab"][data-tab="subs"]').getAttribute('aria-selected'),
+    'true',
+    'subs click switched the panel to the subtitles pane'
+  );
+  assert.ok(shadow.querySelector('.srad-sub-card'), 'subtitles pane rendered');
 
   // Esc closes
   win.document.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
@@ -574,7 +610,9 @@ test('F9 UI: FAB opens the panel, item buttons route real actions, Esc closes', 
     assert.ok(label.length > 1, 'every control has an accessible name');
   }
   assert.equal(panel.querySelectorAll('svg [onclick], [onclick]').length, 0, 'no inline handlers');
-  h.dom.window.close();
+  try {
+    h.dom.window.close();
+  } catch (_) {}
 });
 
 /* ------------------------------------------------------------------ *

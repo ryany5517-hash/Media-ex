@@ -315,6 +315,7 @@
         // click right after page load (or after an SPA swap) searches with a
         // fresh title + any IMDb/TMDB id the URL carries, then ask the worker.
         scanner && scanner.readTitle(true);
+        toast(t('toast.subsSearching'), 'info');
         const info = state.title || {};
         if (!info.title && !info.imdbId && !info.tmdbId && !info.urlTmdbId) {
           toast(t('toast.subsNoTitle'), 'warn');

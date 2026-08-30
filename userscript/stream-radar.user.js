@@ -2267,6 +2267,7 @@
       'toast.found': '{n} media detected on this page',
       'toast.newmedia': 'New {type} stream detected',
       'toast.subs': 'Subtitle found: {name}',
+      'toast.subsSearching': 'Searching Indonesian subtitles...',
       'toast.subsNoTitle': 'No title detected yet - play the video first, then retry.',
       'toast.subsNone': 'No subtitle found for {title}',
       'toast.copied': 'URL copied to clipboard',
@@ -2510,6 +2511,7 @@
       'toast.found': '{n} media terdeteksi di halaman ini',
       'toast.newmedia': 'Stream {type} baru terdeteksi',
       'toast.subs': 'Subtitle ditemukan: {name}',
+      'toast.subsSearching': 'Mencari subtitle Indonesia...',
       'toast.subsNoTitle': 'Judul film belum terdeteksi - putar dulu videonya, baru coba lagi.',
       'toast.subsNone': 'Subtitle tidak ditemukan untuk {title}',
       'toast.copied': 'URL disalin ke clipboard',
@@ -5862,6 +5864,14 @@
           render();
           return;
         }
+        if (act === 'subs') {
+          // Subtitles button on a stream row (or the subs-pane retry): fire the
+          // search AND switch to the subtitles pane so the user always sees an
+          // immediate response (spinner / provider status), never silence.
+          fire('subs', { id: id || null, button: btn });
+          setTab('subs');
+          return;
+        }
         if (act === 'toggle-expand') {
           const item = btn.closest('.srad-item');
           const open = item.getAttribute('data-expanded') === '1' ? '0' : '1';
@@ -6063,7 +6073,12 @@
           '<span class="srad-tbar"></span>';
         toastsEl.appendChild(el);
         live.push(el);
-        while (live.length > 4) dismiss(live[0]);
+        // dismiss() only removes the DOM asynchronously, so shift() the array
+        // synchronously here or this loop spins forever once a 5th toast lands.
+        while (live.length > 4) {
+          const old = live.shift();
+          if (old && old.getAttribute('data-leaving') !== '1') dismiss(old);
+        }
         animate(el, { opacity: [0, 1], transform: ['translateX(16px) scale(.97)', 'none'] }, spring);
         const bar = el.querySelector('.srad-tbar');
         animate(bar, { transform: ['scaleX(1)', 'scaleX(0)'] }, { duration: life / 1000, easing: 'linear' });
