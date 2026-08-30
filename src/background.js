@@ -539,11 +539,23 @@ try {
       imdbId: st.title.imdbId || null,
       tmdbId: st.title.tmdbId || null,
     };
-    st.sub = { status: 'searching', items: st.sub.items || [], query: want.title, at: Date.now() };
+    if (!want.imdbId && want.title && SR.title && SR.title.lookupIds) {
+      try {
+        const ids = await SR.title.lookupIds(want, {});
+        if (ids && ids.imdbId) {
+          want.imdbId = ids.imdbId;
+          st.title.imdbId = ids.imdbId;
+          if (ids.tmdbId && !st.title.tmdbId) st.title.tmdbId = ids.tmdbId;
+          if (ids.year && !st.title.year) st.title.year = ids.year;
+          if (ids.kind && st.title.kind === 'unknown') st.title.kind = ids.kind;
+        }
+      } catch (_) {}
+    }
+    st.sub = { status: 'searching', items: st.sub.items || [], query: want.title, year: want.year, imdbId: want.imdbId, at: Date.now() };
     broadcast(tabId, 'sub');
     try {
       const res = await SR.subs.search(want, settings, {});
-      st.sub = { status: res.results.length ? 'found' : 'none', items: res.results.slice(0, 12), providers: res.providerInfo, errors: res.errors, query: want.title, at: Date.now() };
+      st.sub = { status: res.results.length ? 'found' : 'none', items: res.results.slice(0, 12), providers: res.providerInfo, errors: res.errors, query: want.title, year: want.year, imdbId: want.imdbId, at: Date.now() };
       if (res.results.length) {
         const best = res.results[0];
         try {
@@ -1574,7 +1586,6 @@ try {
       case 'set-setting': {
         settings = await SR.settings.save({ [msg.key]: msg.value });
         applySettings();
-plySettings();
         return { ok: true, settings: settings };
       }
       case 'toggle-site': {
@@ -1939,10 +1950,7 @@ plySettings();
           await launchPlayer(st, best.id, url || undefined);
         } else if (info.menuItemId === 'sr-watchparty') {
           const best = st.store.best() || {};
-          if (url && util.watchPartyPlayable(url, '')) {
-            const target = (encodeURIComponent(url).length > 1600 ? await createWatchPartyRoom(url) : '') || watchPartyCreateUrl(url);
-            await api.storage.local.set({ [PARTY_PREFIX + (await api.tabs.create({ url: target })).id]: { mediaUrl: url, roomName: (st.title && st.title.title) || 'Stream Radar room', autoJoin: true, createdAt: Date.now() } });
-          } else await launchWatchParty(st, best.id);
+          await launchWatchParty(st, best.id);
         } else if (info.menuItemId === 'sr-copy' && url) {
           api.tabs.sendMessage(tab.id, { type: 'copy-clipboard', text: url }).catch(() => {});
         } else if (info.menuItemId === 'sr-download' && url) {

@@ -281,6 +281,18 @@ export function makeNetStub(extra = {}) {
         },
       };
     }
+    if (u.includes('v2.sg.media-imdb.com') || u.includes('cinemeta.strem.io')) {
+      return {
+        ok: true,
+        status: 200,
+        async text() {
+          return JSON.stringify({ d: [], metas: [] });
+        },
+        async json() {
+          return { d: [], metas: [] };
+        },
+      };
+    }
     throw new Error('net stub: unexpected ' + u);
   };
   fetchImpl.calls = calls;

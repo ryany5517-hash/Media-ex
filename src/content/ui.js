@@ -252,6 +252,7 @@
         const chips = [];
         if (info && info.isJunk) chips.push(chip('warn', 'search', t('panel.noTitle')));
         if (info && info.year) chips.push(chip('year', 'calendar', info.year));
+        if (info && info.imdbId) chips.push(chip('id', 'clapperboard', info.imdbId));
         const ep = info && SR.title && SR.title.episodeLabel ? SR.title.episodeLabel(info) : null;
         if (ep) chips.push(chip('ep', 'captions', ep));
         if (info && info.kind === 'episode') chips.push(chip('ep', 'monitor-smartphone', t('panel.series')));
@@ -401,7 +402,7 @@
           '<div class="srad-sub-card">' +
           '<div class="srad-sub-head">' + ico('captions') + '<span>' + esc(t('panel.subs.title')) + '</span>' +
           '<span class="srad-state" data-s="' + esc(sub.status) + '">' + (sub.status === 'searching' ? ico('loader') : '') + esc(st[sub.status] || sub.status) + '</span></div>' +
-          (sub.query ? '<div class="srad-url" style="margin-top:6px">' + esc(sub.query) + (sub.year ? ' (' + esc(String(sub.year)) + ')' : '') + '</div>' : '') +
+          (sub.query || sub.imdbId ? '<div class="srad-url" style="margin-top:6px">' + esc(sub.query || '') + (sub.year ? ' (' + esc(String(sub.year)) + ')' : '') + (sub.imdbId ? ' ' + esc(sub.imdbId) : '') + '</div>' : '') +
           '<div class="srad-providers">' +
           Object.keys(providers)
             .map((k) => '<span class="srad-pv" data-s="' + esc(providers[k].status || '') + '" title="' + esc(providers[k].reason || '') + '">' + esc(providers[k].label || k) + ' ' + (providers[k].count != null ? providers[k].count : '') + '</span>')

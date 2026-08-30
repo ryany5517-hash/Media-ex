@@ -186,6 +186,49 @@ test('title.clean: keeps punctuation inside real titles', () => {
   assert.match(r.title, /Alien: Romulus/);
 });
 
+test('title.lookupIds: IMDb suggestion picks tt id', async () => {
+  let requested = '';
+  const fake = async (url) => {
+    requested = String(url);
+    return {
+      ok: true,
+      status: 200,
+      async text() {
+        return JSON.stringify({
+          d: [
+            { id: 'tt0816692', l: 'Interstellar', y: 2014, qid: 'movie' },
+            { id: 'nm0000129', l: 'Someone Else' },
+          ],
+        });
+      },
+    };
+  };
+  const r = await title.lookupIds({ title: 'Interstellar', year: '2014' }, { fetchImpl: fake });
+  assert.match(requested, /v2\.sg\.media-imdb\.com\/suggestion\/i\/interstellar\.json/);
+  assert.equal(r.imdbId, 'tt0816692');
+  assert.equal(r.year, '2014');
+});
+
+test('title.lookupIds: Cinemeta fallback when IMDb is empty', async () => {
+  const fake = async (url) => {
+    if (String(url).includes('media-imdb')) return { ok: false, status: 500, async text() { return ''; } };
+    return {
+      ok: true,
+      status: 200,
+      async text() {
+        return JSON.stringify({ metas: [{ imdb_id: 'tt0816692', name: 'Interstellar', year: '2014', type: 'movie' }] });
+      },
+    };
+  };
+  const r = await title.lookupIds({ title: 'Interstellar', year: '2014' }, { fetchImpl: fake });
+  assert.equal(r.imdbId, 'tt0816692');
+});
+
+test('title.lookupIds: fail-soft on network errors', async () => {
+  const r = await title.lookupIds({ title: 'Anything' }, { fetchImpl: async () => { throw new Error('nope'); } });
+  assert.deepEqual(r, {});
+});
+
 /* ------------------------------------------------------------------ *
  * subtitles
  * ------------------------------------------------------------------ */

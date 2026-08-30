@@ -31,6 +31,8 @@ const stateOf = (h) => h.hub.lastBroadcast || {};
 async function boot(opts = {}) {
   globalThis.__sradOpenShadow = true;
   const h = await bootExtension({
+    html: opts.html,
+    url: opts.url,
     net: opts.net || makeNetStub(),
     settings: Object.assign(
       {
@@ -158,6 +160,41 @@ test('F4 title: SEO spam becomes a clean title, year and IMDb id', async () => {
   const shadow = h.dom.window.document.getElementById('stream-radar-host').shadowRoot;
   assert.match(shadow.querySelector('[data-el="title"] b').textContent, /Dune: Part Two \(2024\)/);
   assert.match(shadow.querySelector('[data-el="title"] small').textContent, /67movies\.nl/);
+  assert.match(shadow.querySelector('[data-el="meta"]').textContent, /tt15239678/);
+  h.dom.window.close();
+});
+
+test('F4b page without IMDb: lookup from title, then Watch Party already has a subtitle', async () => {
+  const html = `<!doctype html><html lang="id"><head><meta charset="utf-8">
+<title>Nonton Interstellar (2014) Subtitle Indonesia | 67movies.net</title>
+<meta property="og:title" content="Interstellar (2014)">
+</head><body>
+<h1>Interstellar (2014)</h1>
+<video id="player" controls></video>
+</body></html>`;
+  const net = makeNetStub({
+    'v2.sg.media-imdb.com': {
+      body: JSON.stringify({ d: [{ id: 'tt0816692', l: 'Interstellar', y: 2014, qid: 'movie' }] }),
+      type: 'application/json',
+    },
+  });
+  const h = await boot({ html, net });
+  await h.hub.sendFromContent({ type: 'action', payload: { name: 'subs-search', tabId: 1 } });
+  assert.ok(await until(h, () => (stateOf(h).title || {}).imdbId === 'tt0816692'), 'imdb resolved: ' + JSON.stringify(stateOf(h).title));
+  assert.ok(await until(h, () => (stateOf(h).sub || {}).status === 'found'), 'subtitle status: ' + JSON.stringify(stateOf(h).sub));
+  assert.ok(net.calls.some(([u]) => String(u).includes('v2.sg.media-imdb.com')), 'IMDb suggestion queried');
+  assert.equal((stateOf(h).sub || {}).imdbId, 'tt0816692');
+  const shadow = h.dom.window.document.getElementById('stream-radar-host').shadowRoot;
+  assert.match(shadow.querySelector('[data-el="meta"]').textContent, /tt0816692/);
+
+  h.hub.fireWebRequest({ url: MP4_URL, type: 'media', statusCode: 200, responseHeaders: h.hub.header({ 'content-type': 'video/mp4', 'content-length': '1000' }) });
+  await until(h, () => (stateOf(h).items || []).some((i) => i.url === MP4_URL));
+  const item = h.hub.lastBroadcast.items.find((i) => i.url === MP4_URL);
+  const res = await h.hub.sendFromContent({ type: 'action', payload: { name: 'watchparty', id: item.id, tabId: 1 } });
+  assert.equal(res.ok, true, 'watchparty launched: ' + JSON.stringify(res));
+  const tab = h.hub.tabs.created[h.hub.tabs.created.length - 1];
+  const payload = h.hub.storage['srad:party:' + tab.id];
+  assert.ok(payload && payload.subtitle && /^WEBVTT/.test(payload.subtitle.vtt), 'subtitle already on the room');
   h.dom.window.close();
 });
 

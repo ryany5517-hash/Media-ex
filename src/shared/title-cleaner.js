@@ -497,6 +497,15 @@
 
     /* --- extras: canonical slug + breadcrumbs + IMDb id ----------- */
     res.slug = firstMeta(doc, ['link[rel="canonical"]']).replace(/^https?:\/\//, '');
+    const extraImdb =
+      firstMeta(doc, [
+        'meta[property="imdb:id"]',
+        'meta[name="imdb:id"]',
+        'meta[property="video:imdb"]',
+        'meta[itemprop="sameAs"]',
+      ]) || '';
+    const fromExtra = extraImdb.match(/tt\d{6,10}/i);
+    if (fromExtra && !res.info.imdbId) res.info.imdbId = fromExtra[0];
     try {
       const crumb = [...doc.querySelectorAll('a[rel="nofollow"], .breadcrumb a, [itemprop="itemListElement"]')].map((a) => a.textContent.trim()).filter(Boolean);
       if (crumb.length) res.crumbs = crumb.slice(0, 6).join(' > ');
@@ -541,6 +550,111 @@
     return best;
   }
 
+  /**
+   * Resolve IMDb/TMDB ids from a cleaned title when the page has none.
+   * Uses IMDb's public suggestion endpoint (no key). Fail-soft.
+   */
+  async function lookupIds(want, opts) {
+    const o = opts || {};
+    const title = String((want && want.title) || '').trim();
+    if (!title || title.length < 2) return {};
+    const fetchImpl = o.fetchImpl || (SR.util && SR.util.fetchImpl ? SR.util.fetchImpl.bind(SR.util) : null) || (typeof fetch === 'function' ? fetch : null);
+    if (!fetchImpl) return {};
+    const slug = title
+      .toLowerCase()
+      .normalize('NFKD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_|_$/g, '')
+      .slice(0, 48);
+    if (!slug) return {};
+    const url = 'https://v2.sg.media-imdb.com/suggestion/' + slug[0] + '/' + encodeURIComponent(slug) + '.json';
+    const wantYear = want.year ? String(want.year) : '';
+    const wantEp = !!(want.season || want.episode);
+    const qn = (s) =>
+      String(s || '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, ' ')
+        .trim();
+    const q = qn(title);
+    const scoreName = (nameRaw, yearRaw, kindRaw) => {
+      const name = qn(nameRaw);
+      if (!name) return -1e9;
+      let sc = 0;
+      if (name === q) sc += 80;
+      else if (name.indexOf(q) >= 0 || q.indexOf(name) >= 0) sc += 50;
+      else {
+        const tokens = q.split(' ').filter((t) => t.length > 2);
+        const hit = tokens.filter((t) => name.indexOf(t) >= 0).length;
+        sc += tokens.length ? Math.round((hit / tokens.length) * 40) : 0;
+      }
+      if (wantYear && String(yearRaw || '') === wantYear) sc += 25;
+      else if (wantYear && yearRaw && Math.abs(Number(yearRaw) - Number(wantYear)) > 1) sc -= 20;
+      const kind = String(kindRaw || '').toLowerCase();
+      if (wantEp && /tv|series|episode/.test(kind)) sc += 12;
+      if (!wantEp && /movie|feature|video/.test(kind)) sc += 8;
+      return sc;
+    };
+    const readJson = async (res) => {
+      if (!res || !res.ok) return null;
+      const text = typeof res.text === 'function' ? await res.text() : '';
+      return SR.util && SR.util.safeJSON ? SR.util.safeJSON(text, null) : JSON.parse(text || '{}');
+    };
+    try {
+      const json = await readJson(await fetchImpl(url, { headers: { Accept: 'application/json' } }));
+      const rows = (json && json.d) || [];
+      let best = null;
+      let bestScore = -1e9;
+      for (const r of rows) {
+        const id = String(r.id || '');
+        if (!/^tt\d{6,10}$/i.test(id)) continue;
+        const kind = String(r.qid || r.q || '').toLowerCase();
+        if (/game|podcast/.test(kind)) continue;
+        const sc = scoreName(r.l || r.s || '', r.y, kind);
+        if (sc > bestScore) {
+          bestScore = sc;
+          best = r;
+        }
+      }
+      if (best && bestScore >= 28) {
+        return {
+          imdbId: String(best.id),
+          year: best.y ? String(best.y) : '',
+          name: best.l || title,
+          kind: /tv|series|episode/.test(String(best.qid || '')) ? 'episode' : 'movie',
+        };
+      }
+    } catch (_) {}
+    try {
+      const kind = wantEp ? 'series' : 'movie';
+      const cUrl =
+        'https://v3-cinemeta.strem.io/catalog/' + kind + '/top/search=' + encodeURIComponent(title) + '.json';
+      const json = await readJson(await fetchImpl(cUrl, { headers: { Accept: 'application/json' } }));
+      const rows = (json && json.metas) || [];
+      let best = null;
+      let bestScore = -1e9;
+      for (const r of rows) {
+        const id = String(r.imdb_id || r.imdbId || '');
+        if (!/^tt\d{6,10}$/i.test(id)) continue;
+        const sc = scoreName(r.name || r.title || '', r.year || r.releaseInfo, r.type);
+        if (sc > bestScore) {
+          bestScore = sc;
+          best = r;
+        }
+      }
+      if (!best || bestScore < 28) return {};
+      return {
+        imdbId: String(best.imdb_id || best.imdbId),
+        tmdbId: best.id && /^\d+$/.test(String(best.id)) ? String(best.id) : '',
+        year: best.year ? String(best.year) : '',
+        name: best.name || title,
+        kind: /series|tv/.test(String(best.type || '')) ? 'episode' : 'movie',
+      };
+    } catch (_) {
+      return {};
+    }
+  }
+
   /** Build a search-friendly query for subtitle providers. */
   function searchQuery(info) {
     if (!info || !info.title) return '';
@@ -559,6 +673,7 @@
     clean,
     collect,
     resolve,
+    lookupIds,
     normalize,
     searchQuery,
     episodeLabel,
