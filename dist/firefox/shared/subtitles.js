@@ -616,7 +616,7 @@
       enabled.map(async (p) => {
         providerInfo[p.id] = { label: p.label, status: 'searching' };
         try {
-          const r = await p.search(want, settings, ctx);
+          const r = await util.withTimeout(p.search(want, settings, ctx), 12000);
           if (r && r.skipped) {
             providerInfo[p.id] = { label: p.label, status: 'skipped', reason: r.reason };
             return [];

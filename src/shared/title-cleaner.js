@@ -738,7 +738,7 @@
     for (let i = 0; i < paths.length; i++) {
       const path = paths[i];
       try {
-        const res = await fetchImpl('https://www.themoviedb.org/' + path + '/' + num, { headers: { Accept: 'text/html' } });
+        const res = await SR.util.withTimeout(fetchImpl('https://www.themoviedb.org/' + path + '/' + num, { headers: { Accept: 'text/html' } }), 8000);
         if (!res || !res.ok) continue;
         const html = typeof res.text === 'function' ? await res.text() : '';
         const parsed = parseTmdbHtml(html);
@@ -816,7 +816,7 @@
       return SR.util && SR.util.safeJSON ? SR.util.safeJSON(text, null) : JSON.parse(text || '{}');
     };
     try {
-      const json = await readJson(await fetchImpl(url, { headers: { Accept: 'application/json' } }));
+      const json = await readJson(await SR.util.withTimeout(fetchImpl(url, { headers: { Accept: 'application/json' } }), 8000));
       const rows = (json && json.d) || [];
       let best = null;
       let bestScore = -1e9;
@@ -845,7 +845,7 @@
       const kind = wantEp ? 'series' : 'movie';
       const cUrl =
         'https://v3-cinemeta.strem.io/catalog/' + kind + '/top/search=' + encodeURIComponent(title) + '.json';
-      const json = await readJson(await fetchImpl(cUrl, { headers: { Accept: 'application/json' } }));
+      const json = await readJson(await SR.util.withTimeout(fetchImpl(cUrl, { headers: { Accept: 'application/json' } }), 8000));
       const rows = (json && json.metas) || [];
       let best = null;
       let bestScore = -1e9;

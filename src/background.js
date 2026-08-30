@@ -516,9 +516,13 @@ try {
   const subTimers = new Map();
   function scheduleSubSearch(tabId, force) {
     const st = getTab(tabId);
-    if (!st || !st.title) return;
+    // Never fail silently on a manual click: tell the user why nothing ran.
+    const blocked = (reason) => {
+      if (force) toastTo(tabId, reason, 'warn');
+    };
+    if (!st || !st.title) return blocked(t('toast.subsNoTitle'));
     if (!force && !settings.autoSubtitle) return;
-    if (!st.title.title && !st.title.imdbId && !st.title.tmdbId && !st.title.urlTmdbId) return;
+    if (!st.title.title && !st.title.imdbId && !st.title.tmdbId && !st.title.urlTmdbId) return blocked(t('toast.subsNoTitle'));
     if (!force && st.sub && (st.sub.status === 'searching' || (st.sub.status === 'found' && Date.now() - st.sub.at < 600000))) return;
     const prev = subTimers.get(tabId);
     if (prev) prev.cancel();
@@ -542,9 +546,13 @@ try {
       kind: st.title.kind || 'unknown',
     };
     const needLookup = !want.imdbId || !want.title || (want.urlTmdbId && !st.title.tmdbId);
+    // Show "searching" immediately so a click is never silent, even while the
+    // IMDb/TMDB id lookup below is still in flight (it is timeout-capped).
+    st.sub = { status: 'searching', items: st.sub.items || [], query: want.title, year: want.year, imdbId: want.imdbId || '', tmdbId: want.tmdbId || '', at: Date.now() };
+    broadcast(tabId, 'sub');
     if (needLookup && SR.title && SR.title.lookupIds) {
       try {
-        const ids = await SR.title.lookupIds(want, {});
+        const ids = await util.withTimeout(SR.title.lookupIds(want, {}), 9000);
         if (ids && (ids.imdbId || ids.tmdbId || ids.name)) {
           if (ids.imdbId && !want.imdbId) {
             want.imdbId = ids.imdbId;
@@ -568,8 +576,6 @@ try {
         }
       } catch (_) {}
     }
-    st.sub = { status: 'searching', items: st.sub.items || [], query: want.title, year: want.year, imdbId: want.imdbId || '', tmdbId: want.tmdbId || '', at: Date.now() };
-    broadcast(tabId, 'sub');
     try {
       const res = await SR.subs.search(want, settings, {});
       st.sub = { status: res.results.length ? 'found' : 'none', items: res.results.slice(0, 12), providers: res.providerInfo, errors: res.errors, query: want.title, year: want.year, imdbId: want.imdbId || '', tmdbId: want.tmdbId || '', at: Date.now() };

@@ -495,6 +495,28 @@
       return util.hash32(String(text).slice(0, 65536)) + (len !== undefined ? ':' + len : '');
     },
 
+    /**
+     * Race a promise against a timeout. Works with any fetch impl (even GM
+     * shims that ignore AbortController): the underlying request keeps running
+     * but the caller resumes after `ms`. Used so a blocked lookup / provider
+     * never leaves the UI hanging in "searching" forever.
+     */
+    withTimeout(promise, ms) {
+      return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('timeout after ' + ms + 'ms')), ms || 8000);
+        Promise.resolve(promise).then(
+          (v) => {
+            clearTimeout(timer);
+            resolve(v);
+          },
+          (e) => {
+            clearTimeout(timer);
+            reject(e);
+          }
+        );
+      });
+    },
+
     /** Split a list into chunks (used for batched UI rendering). */
     chunk(arr, size) {
       const out = [];
@@ -1983,7 +2005,7 @@
     for (let i = 0; i < paths.length; i++) {
       const path = paths[i];
       try {
-        const res = await fetchImpl('https://www.themoviedb.org/' + path + '/' + num, { headers: { Accept: 'text/html' } });
+        const res = await SR.util.withTimeout(fetchImpl('https://www.themoviedb.org/' + path + '/' + num, { headers: { Accept: 'text/html' } }), 8000);
         if (!res || !res.ok) continue;
         const html = typeof res.text === 'function' ? await res.text() : '';
         const parsed = parseTmdbHtml(html);
@@ -2061,7 +2083,7 @@
       return SR.util && SR.util.safeJSON ? SR.util.safeJSON(text, null) : JSON.parse(text || '{}');
     };
     try {
-      const json = await readJson(await fetchImpl(url, { headers: { Accept: 'application/json' } }));
+      const json = await readJson(await SR.util.withTimeout(fetchImpl(url, { headers: { Accept: 'application/json' } }), 8000));
       const rows = (json && json.d) || [];
       let best = null;
       let bestScore = -1e9;
@@ -2090,7 +2112,7 @@
       const kind = wantEp ? 'series' : 'movie';
       const cUrl =
         'https://v3-cinemeta.strem.io/catalog/' + kind + '/top/search=' + encodeURIComponent(title) + '.json';
-      const json = await readJson(await fetchImpl(cUrl, { headers: { Accept: 'application/json' } }));
+      const json = await readJson(await SR.util.withTimeout(fetchImpl(cUrl, { headers: { Accept: 'application/json' } }), 8000));
       const rows = (json && json.metas) || [];
       let best = null;
       let bestScore = -1e9;
@@ -2245,6 +2267,7 @@
       'toast.found': '{n} media detected on this page',
       'toast.newmedia': 'New {type} stream detected',
       'toast.subs': 'Subtitle found: {name}',
+      'toast.subsNoTitle': 'No title detected yet - play the video first, then retry.',
       'toast.subsNone': 'No subtitle found for {title}',
       'toast.copied': 'URL copied to clipboard',
       'toast.error': 'Error: {msg}',
@@ -2487,6 +2510,7 @@
       'toast.found': '{n} media terdeteksi di halaman ini',
       'toast.newmedia': 'Stream {type} baru terdeteksi',
       'toast.subs': 'Subtitle ditemukan: {name}',
+      'toast.subsNoTitle': 'Judul film belum terdeteksi - putar dulu videonya, baru coba lagi.',
       'toast.subsNone': 'Subtitle tidak ditemukan untuk {title}',
       'toast.copied': 'URL disalin ke clipboard',
       'toast.error': 'Error: {msg}',
@@ -3982,7 +4006,7 @@
       enabled.map(async (p) => {
         providerInfo[p.id] = { label: p.label, status: 'searching' };
         try {
-          const r = await p.search(want, settings, ctx);
+          const r = await util.withTimeout(p.search(want, settings, ctx), 12000);
           if (r && r.skipped) {
             providerInfo[p.id] = { label: p.label, status: 'skipped', reason: r.reason };
             return [];

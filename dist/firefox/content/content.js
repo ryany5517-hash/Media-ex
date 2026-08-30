@@ -310,12 +310,17 @@
         scanner && scanner.scan('manual');
         scanner && scanner.readTitle(true);
         return void send('action', { name: 'rescan' });
-      case 'subs':
+      case 'subs': {
         // Panel row / subtitles-tab retry button. Re-read the title first so a
         // click right after page load (or after an SPA swap) searches with a
         // fresh title + any IMDb/TMDB id the URL carries, then ask the worker.
         scanner && scanner.readTitle(true);
+        const info = state.title || {};
+        if (!info.title && !info.imdbId && !info.tmdbId && !info.urlTmdbId) {
+          toast(t('toast.subsNoTitle'), 'warn');
+        }
         return void send('action', { name: 'subs-search' });
+      }
       case 'set-setting': {
         settings = Object.assign({}, settings, { [payload.key]: payload.value });
         if (payload.key === 'fabPos') ui && ui.setFabPos(payload.value);

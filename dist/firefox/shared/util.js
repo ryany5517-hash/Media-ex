@@ -418,6 +418,28 @@
       return util.hash32(String(text).slice(0, 65536)) + (len !== undefined ? ':' + len : '');
     },
 
+    /**
+     * Race a promise against a timeout. Works with any fetch impl (even GM
+     * shims that ignore AbortController): the underlying request keeps running
+     * but the caller resumes after `ms`. Used so a blocked lookup / provider
+     * never leaves the UI hanging in "searching" forever.
+     */
+    withTimeout(promise, ms) {
+      return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('timeout after ' + ms + 'ms')), ms || 8000);
+        Promise.resolve(promise).then(
+          (v) => {
+            clearTimeout(timer);
+            resolve(v);
+          },
+          (e) => {
+            clearTimeout(timer);
+            reject(e);
+          }
+        );
+      });
+    },
+
     /** Split a list into chunks (used for batched UI rendering). */
     chunk(arr, size) {
       const out = [];
