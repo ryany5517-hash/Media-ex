@@ -516,6 +516,60 @@
     return res;
   }
 
+  function namesMatch(a, b) {
+    const qn = (s) =>
+      String(s || '')
+        .toLowerCase()
+        .normalize('NFKD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]+/g, ' ')
+        .trim();
+    const na = qn(a);
+    const nb = qn(b);
+    if (!na || !nb) return false;
+    if (na === nb) return true;
+    if (na.indexOf(nb) >= 0 || nb.indexOf(na) >= 0) return true;
+    const tokens = na.split(' ').filter((t) => t.length > 2);
+    if (!tokens.length) return false;
+    const hit = tokens.filter((t) => nb.indexOf(t) >= 0).length;
+    return hit / tokens.length >= 0.6;
+  }
+
+  /**
+   * Sites like 67movies put the TMDB/IMDb catalog id in the path:
+   *   https://67movies.nl/watch/movie/10389  → TMDB 10389 (The Eye)
+   */
+  function idsFromUrl(raw) {
+    const s = String(raw || '');
+    if (!s) return {};
+    const imdb = s.match(/(?:imdb\.com\/title\/|\/title\/|imdbid=)(tt\d{6,10})/i) || s.match(/\/(tt\d{6,10})(?:\/|$|\?|#)/i);
+    if (imdb) return { imdbId: imdb[1], kind: 'movie' };
+    const movie = s.match(/themoviedb\.org\/movie\/(\d{2,8})/i) || s.match(/\/(?:watch\/)?movies?\/(\d{2,8})(?:\/|$|\?|#)/i);
+    if (movie) return { tmdbId: movie[1], kind: 'movie' };
+    const tv = s.match(/themoviedb\.org\/tv\/(\d{2,8})/i) || s.match(/\/(?:watch\/)?(?:tv|series|shows?)\/(\d{2,8})(?:\/|$|\?|#)/i);
+    if (tv) return { tmdbId: tv[1], kind: 'episode' };
+    return {};
+  }
+
+  function parseTmdbHtml(html) {
+    const src = String(html || '');
+    let name = '';
+    const og = src.match(/property=["']og:title["'][^>]*content=["']([^"']+)["']/i) || src.match(/content=["']([^"']+)["'][^>]*property=["']og:title["']/i);
+    if (og) name = og[1];
+    if (!name) {
+      const t = src.match(/<title>([^<]+)<\/title>/i);
+      if (t) name = t[1];
+    }
+    name = String(name || '')
+      .replace(/\s*[—–|-]\s*The Movie Database.*$/i, '')
+      .replace(/\s*\|\s*TMDB.*$/i, '')
+      .trim();
+    const year = (name.match(/\(((?:19|20)\d{2})\)/) || [])[1] || '';
+    name = name.replace(/\s*\((?:19|20)\d{2}\)\s*$/, '').trim();
+    const imdb = (src.match(/imdb\.com\/title\/(tt\d{6,10})/i) || [])[1] || '';
+    return { name: name, year: year, imdbId: imdb };
+  }
+
   /**
    * Best-of-all-sources resolution.
    * @param {Document} doc
@@ -534,13 +588,26 @@
     }
     if (!best) best = clean(coll.slug ? coll.slug.replace(/-/g, ' ') : (doc && doc.title) || '', { source: 'fallback' });
 
+    const href =
+      (doc.defaultView && doc.defaultView.location && doc.defaultView.location.href) ||
+      (doc.location && doc.location.href) ||
+      doc.URL ||
+      '';
+    let fromUrl = idsFromUrl(href);
+    if (!fromUrl.tmdbId && !fromUrl.imdbId) fromUrl = idsFromUrl(coll.slug ? 'https://x/' + coll.slug : '');
+    if (fromUrl.tmdbId) best.urlTmdbId = fromUrl.tmdbId;
+    if (fromUrl.imdbId && !best.imdbId) best.imdbId = fromUrl.imdbId;
+    if (fromUrl.kind && (best.kind === 'unknown' || !best.title)) best.kind = fromUrl.kind;
+    if (fromUrl.tmdbId && !best.title) best.tmdbId = fromUrl.tmdbId;
+    if (href) best.url = best.url || href;
+
     if (coll.info && Object.keys(coll.info).length) {
       best.year = best.year || coll.info.year || null;
       best.season = best.season || (coll.info.season ? String(coll.info.season).padStart(2, '0') : null);
       best.episode = best.episode || (coll.info.episode ? String(coll.info.episode).padStart(2, '0') : null);
       best.poster = coll.info.poster || coll.slug || '';
-      best.imdbId = coll.info.imdbId || '';
-      best.kind = coll.info.kind !== 'unknown' ? coll.info.kind : best.kind;
+      best.imdbId = coll.info.imdbId || best.imdbId || '';
+      best.kind = coll.info.kind && coll.info.kind !== 'unknown' ? coll.info.kind : best.kind;
       const fromLinks = (coll.links.join(' ').match(/tt\d{6,10}/i) || [])[0];
       if (!best.imdbId && fromLinks) best.imdbId = fromLinks;
       const tmdb = (coll.links.join(' ').match(/themoviedb\.org\/(?:movie|tv)\/(\d+)/i) || [])[1];
@@ -550,16 +617,48 @@
     return best;
   }
 
+  async function hydrateTmdb(id, kind, fetchImpl) {
+    const num = String(id || '').replace(/\D/g, '');
+    if (!num || !fetchImpl) return {};
+    const path = kind === 'episode' || kind === 'tv' || kind === 'series' ? 'tv' : 'movie';
+    try {
+      const res = await fetchImpl('https://www.themoviedb.org/' + path + '/' + num, { headers: { Accept: 'text/html' } });
+      if (!res || !res.ok) return {};
+      const html = typeof res.text === 'function' ? await res.text() : '';
+      const parsed = parseTmdbHtml(html);
+      if (!parsed.name) return {};
+      return { tmdbId: num, name: parsed.name, year: parsed.year, imdbId: parsed.imdbId, kind: path === 'tv' ? 'episode' : 'movie' };
+    } catch (_) {
+      return {};
+    }
+  }
+
   /**
    * Resolve IMDb/TMDB ids from a cleaned title when the page has none.
-   * Uses IMDb's public suggestion endpoint (no key). Fail-soft.
+   * Catalog ids in the page URL (67movies /watch/movie/10389) are verified
+   * against the TMDB page name. Uses IMDb's public suggestion endpoint (no key). Fail-soft.
    */
   async function lookupIds(want, opts) {
     const o = opts || {};
-    const title = String((want && want.title) || '').trim();
-    if (!title || title.length < 2) return {};
     const fetchImpl = o.fetchImpl || (SR.util && SR.util.fetchImpl ? SR.util.fetchImpl.bind(SR.util) : null) || (typeof fetch === 'function' ? fetch : null);
     if (!fetchImpl) return {};
+    const urlTmdb = String((want && (want.urlTmdbId || want.tmdbId)) || '').replace(/\D/g, '');
+    let hydrated = {};
+    if (urlTmdb) hydrated = await hydrateTmdb(urlTmdb, want && want.kind, fetchImpl);
+    const title = String((want && want.title) || hydrated.name || '').trim();
+    const out = {};
+    if (urlTmdb) {
+      const pageTitle = String((want && want.title) || '').trim();
+      const keepId = !pageTitle || (hydrated.name && namesMatch(pageTitle, hydrated.name));
+      if (keepId) {
+        out.tmdbId = urlTmdb;
+        if (hydrated.name) out.name = hydrated.name;
+        if (hydrated.year) out.year = hydrated.year;
+        if (hydrated.imdbId) out.imdbId = hydrated.imdbId;
+        if (hydrated.kind) out.kind = hydrated.kind;
+      }
+    }
+    if (!title || title.length < 2) return out;
     const slug = title
       .toLowerCase()
       .normalize('NFKD')
@@ -567,7 +666,7 @@
       .replace(/[^a-z0-9]+/g, '_')
       .replace(/^_|_$/g, '')
       .slice(0, 48);
-    if (!slug) return {};
+    if (!slug) return out;
     const url = 'https://v2.sg.media-imdb.com/suggestion/' + slug[0] + '/' + encodeURIComponent(slug) + '.json';
     const wantYear = want.year ? String(want.year) : '';
     const wantEp = !!(want.season || want.episode);
@@ -617,12 +716,13 @@
         }
       }
       if (best && bestScore >= 28) {
-        return {
+        return Object.assign({}, out, {
           imdbId: String(best.id),
-          year: best.y ? String(best.y) : '',
-          name: best.l || title,
-          kind: /tv|series|episode/.test(String(best.qid || '')) ? 'episode' : 'movie',
-        };
+          year: (best.y ? String(best.y) : '') || out.year || '',
+          name: best.l || out.name || title,
+          kind: /tv|series|episode/.test(String(best.qid || '')) ? 'episode' : out.kind || 'movie',
+          tmdbId: out.tmdbId || '',
+        });
       }
     } catch (_) {}
     try {
@@ -642,16 +742,16 @@
           best = r;
         }
       }
-      if (!best || bestScore < 28) return {};
-      return {
+      if (!best || bestScore < 28) return out;
+      return Object.assign({}, out, {
         imdbId: String(best.imdb_id || best.imdbId),
-        tmdbId: best.id && /^\d+$/.test(String(best.id)) ? String(best.id) : '',
-        year: best.year ? String(best.year) : '',
-        name: best.name || title,
-        kind: /series|tv/.test(String(best.type || '')) ? 'episode' : 'movie',
-      };
+        tmdbId: out.tmdbId || (best.id && /^\d+$/.test(String(best.id)) ? String(best.id) : ''),
+        year: (best.year ? String(best.year) : '') || out.year || '',
+        name: best.name || out.name || title,
+        kind: /series|tv/.test(String(best.type || '')) ? 'episode' : out.kind || 'movie',
+      });
     } catch (_) {
-      return {};
+      return out;
     }
   }
 
@@ -674,6 +774,9 @@
     collect,
     resolve,
     lookupIds,
+    idsFromUrl,
+    namesMatch,
+    hydrateTmdb,
     normalize,
     searchQuery,
     episodeLabel,

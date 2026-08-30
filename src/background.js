@@ -355,7 +355,7 @@ try {
       if (e && !e.isAd) count++;
     }
     try {
-      api.action.setBadgeBackgroundColor({ color: count ? '#14b8a6' : '#94a3b8' });
+      api.action.setBadgeBackgroundColor({ color: count ? '#3d5248' : '#8a847a' });
       api.action.setBadgeText({ tabId: tabId, text: count ? (count > 99 ? '99+' : String(count)) : '' });
       api.action.setTitle({ tabId: tabId, title: count ? t('fab.label', { n: count }) : 'Stream Radar: ' + t('panel.empty') });
     } catch (_) {}
@@ -518,7 +518,7 @@ try {
     const st = getTab(tabId);
     if (!st || !st.title) return;
     if (!force && !settings.autoSubtitle) return;
-    if (!st.title.title && !st.title.imdbId && !st.title.tmdbId) return;
+    if (!st.title.title && !st.title.imdbId && !st.title.tmdbId && !st.title.urlTmdbId) return;
     if (!force && st.sub && (st.sub.status === 'searching' || (st.sub.status === 'found' && Date.now() - st.sub.at < 600000))) return;
     const prev = subTimers.get(tabId);
     if (prev) prev.cancel();
@@ -537,17 +537,34 @@ try {
       season: st.title.season || null,
       episode: st.title.episode || null,
       imdbId: st.title.imdbId || null,
-      tmdbId: st.title.tmdbId || null,
+      tmdbId: st.title.tmdbId || st.title.urlTmdbId || null,
+      urlTmdbId: st.title.urlTmdbId || st.title.tmdbId || null,
+      kind: st.title.kind || 'unknown',
     };
-    if (!want.imdbId && want.title && SR.title && SR.title.lookupIds) {
+    const needLookup = !want.imdbId || !want.title || (want.urlTmdbId && !st.title.tmdbId);
+    if (needLookup && SR.title && SR.title.lookupIds) {
       try {
         const ids = await SR.title.lookupIds(want, {});
-        if (ids && ids.imdbId) {
-          want.imdbId = ids.imdbId;
-          st.title.imdbId = ids.imdbId;
-          if (ids.tmdbId && !st.title.tmdbId) st.title.tmdbId = ids.tmdbId;
-          if (ids.year && !st.title.year) st.title.year = ids.year;
-          if (ids.kind && st.title.kind === 'unknown') st.title.kind = ids.kind;
+        if (ids && (ids.imdbId || ids.tmdbId || ids.name)) {
+          if (ids.imdbId && !want.imdbId) {
+            want.imdbId = ids.imdbId;
+            st.title.imdbId = ids.imdbId;
+          }
+          if (ids.tmdbId) {
+            want.tmdbId = ids.tmdbId;
+            st.title.tmdbId = ids.tmdbId;
+          }
+          if (ids.year && !st.title.year) {
+            want.year = ids.year;
+            st.title.year = ids.year;
+          }
+          if (ids.name && !st.title.title) {
+            want.title = ids.name;
+            want.show = ids.name;
+            st.title.title = ids.name;
+            st.title.isJunk = false;
+          }
+          if (ids.kind && (st.title.kind === 'unknown' || !st.title.title)) st.title.kind = ids.kind;
         }
       } catch (_) {}
     }
@@ -643,7 +660,7 @@ try {
 
   async function ensurePartySubtitle(st) {
     if (!st) return null;
-    if (!st.pendingSub && st.title && (st.title.title || st.title.imdbId || st.title.tmdbId)) {
+    if (!st.pendingSub && st.title && (st.title.title || st.title.imdbId || st.title.tmdbId || st.title.urlTmdbId)) {
       try {
         await runSubSearch(st.tabId);
       } catch (_) {}

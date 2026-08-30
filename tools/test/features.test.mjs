@@ -198,6 +198,29 @@ test('F4b page without IMDb: lookup from title, then Watch Party already has a s
   h.dom.window.close();
 });
 
+test('F4c 67movies URL movie id hydrates The Eye and is enough for subtitles', async () => {
+  const html = `<!doctype html><html lang="id"><head><meta charset="utf-8">
+<title>67movies.net — Watch Movies &amp; TV Shows in HD Online</title>
+<meta property="og:title" content="67movies.net — Watch Movies & TV Shows in HD Online">
+</head><body><p>Finding the best source</p></body></html>`;
+  const net = makeNetStub({
+    'themoviedb.org/movie/10389': {
+      body: '<html><head><meta property="og:title" content="The Eye (2002)"><title>The Eye (2002) — The Movie Database (TMDB)</title></head></html>',
+      type: 'text/html',
+    },
+    'v2.sg.media-imdb.com': {
+      body: JSON.stringify({ d: [{ id: 'tt0314196', l: 'The Eye', y: 2002, qid: 'movie' }] }),
+      type: 'application/json',
+    },
+  });
+  const h = await boot({ html, url: 'https://67movies.nl/watch/movie/10389', net });
+  await h.hub.sendFromContent({ type: 'action', payload: { name: 'subs-search', tabId: 1 } });
+  assert.ok(await until(h, () => (stateOf(h).title || {}).urlTmdbId === '10389' || (stateOf(h).title || {}).tmdbId === '10389'), 'catalog id from URL: ' + JSON.stringify(stateOf(h).title));
+  assert.ok(await until(h, () => (stateOf(h).title || {}).title === 'The Eye'), 'title hydrated: ' + JSON.stringify(stateOf(h).title));
+  assert.ok(await until(h, () => (stateOf(h).title || {}).imdbId === 'tt0314196' || (stateOf(h).sub || {}).imdbId === 'tt0314196'), 'imdb from catalog: ' + JSON.stringify({ title: stateOf(h).title, sub: stateOf(h).sub }));
+  h.dom.window.close();
+});
+
 /* ------------------------------------------------------------------ *
  * F5 · auto Indonesian subtitle: search → download zip → SRT→VTT → attach
  * ------------------------------------------------------------------ */

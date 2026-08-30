@@ -1,40 +1,40 @@
 /* Stream Radar design tokens - single source of truth.
  * Popup and Options link this file; the shadow-DOM panel gets a copy injected
  * into src/content/ui-styles.js by tools/sync-theme.mjs (never hand-edit there).
- * Values are final (see design brief); contrast is verified by tools/contrast.mjs.
+ * Quiet linen + moss. No neon, no rainbow. Contrast via tools/contrast.mjs.
  * Comments are ASCII only. */
 
 :root,
 :host {
-  /* light: warm stone paper, forest ink, solid (no rainbow buttons) */
-  --sr-canvas: #f3f1ec;
-  --sr-surface: #fffcf8;
-  --sr-surface-2: #f4f0e8;
-  --sr-surface-3: #e8e2d6;
-  --sr-glass: rgba(255, 252, 248, 0.86);
-  --sr-ink: #1c1a16;
-  --sr-ink-2: #5a554c;
-  --sr-ink-3: #8a8478;
-  --sr-line: #e2dcd0;
-  --sr-line-2: #eeeae2;
-  --sr-accent: #1f6b5c;
-  --sr-accent-2: #1f6b5c;
-  --sr-accent-ink: #ffffff;
-  --sr-accent-soft: #e6f3ef;
-  --sr-accent-line: #9cc9be;
-  --sr-accent-glow: rgba(31, 107, 92, 0.28);
-  --sr-ok: #1b6b45;
-  --sr-ok-soft: #e5f4eb;
-  --sr-warn: #8a5a12;
-  --sr-warn-soft: #f8eedc;
-  --sr-err: #b42318;
-  --sr-err-soft: #fbeaea;
-  --sr-info: #1d5f7a;
-  --sr-info-soft: #e6f1f6;
-  --sr-shadow-1: 0 1px 0 rgba(28, 26, 22, 0.03), 0 1px 2px rgba(28, 26, 22, 0.05), 0 6px 16px -8px rgba(28, 26, 22, 0.12);
-  --sr-shadow-2: 0 1px 0 rgba(28, 26, 22, 0.04), 0 12px 24px -12px rgba(28, 26, 22, 0.16), 0 32px 64px -24px rgba(28, 26, 22, 0.22);
+  /* light: warm paper, charcoal ink, muted moss */
+  --sr-canvas: #f2efe8;
+  --sr-surface: #faf8f3;
+  --sr-surface-2: #f0ece4;
+  --sr-surface-3: #e5e0d6;
+  --sr-glass: rgba(250, 248, 243, 0.88);
+  --sr-ink: #2b2925;
+  --sr-ink-2: #5c5850;
+  --sr-ink-3: #8a847a;
+  --sr-line: #ddd7cc;
+  --sr-line-2: #ebe6dc;
+  --sr-accent: #3d5248;
+  --sr-accent-2: #3d5248;
+  --sr-accent-ink: #f6f3ec;
+  --sr-accent-soft: #e7eee9;
+  --sr-accent-line: #b7c4bd;
+  --sr-accent-glow: rgba(61, 82, 72, 0.22);
+  --sr-ok: #3b5c48;
+  --sr-ok-soft: #e7efe9;
+  --sr-warn: #7a5c28;
+  --sr-warn-soft: #f3ead8;
+  --sr-err: #8f3d36;
+  --sr-err-soft: #f6e8e6;
+  --sr-info: #3d5564;
+  --sr-info-soft: #e6eef2;
+  --sr-shadow-1: 0 1px 0 rgba(43, 41, 37, 0.03), 0 1px 2px rgba(43, 41, 37, 0.05), 0 6px 16px -8px rgba(43, 41, 37, 0.1);
+  --sr-shadow-2: 0 1px 0 rgba(43, 41, 37, 0.04), 0 12px 24px -12px rgba(43, 41, 37, 0.14), 0 32px 64px -24px rgba(43, 41, 37, 0.18);
   --sr-shadow-accent: 0 8px 18px -10px var(--sr-accent-glow);
-  --sr-inset: inset 0 1px 0 rgba(255, 255, 255, 0.85);
+  --sr-inset: inset 0 1px 0 rgba(255, 255, 255, 0.78);
 
   --sr-sp-1: 4px;
   --sr-sp-2: 8px;
@@ -52,17 +52,16 @@
   --sr-spring: cubic-bezier(0.2, 0.9, 0.28, 1.24);
   --sr-font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --sr-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
-  /* solid fills so button labels stay readable */
-  --sr-brand-gradient: #1f6b5c;
+  --sr-brand-gradient: #3d5248;
   --sr-brand-sheen: none;
-  --sr-cat-hls: #8a6b2e;
-  --sr-cat-dash: #3a6a88;
-  --sr-cat-mp4: #2a7a62;
-  --sr-cat-webm: #5c5a88;
-  --sr-cat-blob: #6b7280;
-  --sr-cat-seg: #8a6b2e;
-  --sr-cat-text: #2a7a62;
-  --sr-glyph-on-color: #ffffff;
+  --sr-cat-hls: #6d6558;
+  --sr-cat-dash: #4d5c62;
+  --sr-cat-mp4: #3d5248;
+  --sr-cat-webm: #5a5868;
+  --sr-cat-blob: #6b6760;
+  --sr-cat-seg: #6d6558;
+  --sr-cat-text: #3d5248;
+  --sr-glyph-on-color: #f6f3ec;
 
   --sr-scroll-thumb: var(--sr-ink-2);
   --sr-scroll-thumb-hover: var(--sr-accent);
@@ -70,35 +69,35 @@
 }
 
 [data-theme='dark'] {
-  --sr-canvas: #121417;
-  --sr-surface: #1b1e23;
-  --sr-surface-2: #24282e;
-  --sr-surface-3: #2e333a;
-  --sr-glass: rgba(27, 30, 35, 0.88);
-  --sr-ink: #f2efe8;
-  --sr-ink-2: #c4bfb4;
-  --sr-ink-3: #8e897e;
-  --sr-line: #32373e;
-  --sr-line-2: #262a30;
-  --sr-accent: #7dcebc;
-  --sr-accent-2: #7dcebc;
-  --sr-accent-ink: #10211c;
-  --sr-accent-soft: rgba(125, 206, 188, 0.14);
-  --sr-accent-line: rgba(125, 206, 188, 0.38);
-  --sr-accent-glow: rgba(125, 206, 188, 0.28);
-  --sr-ok: #7dcea6;
-  --sr-ok-soft: rgba(125, 206, 166, 0.14);
-  --sr-warn: #e0b86a;
-  --sr-warn-soft: rgba(224, 184, 106, 0.14);
-  --sr-err: #f0a098;
-  --sr-err-soft: rgba(240, 160, 152, 0.14);
-  --sr-info: #8ec4e0;
-  --sr-info-soft: rgba(142, 196, 224, 0.14);
-  --sr-shadow-1: 0 1px 0 rgba(0, 0, 0, 0.35), 0 6px 16px -8px rgba(0, 0, 0, 0.45);
-  --sr-shadow-2: 0 16px 32px -16px rgba(0, 0, 0, 0.55), 0 40px 72px -28px rgba(0, 0, 0, 0.62);
+  --sr-canvas: #141312;
+  --sr-surface: #1c1b19;
+  --sr-surface-2: #252420;
+  --sr-surface-3: #2e2c28;
+  --sr-glass: rgba(28, 27, 25, 0.9);
+  --sr-ink: #e6e1d6;
+  --sr-ink-2: #a39e94;
+  --sr-ink-3: #7a756c;
+  --sr-line: #322f2b;
+  --sr-line-2: #262420;
+  --sr-accent: #8d9b92;
+  --sr-accent-2: #8d9b92;
+  --sr-accent-ink: #141312;
+  --sr-accent-soft: rgba(141, 155, 146, 0.12);
+  --sr-accent-line: rgba(141, 155, 146, 0.32);
+  --sr-accent-glow: rgba(141, 155, 146, 0.2);
+  --sr-ok: #8eaa98;
+  --sr-ok-soft: rgba(142, 170, 152, 0.12);
+  --sr-warn: #c4b08a;
+  --sr-warn-soft: rgba(196, 176, 138, 0.12);
+  --sr-err: #c9a09a;
+  --sr-err-soft: rgba(201, 160, 154, 0.12);
+  --sr-info: #9bb0bc;
+  --sr-info-soft: rgba(155, 176, 188, 0.12);
+  --sr-shadow-1: 0 1px 0 rgba(0, 0, 0, 0.32), 0 6px 16px -8px rgba(0, 0, 0, 0.4);
+  --sr-shadow-2: 0 16px 32px -16px rgba(0, 0, 0, 0.5), 0 40px 72px -28px rgba(0, 0, 0, 0.55);
   --sr-shadow-accent: 0 8px 18px -10px var(--sr-accent-glow);
-  --sr-inset: inset 0 1px 0 rgba(255, 255, 255, 0.05);
-  --sr-brand-gradient: #7dcebc;
+  --sr-inset: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  --sr-brand-gradient: #8d9b92;
   --sr-brand-sheen: none;
 }
 

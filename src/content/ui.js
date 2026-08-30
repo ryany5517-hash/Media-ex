@@ -253,6 +253,7 @@
         if (info && info.isJunk) chips.push(chip('warn', 'search', t('panel.noTitle')));
         if (info && info.year) chips.push(chip('year', 'calendar', info.year));
         if (info && info.imdbId) chips.push(chip('id', 'clapperboard', info.imdbId));
+        if (info && (info.tmdbId || info.urlTmdbId)) chips.push(chip('id', 'clapperboard', 'tmdb ' + (info.tmdbId || info.urlTmdbId)));
         const ep = info && SR.title && SR.title.episodeLabel ? SR.title.episodeLabel(info) : null;
         if (ep) chips.push(chip('ep', 'captions', ep));
         if (info && info.kind === 'episode') chips.push(chip('ep', 'monitor-smartphone', t('panel.series')));

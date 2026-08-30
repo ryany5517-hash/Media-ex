@@ -229,6 +229,76 @@ test('title.lookupIds: fail-soft on network errors', async () => {
   assert.deepEqual(r, {});
 });
 
+test('title.idsFromUrl: 67movies /watch/movie/10389 is TMDB', () => {
+  const a = title.idsFromUrl('https://67movies.nl/watch/movie/10389');
+  assert.equal(a.tmdbId, '10389');
+  assert.equal(a.kind, 'movie');
+  const b = title.idsFromUrl('https://67movies.nl/watch/tv/1396');
+  assert.equal(b.tmdbId, '1396');
+  assert.equal(b.kind, 'episode');
+  const c = title.idsFromUrl('https://www.imdb.com/title/tt0314196/');
+  assert.equal(c.imdbId, 'tt0314196');
+  assert.equal(title.namesMatch('The Eye', 'The Eye (2002)'), true);
+  assert.equal(title.namesMatch('The Eye', 'Interstellar'), false);
+});
+
+test('title.lookupIds: TMDB catalog id hydrates title when the page is junk', async () => {
+  const fake = async (url) => {
+    const u = String(url);
+    if (u.includes('themoviedb.org/movie/10389')) {
+      return {
+        ok: true,
+        status: 200,
+        async text() {
+          return '<html><head><meta property="og:title" content="The Eye (2002)"><title>The Eye (2002) — The Movie Database (TMDB)</title></head></html>';
+        },
+      };
+    }
+    if (u.includes('media-imdb')) {
+      return {
+        ok: true,
+        status: 200,
+        async text() {
+          return JSON.stringify({ d: [{ id: 'tt0314196', l: 'The Eye', y: 2002, qid: 'movie' }] });
+        },
+      };
+    }
+    return { ok: false, status: 404, async text() { return ''; } };
+  };
+  const r = await title.lookupIds({ urlTmdbId: '10389', kind: 'movie' }, { fetchImpl: fake });
+  assert.equal(r.tmdbId, '10389');
+  assert.equal(r.name, 'The Eye');
+  assert.equal(r.year, '2002');
+  assert.equal(r.imdbId, 'tt0314196');
+});
+
+test('title.lookupIds: URL TMDB id is dropped when it does not match the page title', async () => {
+  const fake = async (url) => {
+    if (String(url).includes('themoviedb.org/movie/10389')) {
+      return {
+        ok: true,
+        status: 200,
+        async text() {
+          return '<html><head><meta property="og:title" content="The Eye (2002)"></head></html>';
+        },
+      };
+    }
+    if (String(url).includes('media-imdb')) {
+      return {
+        ok: true,
+        status: 200,
+        async text() {
+          return JSON.stringify({ d: [{ id: 'tt0816692', l: 'Interstellar', y: 2014, qid: 'movie' }] });
+        },
+      };
+    }
+    return { ok: false, status: 404, async text() { return ''; } };
+  };
+  const r = await title.lookupIds({ title: 'Interstellar', year: '2014', urlTmdbId: '10389' }, { fetchImpl: fake });
+  assert.equal(r.tmdbId || '', '');
+  assert.equal(r.imdbId, 'tt0816692');
+});
+
 /* ------------------------------------------------------------------ *
  * subtitles
  * ------------------------------------------------------------------ */

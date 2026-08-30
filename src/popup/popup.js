@@ -123,6 +123,7 @@
     const ep = SR.title.episodeLabel(info);
     if (ep) chips.push(`<span class="chip" data-tone="ep">${esc(ep)}</span>`);
     if (info.imdbId) chips.push(`<span class="chip">${esc(info.imdbId)}</span>`);
+    if (info.tmdbId || info.urlTmdbId) chips.push(`<span class="chip">tmdb ${esc(info.tmdbId || info.urlTmdbId)}</span>`);
     if (info.isJunk || !info.title) chips.push(`<span class="chip" data-tone="warn">title not resolved</span>`);
     if (state.drm) chips.push(`<span class="chip" data-tone="err">${esc(t('label.drm'))} ${esc(state.drm)}</span>`);
     if (state.frames && state.frames.length) chips.push(`<span class="chip">${state.frames.length} frame${state.frames.length > 1 ? 's' : ''}</span>`);

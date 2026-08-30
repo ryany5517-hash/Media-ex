@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Stream Radar : Media Detector & Player",
-  "version": "1.1.17",
+  "version": "1.1.18",
   "description": "7-layer video stream detector (HLS/DASH/MP4/blob) plus a local player that fetches with the page Referer (the way IDM does), subtitles, and WatchParty rooms. No server, no tracking.",
   "author": "Stream Radar",
   "homepage_url": "https://github.com/ryany5517-hash/Media-ex",
