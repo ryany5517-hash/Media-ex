@@ -269,6 +269,29 @@ test('F4f clicking the Subtitles button on a stream row responds visibly (toast 
   h.dom.window.close();
 });
 
+test('F4g junk page title: stream URL id recovers title and still finds subtitles', async () => {
+  const html = `<!doctype html><html lang="id"><head><meta charset="utf-8">
+<title>Watch Movies &amp; TV Shows in HD Online</title>
+<meta property="og:title" content="Watch Movies &amp; TV Shows in HD Online">
+</head><body><p>Finding the best source</p></body></html>`;
+  const net = makeNetStub({
+    'themoviedb.org/movie/10389': {
+      body: '<html><head><meta property="og:title" content="The Eye (2002)"><title>The Eye (2002) - TMDB</title></head></html>',
+      type: 'text/html',
+    },
+  });
+  const h = await boot({ html, url: 'https://67movies.nl/watch/some-generic-page', net, settings: { autoSubtitle: false } });
+  // the page carries no id, but the detected stream URL does: /hls/10389/master.m3u8
+  h.hub.fireWebRequest({ url: 'https://a2.shows.st/hls/10389/master.m3u8?token=9f2', type: 'media', statusCode: 200, responseHeaders: h.hub.header({ 'content-type': 'application/vnd.apple.mpegurl', 'content-length': '1000' }) });
+  await until(h, () => (stateOf(h).items || []).some((i) => i.url.includes('master.m3u8')));
+  // clicking Subtitles (action 'subs') must recover the id and search anyway
+  await h.hub.sendFromContent({ type: 'action', payload: { name: 'subs', tabId: 1 } });
+  assert.ok(await until(h, () => (stateOf(h).title || {}).tmdbId === '10389' || (stateOf(h).title || {}).urlTmdbId === '10389'), 'id recovered from stream URL: ' + JSON.stringify(stateOf(h).title));
+  assert.ok(await until(h, () => (stateOf(h).title || {}).title === 'The Eye'), 'title hydrated from TMDB: ' + JSON.stringify(stateOf(h).title));
+  assert.ok(await until(h, () => (stateOf(h).sub || {}).status === 'found'), 'subtitle search ran with recovered id: ' + JSON.stringify(stateOf(h).sub));
+  h.dom.window.close();
+});
+
 /* ------------------------------------------------------------------ *
  * F5 · auto Indonesian subtitle: search → download zip → SRT→VTT → attach
  * ------------------------------------------------------------------ */

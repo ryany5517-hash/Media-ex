@@ -519,21 +519,49 @@ try {
     // Never fail silently on a manual click: tell the user why nothing ran.
     const blocked = (reason) => {
       if (force) toastTo(tabId, reason, 'warn');
+      return false;
     };
     if (!st || !st.title) return blocked(t('toast.subsNoTitle'));
-    if (!force && !settings.autoSubtitle) return;
-    if (!st.title.title && !st.title.imdbId && !st.title.tmdbId && !st.title.urlTmdbId) return blocked(t('toast.subsNoTitle'));
-    if (!force && st.sub && (st.sub.status === 'searching' || (st.sub.status === 'found' && Date.now() - st.sub.at < 600000))) return;
+    if (!force && !settings.autoSubtitle) return false;
+    // A usable title/id, OR a detected stream whose URL may carry the id
+    // (/hls/10389/master.m3u8) — runSubSearch recovers the id from the URL.
+    const hasTitleId = !!(st.title.title && !st.title.isJunk) || st.title.imdbId || st.title.tmdbId || st.title.urlTmdbId;
+    const hasStream = !!st.store.best();
+    if (!hasTitleId && !hasStream) return blocked(t('toast.subsNoTitle'));
+    if (!force && st.sub && (st.sub.status === 'searching' || (st.sub.status === 'found' && Date.now() - st.sub.at < 600000))) return false;
     const prev = subTimers.get(tabId);
     if (prev) prev.cancel();
-    const job = util.debounce(() => runSubSearch(tabId), force ? 250 : 1800);
+    const job = util.debounce(() => runSubSearch(tabId, force), force ? 250 : 1800);
     subTimers.set(tabId, job);
     job();
+    return true;
   }
 
-  async function runSubSearch(tabId) {
+  async function runSubSearch(tabId, force) {
     const st = getTab(tabId);
-    if (!st || !st.title) return;
+    if (!st) return;
+    let title = st.title || {};
+    // Page title junk/empty but a stream was detected: many CDNs bake the
+    // TMDB/IMDb id into the path (/hls/10389/master.m3u8, /dash/1396/manifest.mpd).
+    // Recover it so the search can still run by id (Wyzie) and the title can be
+    // hydrated from TMDB even when the page itself is a generic SEO shell.
+    if ((!title.title || title.isJunk) && !title.imdbId && !title.tmdbId && !title.urlTmdbId) {
+      const best = st.store.best();
+      if (best && best.url && SR.title && SR.title.idsFromUrl) {
+        try {
+          const ids = SR.title.idsFromUrl(best.url);
+          if (ids && (ids.tmdbId || ids.imdbId)) {
+            title = Object.assign({}, title, {
+              urlTmdbId: ids.tmdbId || null,
+              imdbId: ids.imdbId || title.imdbId || null,
+              kind: ids.kind || title.kind || 'movie',
+            });
+            st.title = title;
+          }
+        } catch (_) {}
+      }
+    }
+    if (!st.title) st.title = title;
     const want = {
       title: st.title.title,
       show: st.title.showName || st.title.title,
@@ -545,6 +573,13 @@ try {
       urlTmdbId: st.title.urlTmdbId || st.title.tmdbId || null,
       kind: st.title.kind || 'unknown',
     };
+    if (!want.title && !want.imdbId && !want.tmdbId && !want.urlTmdbId) {
+      // Nothing to search with (no title, no id, no id in the stream URL).
+      if (force) toastTo(tabId, t('toast.subsNoTitle'), 'warn');
+      st.sub = { status: 'none', items: st.sub.items || [], error: t('toast.subsNoTitle'), query: '', at: Date.now() };
+      broadcast(tabId, 'sub');
+      return;
+    }
     const needLookup = !want.imdbId || !want.title || (want.urlTmdbId && !st.title.tmdbId);
     // Show "searching" immediately so a click is never silent, even while the
     // IMDb/TMDB id lookup below is still in flight (it is timeout-capped).
@@ -566,7 +601,7 @@ try {
             want.year = ids.year;
             st.title.year = ids.year;
           }
-          if (ids.name && !st.title.title) {
+          if (ids.name && (!st.title.title || st.title.isJunk)) {
             want.title = ids.name;
             want.show = ids.name;
             st.title.title = ids.name;
@@ -1676,8 +1711,10 @@ try {
       case 'subs-search':
         // The panel/popup rows send 'subs'; the dedicated retry buttons send
         // 'subs-search'. Both mean "search subtitles for the current title".
-        scheduleSubSearch(tabId, true);
-        return { ok: true };
+        {
+          const ok = scheduleSubSearch(tabId, true);
+          return ok ? { ok: true } : { ok: false, reason: t('toast.subsNoTitle') };
+        }
       case 'sub-attach': {
         if (!st.pendingSub) await runSubSearch(tabId);
         if (!st.pendingSub) return { ok: false, reason: 'no subtitle available' };

@@ -260,6 +260,12 @@ test('title.idsFromUrl: catalog ids on any watch-site path / query / embed', () 
   assert.equal(title.idsFromUrl('https://x.example/tv/1396/season/1/episode/3').tmdbId, '1396');
   assert.equal(title.idsFromUrl('https://x.example/tv/1396/season/1/episode/3').kind, 'episode');
   assert.equal(title.idsFromUrl('https://x.example/news/2024/05/10389').tmdbId || '', '');
+  // numeric ids baked into the stream URL itself (CDN path carries the TMDB id)
+  assert.equal(title.idsFromUrl('https://a2.shows.st/hls/10389/master.m3u8?token=9f2').tmdbId, '10389');
+  assert.equal(title.idsFromUrl('https://cdn.x/dash/1396/manifest.mpd').tmdbId, '1396');
+  assert.equal(title.idsFromUrl('https://x.cdn/player/10389/index.m3u8').tmdbId, '10389');
+  assert.equal(title.idsFromUrl('https://cdn.x/hls/1080/index.m3u8').tmdbId || '', '');
+  assert.equal(title.idsFromUrl('https://cdn.x/dash/2160/manifest.mpd').tmdbId || '', '');
   assert.equal(title.namesMatch('The Eye', 'The Eye (2002)'), true);
   assert.equal(title.namesMatch('The Eye', 'Interstellar'), false);
 });

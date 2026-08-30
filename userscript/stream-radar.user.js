@@ -1878,6 +1878,17 @@
       out.tmdbId = mediaPath[1];
       out.kind = /\/(?:episode|ep)\//i.test(s) ? 'episode' : out.kind || 'movie';
     }
+    // numeric ids baked into stream paths:  /hls/10389/master.m3u8  /dash/1396/manifest.mpd
+    const streamPath = s.match(/\/(?:hls|dash|cdn|player)\/(\d{2,8})(?:\/|\.m3u8|\.mpd|$|\?|#)/i);
+    if (streamPath && !isNoiseId(streamPath[1]) && !out.tmdbId) {
+      out.tmdbId = streamPath[1];
+      out.kind = out.kind || 'movie';
+    }
+    const masterFile = s.match(/\/(\d{2,8})[._-]?(?:index|master|playlist|manifest)\.(?:m3u8|mpd)(?:\?|#|$)/i);
+    if (masterFile && !isNoiseId(masterFile[1]) && !out.tmdbId) {
+      out.tmdbId = masterFile[1];
+      out.kind = out.kind || 'movie';
+    }
     const unlabeled = s.match(/\/(?:watch|play|nonton|films?)\/(\d{2,8})(?:\/|\.html?|$|\?|#)/i);
     if (unlabeled && !isNoiseId(unlabeled[1]) && !out.tmdbId) {
       out.tmdbId = unlabeled[1];

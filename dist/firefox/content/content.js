@@ -317,7 +317,10 @@
         scanner && scanner.readTitle(true);
         toast(t('toast.subsSearching'), 'info');
         const info = state.title || {};
-        if (!info.title && !info.imdbId && !info.tmdbId && !info.urlTmdbId) {
+        const hasStream = (state.items || []).some((i) => i.url && !i.isAd);
+        // Only warn when there is truly nothing to work with: the background can
+        // still recover the id from a detected stream URL (/hls/10389/master.m3u8).
+        if (!info.title && !info.imdbId && !info.tmdbId && !info.urlTmdbId && !hasStream) {
           toast(t('toast.subsNoTitle'), 'warn');
         }
         return void send('action', { name: 'subs-search' });
