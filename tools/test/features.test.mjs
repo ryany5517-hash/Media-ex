@@ -403,6 +403,9 @@ test('F6f watch party: /api?d= that is itself HLS opens a room', async () => {
   const tab = h.hub.tabs.created[h.hub.tabs.created.length - 1];
   assert.ok(String(tab.url).includes('watchparty.me'), 'opens Watch Party: ' + tab.url);
   assert.ok(!String(tab.url).includes('player/player.html'), 'does not open the local player');
+  const sent = decodeURIComponent(String(tab.url));
+  assert.ok(!/[?&]srad=/.test(sent), 'must not send srad query to the CDN: ' + sent);
+  assert.match(sent, /#playlist\.m3u8/i, 'Watch Party still sees .m3u8 via fragment: ' + sent);
   h.dom.window.close();
 });
 

@@ -726,10 +726,24 @@ try {
       createdAt: Date.now(),
     };
     const target = (encodeURIComponent(url).length > 1600 ? await createWatchPartyRoom(url) : '') || watchPartyCreateUrl(url);
-    const tab = await api.tabs.create({ url: target, active: true }).catch(async () => await api.tabs.create({ url: target }));
+    // Park on watchparty.me, install Referer+CORS for this tab, THEN navigate to
+    // /create?video= — otherwise HLS.js races the first playlist fetch and spins.
+    const parking = 'https://www.watchparty.me/';
+    const tab = await api.tabs.create({ url: parking, active: true }).catch(async () => await api.tabs.create({ url: parking }));
     if (tab && tab.id > 0) {
       await api.storage.local.set({ [PARTY_PREFIX + tab.id]: payload });
       await installPartyNetRules(tab.id, referer, origin, url);
+      if (target && target !== parking) {
+        try {
+          await api.tabs.update(tab.id, { url: target });
+        } catch (_) {
+          try {
+            await api.tabs.create({ url: target, active: true });
+          } catch (e) {
+            log('party navigate', String((e && e.message) || e));
+          }
+        }
+      }
     }
     return { ok: true, tabId: tab && tab.id, payload: payload };
   }
@@ -886,21 +900,38 @@ try {
     const ids = [8899];
     if (tabId != null && tabId > 0) {
       const n = Number(tabId) % 800;
-      ids.push(9100 + n, 9200 + n, 9300 + n);
-    }    try {
+      ids.push(9100 + n, 9200 + n, 9300 + n, 9400 + n, 9500 + n);
+    }
+    try {
       await dnr.updateSessionRules({ removeRuleIds: ids });
     } catch (_) {}
   }
 
   /** WatchParty.me fetches the CDN as watchparty.me — attach page Referer (IDM) and unlock CORS. */
+  function partyCdnDomains(mediaUrl) {
+    const host = util.host(mediaUrl || '');
+    const domain = util.domain(mediaUrl || '');
+    const out = [];
+    const push = (h) => {
+      if (!h || out.indexOf(h) >= 0) return;
+      if (!/^[a-z0-9.-]+$/i.test(h)) return;
+      out.push(h);
+    };
+    push(host);
+    push(domain);
+    return out;
+  }
+
   async function installPartyNetRules(tabId, referer, origin, mediaUrl) {
     const dnr = api.declarativeNetRequest;
     if (!dnr || !dnr.updateSessionRules || tabId == null || tabId <= 0) return false;
-    const host = util.host(mediaUrl || '');
-    const types = ['media', 'xmlhttprequest', 'other', 'image'];
+    const types = ['media', 'xmlhttprequest', 'other', 'image', 'object'];
     const n = Number(tabId) % 800;
     const reqId = 9200 + n;
     const corsId = 9300 + n;
+    const reqExtId = 9400 + n;
+    const corsExtId = 9500 + n;
+    const removeRuleIds = [reqId, corsId, reqExtId, corsExtId];
     const requestHeaders = [];
     if (referer) requestHeaders.push({ header: 'Referer', operation: 'set', value: referer });
     if (origin) requestHeaders.push({ header: 'Origin', operation: 'set', value: origin });
@@ -908,40 +939,35 @@ try {
       { header: 'Access-Control-Allow-Origin', operation: 'set', value: '*' },
       { header: 'Access-Control-Allow-Headers', operation: 'set', value: '*' },
       { header: 'Access-Control-Allow-Methods', operation: 'set', value: 'GET, HEAD, OPTIONS' },
+      { header: 'Cross-Origin-Resource-Policy', operation: 'set', value: 'cross-origin' },
     ];
-    const cond = { tabIds: [tabId], resourceTypes: types };
-    if (host) cond.urlFilter = '||' + host;
+    const domains = partyCdnDomains(mediaUrl);
+    const hostCond = { tabIds: [tabId], resourceTypes: types };
+    if (domains.length) hostCond.requestDomains = domains;
+    const extCond = {
+      tabIds: [tabId],
+      resourceTypes: types,
+      regexFilter: '^https?://.+\\.(m3u8|m3u|ts|m4s|mp4|key|mpd)(\\?|$)',
+    };
     const addRules = [
-      {
-        id: corsId,
-        priority: 4,
-        action: { type: 'modifyHeaders', responseHeaders: responseHeaders },
-        condition: cond,
-      },
+      { id: corsId, priority: 4, action: { type: 'modifyHeaders', responseHeaders: responseHeaders }, condition: hostCond },
+      { id: corsExtId, priority: 3, action: { type: 'modifyHeaders', responseHeaders: responseHeaders }, condition: extCond },
     ];
     if (requestHeaders.length) {
-      addRules.push({
-        id: reqId,
-        priority: 4,
-        action: { type: 'modifyHeaders', requestHeaders: requestHeaders },
-        condition: cond,
-      });
+      addRules.push({ id: reqId, priority: 4, action: { type: 'modifyHeaders', requestHeaders: requestHeaders }, condition: hostCond });
+      addRules.push({ id: reqExtId, priority: 3, action: { type: 'modifyHeaders', requestHeaders: requestHeaders }, condition: extCond });
     }
     try {
-      await dnr.updateSessionRules({ removeRuleIds: [reqId, corsId], addRules: addRules });
+      await dnr.updateSessionRules({ removeRuleIds: removeRuleIds, addRules: addRules });
       partyTabs.set(tabId, { referer: referer, origin: origin, mediaUrl: mediaUrl });
       return true;
     } catch (e) {
       log('party dnr failed', String((e && e.message) || e));
       try {
         const loose = { tabIds: [tabId], resourceTypes: types };
-        await dnr.updateSessionRules({
-          removeRuleIds: [reqId, corsId],
-          addRules: [
-            { id: corsId, priority: 4, action: { type: 'modifyHeaders', responseHeaders: responseHeaders }, condition: loose },
-            ...(requestHeaders.length ? [{ id: reqId, priority: 4, action: { type: 'modifyHeaders', requestHeaders: requestHeaders }, condition: loose }] : []),
-          ],
-        });
+        const fallback = [{ id: corsId, priority: 4, action: { type: 'modifyHeaders', responseHeaders: responseHeaders }, condition: loose }];
+        if (requestHeaders.length) fallback.push({ id: reqId, priority: 4, action: { type: 'modifyHeaders', requestHeaders: requestHeaders }, condition: loose });
+        await dnr.updateSessionRules({ removeRuleIds: removeRuleIds, addRules: fallback });
         partyTabs.set(tabId, { referer: referer, origin: origin, mediaUrl: mediaUrl });
         return true;
       } catch (e2) {
@@ -1280,19 +1306,31 @@ try {
 
   // WatchParty's isHls() is `src.includes('.m3u8')`. Token HLS (/mpd/, /api/playlist)
   // without that substring is treated as a raw <video src> and never loads.
+  // Use a fragment — browsers do not send `#…` to the CDN. A query hint
+  // (`srad=playlist.m3u8`) was forwarded to a2.shows.st/api?d= and the playlist
+  // never played (spinner + red X) while Play (no hint) worked.
   function ensureWpHlsUrl(url, category) {
     if (!url) return url;
-    if (/\.m3u8/i.test(url)) return url;
+    let clean = url;
+    try {
+      const u = new URL(url);
+      if (u.searchParams.has('srad')) {
+        u.searchParams.delete('srad');
+        clean = u.href;
+      }
+    } catch (_) {}
+    if (/\.m3u8/i.test(clean)) return clean;
     let path = '';
     try {
-      path = new URL(url).pathname || '';
+      path = new URL(clean).pathname || '';
     } catch (_) {
-      return url;
+      return clean;
     }
-    if (/\.(mp4|webm|mpd|mkv|m4v|mov)(\?|#|$)/i.test(url)) return url;
+    if (/\.(mp4|webm|mpd|mkv|m4v|mov)(\?|#|$)/i.test(clean)) return clean;
     const hlsish = category === 'hls' || /\/mpd\//i.test(path) || /\/playlist\//i.test(path) || /mpegurl/i.test(category);
-    if (!hlsish) return url;
-    return url + (url.indexOf('?') >= 0 ? '&' : '?') + 'srad=playlist.m3u8';
+    if (!hlsish) return clean;
+    if (clean.indexOf('#') >= 0) return clean;
+    return clean + '#playlist.m3u8';
   }
 
   // v0.m3u8 on token CDNs is often video-only. Prefer the master (AUDIO= group).

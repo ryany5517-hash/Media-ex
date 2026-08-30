@@ -118,7 +118,9 @@ export function makeHub() {
       },
       async update(id, props) {
         hub.log.push(['tabs.update', id, props && props.url]);
-        return {};
+        const tab = hub.tabs.created.find((t) => t.id === id);
+        if (tab && props) Object.assign(tab, props);
+        return tab || { id, ...(props || {}) };
       },
       async sendMessage(tabId, msg) {
         hub.log.push(['tabs.sendMessage', tabId, msg && msg.type]);

@@ -15,7 +15,7 @@
   'use strict';
 
   const SR = (root.SR = root.SR || {});
-  SR.VERSION = '1.1.20';
+  SR.VERSION = '1.1.21';
   SR.NS = 'streamRadar'; // message channel id / storage prefix
   SR.PREFIX = 'srad'; // css class prefix
 
@@ -252,7 +252,7 @@
       // WatchParty's HLS check is `src.includes('.m3u8')`. Only our own query
       // hint (or a real path extension) counts — encoded inner URLs in
       // ?to=/ ?url= must not make a redirect look like a playlist.
-      if (/[?&]srad=playlist\.m3u8/i.test(url)) return true;
+      if (/[?&]srad=playlist\.m3u8/i.test(url) || /#playlist\.m3u8/i.test(url)) return true;
       // 1) A media extension on the PATH is directly playable. This wins over
       //    everything: real HLS CDNs often serve .../api/playlist.m3u8, so a
       //    resolver-looking path must not veto an explicit manifest/file.

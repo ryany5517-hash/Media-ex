@@ -518,6 +518,7 @@ test('util.watchPartyPlayable: direct media yes, resolver/API links no', () => {
     ['https://cdn.x/api/manifest/master.m3u8', 'hls'],
     ['https://a2.shows.st/api/playlist/tok123', 'hls'],
     ['https://cdn.x/v0.m3u8?srad=playlist.m3u8', 'hls'],
+    ['https://a2.shows.st/api?d=tok#playlist.m3u8', 'hls'],
     // 67movies: token HLS without .m3u8 — already classified, so send it
     ['https://a2.shows.st/api?d=zDi0HsW9-WyCwCalBZIXmeiNh6I', 'hls'],
     ['https://nova-edge.example.workers.dev/mpd/token-no-ext', 'hls'],
