@@ -368,6 +368,146 @@
     return Math.max(0, Math.min(100, Math.round(n + 45)));
   }
 
+  /* ---- media id extraction (IMDb / TMDB) --------------------------- */
+
+  /** Words that usually introduce a media id in a URL path. */
+  const MEDIA_PATH_WORDS = new Set([
+    'watch', 'movie', 'movies', 'film', 'films', 'tv', 'series', 'serie', 'show', 'anime', 'title',
+    'episode', 'video', 'play', 'watching', 'media', 'detail', 'details', 'view',
+  ]);
+
+  const isYearLike = (s) => /^(?:18|19|20)\d{2}$/.test(String(s));
+
+  function canonicalHref(doc) {
+    try {
+      const el = doc.querySelector('link[rel="canonical"]');
+      const v = el && (el.getAttribute('href') || el.getAttribute('data-href') || el.getAttribute('content'));
+      return v ? String(v).trim() : '';
+    } catch (_) {
+      return '';
+    }
+  }
+
+  /** Extract IMDb / TMDB ids from one URL-like string. */
+  function idsFromUrl(url) {
+    const out = { imdbId: '', tmdbId: '' };
+    const s = String(url || '');
+    if (!s) return out;
+
+    let m = s.match(/(?:^|[^\w])(tt\d{6,10})(?:[^\w]|$)/i);
+    if (m) out.imdbId = m[1];
+
+    m = s.match(/themoviedb\.org\/(?:movie|tv|show)\/(\d+)/i);
+    if (m) {
+      out.tmdbId = m[1];
+      return out;
+    }
+
+    let u = null;
+    try {
+      u = new URL(s);
+    } catch (_) {
+      u = null;
+    }
+    if (!u) return out;
+
+    const path = u.pathname.replace(/%2f/gi, '/');
+    const segs = path
+      .split('/')
+      .filter(Boolean)
+      .map((seg) => {
+        try {
+          return decodeURIComponent(seg);
+        } catch (_) {
+          return seg;
+        }
+      });
+
+    const numericCandidate = (val) => {
+      const x = String(val || '').trim();
+      if (/^\d{4,9}$/.test(x) && !isYearLike(x)) return x;
+      // "10389-the-eye" still works; "tt3659388" must not.
+      const n = x.match(/^(\d{4,9})(?:[-_/]|$)/);
+      return n && !isYearLike(n[1]) ? n[1] : '';
+    };
+    const trailingCandidate = (val) => {
+      const x = String(val || '');
+      const n = x.match(/(?:^|[-_/])(\d{4,9})$/);
+      return n && !isYearLike(n[1]) ? n[1] : '';
+    };
+
+    for (let i = 0; i < segs.length; i++) {
+      const seg = segs[i].toLowerCase();
+      // a segment like "movie-10389" (some sites put the id right after the word)
+      if (i === 0 || /^(?:movie|movies|film|films|tv|series|serie|show|anime|title|episode|video|play|watch)[-_]/i.test(seg)) {
+        const own = trailingCandidate(seg);
+        if (own) {
+          out.tmdbId = own;
+          return out;
+        }
+      }
+      if (MEDIA_PATH_WORDS.has(seg)) {
+        const next = segs[i + 1] || '';
+        const direct = numericCandidate(next);
+        if (direct) {
+          out.tmdbId = direct;
+          return out;
+        }
+        const trailing = trailingCandidate(next.replace(/\.html?$/i, ''));
+        if (trailing) {
+          out.tmdbId = trailing;
+          return out;
+        }
+      }
+    }
+
+    for (const key of ['tmdb', 'tmdb_id', 'tmdbid', 'movie', 'film', 'title']) {
+      const v = u.searchParams.get(key);
+      if (!v) continue;
+      const n = numericCandidate(v);
+      if (n) {
+        out.tmdbId = n;
+        break;
+      }
+    }
+    return out;
+  }
+
+  /** Extract IMDb / TMDB ids from free text (JSON-LD, page title, config). */
+  function idsFromText(text) {
+    const out = { imdbId: '', tmdbId: '' };
+    const s = String(text || '');
+    if (!s) return out;
+    const imdb = s.match(/\b(tt\d{6,10})\b/i);
+    if (imdb) out.imdbId = imdb[1];
+
+    let m = s.match(/themoviedb\.org\/(?:movie|tv|show)\/(\d+)/i);
+    if (m) out.tmdbId = m[1];
+    if (!out.tmdbId) {
+      m = s.match(/(?:tmdb[_-]?id|tmdb_id|"tmdb_id"|"id"\s*:\s*"?\d*)\s*[:=]?\s*"?(\d{4,10})"?/i);
+      if (m && !isYearLike(m[1])) out.tmdbId = m[1];
+    }
+    if (!out.tmdbId) {
+      m = s.match(/\/(?:movie|movies|film|tv|series|show|anime|title|watch)[/_-]?(?:movie|movies|film|tv|series|show|anime)?[-_/]?(\d{4,9})\b/i);
+      if (m && !isYearLike(m[1])) out.tmdbId = m[1];
+    }
+    return out;
+  }
+
+  /** Merge id extraction from many candidate strings. */
+  function extractIds() {
+    const out = { imdbId: '', tmdbId: '' };
+    for (let i = 0; i < arguments.length; i++) {
+      const fromUrl = idsFromUrl(arguments[i]);
+      if (!out.imdbId && fromUrl.imdbId) out.imdbId = fromUrl.imdbId;
+      if (!out.tmdbId && fromUrl.tmdbId) out.tmdbId = fromUrl.tmdbId;
+      const fromText = idsFromText(arguments[i]);
+      if (!out.imdbId && fromText.imdbId) out.imdbId = fromText.imdbId;
+      if (!out.tmdbId && fromText.tmdbId) out.tmdbId = fromText.tmdbId;
+    }
+    return out;
+  }
+
   /* ---- DOM-driven collection --------------------------------------- */
 
   function firstMeta(doc, selectors) {
@@ -495,15 +635,35 @@
     /* --- 5. document.title ---------------------------------------- */
     push(doc.title || '', 'document.title');
 
-    /* --- extras: canonical slug + breadcrumbs + IMDb id ----------- */
-    res.slug = firstMeta(doc, ['link[rel="canonical"]']).replace(/^https?:\/\//, '');
+    /* --- extras: canonical slug + breadcrumbs + IMDb/TMDB ids ----- */
+    const canonical = canonicalHref(doc);
+    res.canonical = canonical;
+    res.slug = canonical ? canonical.replace(/^https?:\/\//, '') : '';
     try {
       const crumb = [...doc.querySelectorAll('a[rel="nofollow"], .breadcrumb a, [itemprop="itemListElement"]')].map((a) => a.textContent.trim()).filter(Boolean);
       if (crumb.length) res.crumbs = crumb.slice(0, 6).join(' > ');
-      res.links = [...doc.querySelectorAll('a[href*="imdb.com/title/"], a[href*="themoviedb.org/"]')]
-        .slice(0, 8)
+      res.links = [...doc.querySelectorAll('a[href*="imdb.com/title/"], a[href*="themoviedb.org/"], a[href*="tmdb.org/"]')]
+        .slice(0, 10)
         .map((a) => a.href);
     } catch (_) {}
+
+    /* IDs are the engine of Wyzie/SubDL/OpenSubtitles search. Many streaming
+     * sites do not expose schema.org at all, but they always carry the TMDB or
+     * IMDb id in the canonical URL (e.g. 67movies /watch/movie/10389) or in a
+     * JSON-LD / inline `tmdb_id` blob. Extract it everywhere we can before the
+     * title resolution returns. */
+    if (!res.info) res.info = {};
+    const metaUrl = firstMeta(doc, ['meta[property="og:url"]', 'meta[name="og:url"]', 'meta[property="video:url"]']);
+    const candidateTexts = [doc.URL || '', canonical, res.slug, metaUrl, og, doc.title || '', h1, res.crumbs || ''];
+    let ids = extractIds.apply(null, candidateTexts);
+    if (!ids.imdbId && !ids.tmdbId) {
+      try {
+        ids = extractIds.apply(null, (doc.documentElement.innerHTML || '').slice(0, 400000));
+      } catch (_) {}
+    }
+    if (!res.info.imdbId && ids.imdbId) res.info.imdbId = ids.imdbId;
+    if (!res.info.tmdbId && ids.tmdbId) res.info.tmdbId = ids.tmdbId;
+    res.idSource = ids.tmdbId ? 'url/tmdb' : ids.imdbId ? 'url/imdb' : (ld.length ? 'schema' : '');
     return res;
   }
 
@@ -531,11 +691,13 @@
       best.episode = best.episode || (coll.info.episode ? String(coll.info.episode).padStart(2, '0') : null);
       best.poster = coll.info.poster || coll.slug || '';
       best.imdbId = coll.info.imdbId || '';
+      best.tmdbId = coll.info.tmdbId || '';
       best.kind = coll.info.kind !== 'unknown' ? coll.info.kind : best.kind;
       const fromLinks = (coll.links.join(' ').match(/tt\d{6,10}/i) || [])[0];
       if (!best.imdbId && fromLinks) best.imdbId = fromLinks;
       const tmdb = (coll.links.join(' ').match(/themoviedb\.org\/(?:movie|tv)\/(\d+)/i) || [])[1];
-      if (tmdb) best.tmdbId = tmdb;
+      if (!best.tmdbId && tmdb) best.tmdbId = tmdb;
+      if (best.imdbId || best.tmdbId) best.idSource = coll.idSource || best.idSource || 'schema';
     }
     best.mediaFromMeta = coll.media;
     return best;
@@ -564,6 +726,9 @@
     episodeLabel,
     extractMeta,
     stripPhrases,
+    extractIds,
+    idsFromUrl,
+    idsFromText,
     _lists: { PHRASES, TOKENS, JUNK_EXACT, TLD_RE },
   };
 })(typeof globalThis !== 'undefined' ? globalThis : typeof window !== 'undefined' ? window : this);

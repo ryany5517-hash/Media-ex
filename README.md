@@ -70,7 +70,8 @@ dan (kalau kamu aktifkan) patch script konten. Yang tetap perlu build ulang: per
 ## 3. Setup pertama (2 menit)
 
 1. Buka video → play → tombol **◉** muncul di kanan-bawah dengan counter.
-2. Klik ⚙ (gear) → **isi API key SubDL** (gratis) → subtitle Indonesia otomatis nyari.
+2. Klik ⚙ (gear) → **isi API key Wyzie Subs** (gratis) → subtitle Indonesia otomatis nyari. Wyzie paling cocok karena dia cari pakai **IMDb/TMDB id**, dan Stream Radar sekarang baca id itu otomatis dari path halaman (mis. `67movies.nl/watch/movie/10389` → TMDB `10389`, `/watch/tv/289219/1/9` → TMDB `289219`) atau dari JSON-LD/kanonikal/tautan IMDb-TMDB.
+   - Wyzie: https://store.wyzie.io/redeem (key disimpan lokal, tidak pernah di-commit)
    - SubDL: https://subdl.com/panel/api
    - OpenSubtitles: https://www.opensubtitles.com/en/api-keys (wajib isi **User-Agent** yang sama persis seperti di form)
 3. Klik **★ Nonton Bareng** pada sebuah stream → WatchParty.me kebuka di tab baru, nama room = judul film yang sudah dibersihkan, URL stream ke-isi, subtitle ikut dipasang.
@@ -86,11 +87,11 @@ dan (kalau kamu aktifkan) patch script konten. Yang tetap perlu build ulang: per
 - **L5 heuristik:** regex inline `<script>` + `document.write`, `performance.getEntriesByType('resource')`, probe internal **JWPlayer / Video.js / Plyr / HLS.js / DASH.js / Clappr**, scan object config di `window`, dan **unwrap URL** (`?url=…m3u8`, double-encoded, base64) — trik yang bikin embed provider kebongkar.
 - Semua hasil: dedupe (query token diabaikan), kategori (MP4/HLS/DASH/BLOB/SEGMENT/TEXTTRACK), label kualitas/size/durasi, segmen di-agregasi (nggak nampilin 4000 baris `.ts`), iklan (VAST/doubleclick) dipisah + disembunyikan default.
 
-**PART 2 — judul:** JSON-LD (`Movie`/`TVEpisode`/`VideoObject`) → `og:title` → `twitter:title` → `h1` → `document.title`; cleansing `Nonton/Streaming/Sub Indo/Subtitle Indonesia/HD/4K/720p/1080p/Full Movie/Gratis/Download/LK21/Indoxxi/Layarkaca21/domain sitescene…`; tahun + `SxxEyy` / `3x04` / `Episode 5` dipisah; IMDb/TMDB id ikut di-ekstrak. Output: `{ title:"Dune: Part Two", year:"2024", episode:null }`.
+**PART 2 — judul + ID:** JSON-LD (`Movie`/`TVEpisode`/`VideoObject`) → `og:title` → `twitter:title` → `h1` → `document.title`; cleansing `Nonton/Streaming/Sub Indo/Subtitle Indonesia/HD/4K/720p/1080p/Full Movie/Gratis/Download/LK21/Indoxxi/Layarkaca21/domain sitescene…`; tahun + `SxxEyy` / `3x04` / `Episode 5` dipisah. **IMDb/TMDB id di-deteksi otomatis** dari URL/kanonikal (`/watch/movie/<id>`, `/watch/tv/<id>/<season>/<episode>`, `themoviedb.org`, `imdb.com/title/tt…`), JSON-LD, link situs, dan inline `tmdb_id`. Kalau id belum ketemu, Wyzie bisa resolve judul → TMDB ID dulu. Output: `{ title:"Dune: Part Two", year:"2024", episode:null, tmdbId:"1516698" }`.
 
 **PART 3 — WatchParty:** `https://www.watchparty.me/watchNow?url=<stream>&name=<judul>` + content script pengisi form (room name / user name / join). **Tidak** bikin player atau website sendiri — WatchParty sudah support file HTTP dan HLS. Payload hand-off disimpan 6 menit, cuma untuk tab itu, lalu dihapus.
 
-**PART 4 — subtitle ID:** SubDL (`api.subdl.com`) → OpenSubtitles REST (`api.opensubtitles.com`) → YIFY (fallback tanpa key). Filter bahasa Indonesia, ranking kemiripan judul+tahun+episode, download → **unzip/gunzip internal** → SRT→**VTT** → tombol *Pasang di sini* (inject `<track>` ke video halaman), *Download .vtt*, atau dikirim ke room WatchParty.
+**PART 4 — subtitle ID:** **Wyzie Subs** (`sub.wyzie.io`, search pakai IMDb/TMDB id atau auto-resolve judul→TMDB) → SubDL (`api.subdl.com`) → OpenSubtitles REST (`api.opensubtitles.com`) → YIFY (fallback tanpa key). Filter bahasa Indonesia, ranking kemiripan judul+tahun+episode, download → **unzip/gunzip internal** → SRT→**VTT** → tombol *Pasang di sini* (inject `<track>` ke video halaman), *Download .vtt*, atau dikirim ke room WatchParty.
 
 **PART 5 — UI/UX:** FAB glassmorphism (bisa di-drag, posisi disimpan), badge counter, animasi pulse saat stream baru; panel di atas FAB (judul, tipe, kualitas, thumbnail/poster, status subtitle, tombol Watch Party / Copy / Download / Subs / Open / ffmpeg / varian kualitas); toast pojok atas (auto 4 dtk); dark/light/system + toggle manual; settings via ⚙; semua di dalam **closed Shadow DOM** (tidak bisa di-restyle situs); target sentuh ≥44px, sheet full-width di layar ≤720px, navigasi Tab/Enter/Esc/↑↓, ARIA di semua kontrol.
 
@@ -139,7 +140,7 @@ src/content/ui.js,ui-styles.js FAB/panel/toast/settings (closed Shadow DOM)
 src/popup/ · src/options/      toolbar popup & halaman pengaturan
 src/watchparty/watchparty.js   adapter WatchParty (payload dari background)
 src/shared/                    util · rules (klasifikasi) · title-cleaner · store (dedupe/rank) ·
-                               subtitles (3 provider + SRT→VTT + unzip) · dom-scanner · i18n (en/id) ·
+                               subtitles (4 provider + SRT→VTT + unzip) · dom-scanner · i18n (en/id) ·
                                icons (generate dari Lucide) · updater (rule pack + patch bertanda tangan) ·
                                watchparty-auto (otomasi form)
 src/vendor/                    motion.min.js (UMD, animasi) + catatan lisensi

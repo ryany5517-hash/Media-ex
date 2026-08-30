@@ -292,8 +292,17 @@
     async search(want, settings, ctx) {
       const key = settings.wyzieApiKey;
       if (!key) return { ok: false, skipped: true, reason: 'API key belum diisi' };
-      // Wyzie searches by IMDb (tt...) or TMDB numeric id, never by title text.
-      const id = want.imdbId || want.tmdbId;
+      const fetchImpl = ctx.fetchImpl || (util.fetchImpl ? util.fetchImpl.bind(util) : root.fetch);
+      let id = want.imdbId || want.tmdbId || '';
+      let resolvedTitle = want.title || '';
+      let resolvedYear = want.year || '';
+      if (!id && want.title) {
+        const hit = await this.resolveTmdbByTitle(want, key, fetchImpl);
+        if (!hit) return { ok: false, skipped: true, reason: 'butuh id IMDb/TMDB, pencarian judul ke TMDB tidak menemukan' };
+        id = String(hit.id);
+        resolvedTitle = resolvedTitle || hit.title;
+        resolvedYear = resolvedYear || hit.year;
+      }
       if (!id) return { ok: false, skipped: true, reason: 'butuh id IMDb/TMDB' };
       const params = new URLSearchParams();
       params.set('id', String(id));
@@ -307,7 +316,6 @@
       params.set('encoding', 'utf-8');
       params.set('source', 'all');
       params.set('key', key);
-      const fetchImpl = ctx.fetchImpl || (util.fetchImpl ? util.fetchImpl.bind(util) : root.fetch);
       const res = await fetchImpl(this.base + '/search?' + params.toString(), { headers: { Accept: 'application/json' } });
       if (res.status === 401 || res.status === 403) throw new Error('Wyzie key ditolak (HTTP ' + res.status + ')');
       if (!res.ok) throw new Error('Wyzie HTTP ' + res.status);
@@ -319,12 +327,12 @@
           provider: 'wyzie',
           providerLabel: 'Wyzie Subs',
           id: String(r.id || r.url || ''),
-          name: r.media || want.title,
-          filename: r.fileName || (r.media ? r.media + '.srt' : 'subtitle.srt'),
+          name: r.media || resolvedTitle || want.title || '',
+          filename: r.fileName || ((r.media || resolvedTitle || '').replace(/[^\w\s-]+/g, '') + '.srt').trim(),
           langCode: String(r.language || 'id').slice(0, 2).toLowerCase(),
           langName: r.display || r.language || 'Indonesian',
           format: String(r.format || 'srt').toLowerCase(),
-          year: want.year || '',
+          year: want.year || resolvedYear || '',
           season: want.season ? String(want.season) : '',
           episode: want.episode ? String(want.episode) : '',
           downloads: Number(r.downloadCount || 0),
@@ -338,7 +346,52 @@
           raw: r,
         }))
         .filter((x) => /^https?:/.test(x.fileUrl));
-      return { ok: true, items };
+      return { ok: true, items, mediaId: id, mediaTitle: resolvedTitle, mediaYear: resolvedYear };
+    },
+
+    /** Fallback: resolve a clean page title to a TMDB id through Wyzie's TMDB helper. */
+    async resolveTmdbByTitle(want, key, fetchImpl) {
+      const q = String(want.title || '').trim();
+      if (!q) return null;
+      const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
+      const fetchJson = async (withKey) => {
+        const params = new URLSearchParams({ q: q, language: 'en-US' });
+        if (withKey) params.set('key', key);
+        const res = await fetchImpl(this.base + '/api/tmdb/search?' + params.toString(), { headers: { Accept: 'application/json' } });
+        if (!res.ok) throw new Error('Wyzie TMDB HTTP ' + res.status);
+        const text = await res.text();
+        return util.safeJSON ? util.safeJSON(text, null) : JSON.parse(text);
+      };
+      let json;
+      try {
+        json = await fetchJson(true);
+      } catch (_) {
+        try {
+          json = await fetchJson(false);
+        } catch (e) {
+          throw new Error('Wyzie TMDB resolve gagal: ' + ((e && e.message) || e));
+        }
+      }
+      const rows = Array.isArray(json) ? json : (json && Array.isArray(json.results) ? json.results : []);
+      if (!rows.length) return null;
+      const qn = norm(q);
+      const scored = rows
+        .map((r) => {
+          const title = r.title || r.name || '';
+          const tn = norm(title);
+          const tokens = qn.split(' ').filter((t) => t.length > 1);
+          const hit = tokens.filter((t) => tn.includes(t)).length;
+          let score = tn === qn ? 60 : tn.includes(qn) ? 45 : tokens.length ? Math.round((hit / tokens.length) * 35) : 0;
+          const year = String(r.release_date || r.first_air_date || '').slice(0, 4);
+          if (want.year && year === String(want.year)) score += 25;
+          if (!want.episode && r.media_type === 'movie') score += 8;
+          if (want.episode && r.media_type === 'tv') score += 8;
+          if (r.vote_average) score += Math.min(10, Number(r.vote_average));
+          return { id: String(r.id || ''), title: title, year: year, mediaType: r.media_type || '', score: score };
+        })
+        .filter((r) => r.id && r.title)
+        .sort((a, b) => b.score - a.score);
+      return scored[0] || null;
     },
     async fetchFile(item, settings, ctx) {
       const f = ctx.fetchImpl || (util.fetchImpl ? util.fetchImpl.bind(util) : root.fetch);

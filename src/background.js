@@ -459,7 +459,7 @@ try {
     const st = getTab(tabId);
     if (!st || !st.title) return;
     if (!force && !settings.autoSubtitle) return;
-    if (!st.title.title && !st.title.imdbId) return;
+    if (!st.title.title && !st.title.imdbId && !st.title.tmdbId) return;
     if (!force && st.sub && (st.sub.status === 'searching' || (st.sub.status === 'found' && Date.now() - st.sub.at < 600000))) return;
     const prev = subTimers.get(tabId);
     if (prev) prev.cancel();
@@ -486,6 +486,21 @@ try {
       const res = await SR.subs.search(want, settings, {});
       st.sub = { status: res.results.length ? 'found' : 'none', items: res.results.slice(0, 12), providers: res.providerInfo, errors: res.errors, query: want.title, at: Date.now() };
       if (res.results.length) {
+        // If the page hid the real title behind a junk <title> (SPA, blocked
+        // shell), recover it from the found subtitle's `media` field. This is
+        // exactly the case where an id was detected but the h1/title was not.
+        if (!st.title.title || st.title.isJunk) {
+          const mediaName = res.results[0].name || '';
+          const mediaClean = mediaName ? SR.title.clean(mediaName, { source: 'subtitle-result' }) : null;
+          if (mediaClean && mediaClean.title) {
+            st.title = Object.assign({}, st.title, mediaClean, {
+              source: mediaClean.source || 'subtitle-result',
+              imdbId: st.title.imdbId || want.imdbId,
+              tmdbId: st.title.tmdbId || want.tmdbId,
+              year: st.title.year || mediaClean.year,
+            });
+          }
+        }
         const best = res.results[0];
         try {
           const vtt = await SR.subs.resolve(best, settings, {});
