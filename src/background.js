@@ -929,9 +929,7 @@ try {
     const n = Number(tabId) % 800;
     const reqId = 9200 + n;
     const corsId = 9300 + n;
-    const reqExtId = 9400 + n;
-    const corsExtId = 9500 + n;
-    const removeRuleIds = [reqId, corsId, reqExtId, corsExtId];
+    const removeRuleIds = [reqId, corsId, 9400 + n, 9500 + n];
     const requestHeaders = [];
     if (referer) requestHeaders.push({ header: 'Referer', operation: 'set', value: referer });
     if (origin) requestHeaders.push({ header: 'Origin', operation: 'set', value: origin });
@@ -944,31 +942,32 @@ try {
     const domains = partyCdnDomains(mediaUrl);
     const hostCond = { tabIds: [tabId], resourceTypes: types };
     if (domains.length) hostCond.requestDomains = domains;
-    const extCond = {
-      tabIds: [tabId],
-      resourceTypes: types,
-      regexFilter: '^https?://.+\\.(m3u8|m3u|ts|m4s|mp4|key|mpd)(\\?|$)',
-    };
-    const addRules = [
-      { id: corsId, priority: 4, action: { type: 'modifyHeaders', responseHeaders: responseHeaders }, condition: hostCond },
-      { id: corsExtId, priority: 3, action: { type: 'modifyHeaders', responseHeaders: responseHeaders }, condition: extCond },
-    ];
+    const addRules = [{ id: corsId, priority: 4, action: { type: 'modifyHeaders', responseHeaders: responseHeaders }, condition: hostCond }];
     if (requestHeaders.length) {
       addRules.push({ id: reqId, priority: 4, action: { type: 'modifyHeaders', requestHeaders: requestHeaders }, condition: hostCond });
-      addRules.push({ id: reqExtId, priority: 3, action: { type: 'modifyHeaders', requestHeaders: requestHeaders }, condition: extCond });
     }
+    const rec = { referer: referer, origin: origin, mediaUrl: mediaUrl };
     try {
       await dnr.updateSessionRules({ removeRuleIds: removeRuleIds, addRules: addRules });
-      partyTabs.set(tabId, { referer: referer, origin: origin, mediaUrl: mediaUrl });
+      partyTabs.set(tabId, rec);
+      try {
+        await api.storage.local.set({ ['srad:partynet:' + tabId]: rec });
+      } catch (_) {}
       return true;
     } catch (e) {
       log('party dnr failed', String((e && e.message) || e));
       try {
+        // CORS only — never rewrite Origin/Referer on watchparty.me's own XHR.
         const loose = { tabIds: [tabId], resourceTypes: types };
-        const fallback = [{ id: corsId, priority: 4, action: { type: 'modifyHeaders', responseHeaders: responseHeaders }, condition: loose }];
-        if (requestHeaders.length) fallback.push({ id: reqId, priority: 4, action: { type: 'modifyHeaders', requestHeaders: requestHeaders }, condition: loose });
-        await dnr.updateSessionRules({ removeRuleIds: removeRuleIds, addRules: fallback });
-        partyTabs.set(tabId, { referer: referer, origin: origin, mediaUrl: mediaUrl });
+        if (domains.length) loose.requestDomains = domains;
+        await dnr.updateSessionRules({
+          removeRuleIds: removeRuleIds,
+          addRules: [{ id: corsId, priority: 4, action: { type: 'modifyHeaders', responseHeaders: responseHeaders }, condition: loose }],
+        });
+        partyTabs.set(tabId, rec);
+        try {
+          await api.storage.local.set({ ['srad:partynet:' + tabId]: rec });
+        } catch (_) {}
         return true;
       } catch (e2) {
         log('party dnr fallback failed', String((e2 && e2.message) || e2));
@@ -1333,16 +1332,48 @@ try {
     return clean + '#playlist.m3u8';
   }
 
-  // v0.m3u8 on token CDNs is often video-only. Prefer the master (AUDIO= group).
+  function pickAudioVariant(parsed) {
+    const vs = (parsed && parsed.variants) || [];
+    let best = '';
+    let score = -1;
+    for (let i = 0; i < vs.length; i++) {
+      const v = vs[i];
+      if (!v || !v.uri) continue;
+      const c = String(v.codecs || (parsed && parsed.codecs) || '');
+      if (/hvc1|hev1|hevc|dvh1|dvhe|av01/i.test(c)) continue;
+      const h = Number(v.height || 0);
+      if (h > 1080) continue;
+      const audio = /mp4a|ac-3|ec-3|opus|fLaC|\baac\b/i.test(c);
+      const sc = (audio ? 800 : 0) + Math.min(h || 1, 1080);
+      if (sc > score) {
+        score = sc;
+        best = v.uri;
+      }
+    }
+    return best;
+  }
+
+  // v0.m3u8 on token CDNs is often video-only. Prefer a master that has AUDIO.
   async function preferAudioMaster(st, media, url) {
     if (!url) return url;
     const referer = pageReferer(st, media);
     const origin = originOf(referer) || util.origin(url);
     const body = await fetchPlaylistText(url, referer, origin);
-    if (playlistHasAudio(body) || /CODECS="[^"]*mp4a/i.test(body)) return url;
+    if (body && SR.manifest && SR.manifest.parseM3u8) {
+      const parsed = SR.manifest.parseM3u8(body, url);
+      if (parsed && parsed.kind === 'master') {
+        if (playlistHasAudio(body) || pickAudioVariant(parsed)) return url;
+      }
+    }
+    if (playlistHasAudio(body) || /mp4a/i.test(body || '')) return url;
     const alts = hlsMasterAlts(st, url);
     for (let i = 0; i < alts.length; i++) {
       const text = await fetchPlaylistText(alts[i], referer, origin);
+      if (!text) continue;
+      if (SR.manifest && SR.manifest.parseM3u8) {
+        const parsed = SR.manifest.parseM3u8(text, alts[i]);
+        if (parsed && parsed.kind === 'master' && (playlistHasAudio(text) || pickAudioVariant(parsed))) return alts[i];
+      }
       if (playlistHasAudio(text) || /#EXT-X-STREAM-INF/i.test(text)) return alts[i];
     }
     return url;
@@ -1535,14 +1566,12 @@ try {
     return { ok: true, tabId: tab && tab.id, sid: sid, session: session };
   }
 
-  async function playerFetch(sid, url, responseType, range) {
-    if (!sid || !url || !/^https?:/i.test(url)) return { ok: false, reason: 'bad url', status: 0 };
-    const stored = await api.storage.local.get(PLAY_PREFIX + sid);
-    const session = stored[PLAY_PREFIX + sid];
-    if (!session) return { ok: false, reason: 'session expired', status: 0 };
+  async function refererFetch(url, referer, origin, responseType, range) {
+    if (!url || !/^https?:/i.test(url)) return { ok: false, reason: 'bad url', status: 0 };
+    url = String(url).split('#')[0];
     const headers = {};
-    if (session.referer) headers.Referer = session.referer;
-    if (session.origin) headers.Origin = session.origin;
+    if (referer) headers.Referer = referer;
+    if (origin) headers.Origin = origin;
     if (range && range.start != null && range.end != null) headers.Range = 'bytes=' + range.start + '-' + range.end;
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), responseType === 'arraybuffer' ? 25000 : 15000);
@@ -1563,6 +1592,27 @@ try {
     } finally {
       clearTimeout(timer);
     }
+  }
+
+  async function playerFetch(sid, url, responseType, range) {
+    if (!sid) return { ok: false, reason: 'session expired', status: 0 };
+    const stored = await api.storage.local.get(PLAY_PREFIX + sid);
+    const session = stored[PLAY_PREFIX + sid];
+    if (!session) return { ok: false, reason: 'session expired', status: 0 };
+    return refererFetch(url, session.referer, session.origin, responseType, range);
+  }
+
+  async function partyFetch(tabId, url, responseType, range) {
+    let rec = tabId != null ? partyTabs.get(tabId) : null;
+    if (!rec && tabId != null) {
+      try {
+        const stored = await api.storage.local.get('srad:partynet:' + tabId);
+        rec = stored['srad:partynet:' + tabId] || null;
+        if (rec) partyTabs.set(tabId, rec);
+      } catch (_) {}
+    }
+    if (!rec) return { ok: false, reason: 'no party session', status: 0 };
+    return refererFetch(url, rec.referer, rec.origin, responseType, range);
   }
 
   /* ================================================================== *
@@ -1878,6 +1928,9 @@ try {
           case 'player-fetch': {
             return await playerFetch(msg.sid, msg.url, msg.responseType, msg.range);
           }
+          case 'party-fetch': {
+            return await partyFetch(tabId, msg.url, msg.responseType, msg.range);
+          }
           case 'party-status':
             toastTo(msg.tabId != null ? msg.tabId : tabId, msg.text, msg.kind || 'info');
             return { ok: true };
@@ -1961,6 +2014,9 @@ try {
         }
         if (sid || partyTabs.has(id)) dropRefererRule(id);
         partyTabs.delete(id);
+        try {
+          api.storage.local.remove('srad:partynet:' + id);
+        } catch (_) {}
       });
     }
     if (api.tabs.onUpdated) {

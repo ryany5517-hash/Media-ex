@@ -1296,6 +1296,13 @@
         post('pong', { version: SR.VERSION, reports: root.__streamRadarPage.reports });
       } else if (d.cmd === 'play-in-page') {
         playInPage(d.payload || {});
+      } else if (d.cmd === 'wp-hls-stop') {
+        try {
+          if (root.watchparty && root.watchparty.hls) {
+            root.watchparty.hls.destroy();
+            root.watchparty.hls = null;
+          }
+        } catch (_) {}
       }
     } catch (_) {}
   });
