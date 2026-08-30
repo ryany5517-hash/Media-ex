@@ -2237,6 +2237,9 @@
       'panel.subs.skipped': 'Add an API key in Settings',
       'panel.subs.attach': 'Attach here',
       'panel.subs.download': 'Download .vtt',
+      'panel.subs.attached': 'Subtitle attached: {name}',
+      'panel.subs.attachedQueued': 'Subtitle ready - attaches automatically when the player appears',
+      'panel.subs.attachFail': 'Could not load subtitle: {reason}',
       'panel.subs.retry': 'Search again',
       'action.play': 'Play',
       'action.watchparty': 'Watch Party',
@@ -2485,6 +2488,9 @@
       'panel.subs.skipped': 'Isi API key di Pengaturan',
       'panel.subs.attach': 'Pasang di sini',
       'panel.subs.download': 'Unduh .vtt',
+      'panel.subs.attached': 'Subtitle terpasang: {name}',
+      'panel.subs.attachedQueued': 'Subtitle siap - otomatis terpasang saat player muncul',
+      'panel.subs.attachFail': 'Gagal memuat subtitle: {reason}',
       'panel.subs.retry': 'Cari lagi',
       'action.play': 'Putar',
       'action.watchparty': 'Nonton Bareng',
@@ -5933,7 +5939,11 @@
         const vbtn = e.target.closest ? e.target.closest('[data-variant-id]') : null;
         if (vbtn) return fire('variant', { id: holder ? holder.getAttribute('data-id') : id, index: Number(vbtn.getAttribute('data-variant-id')) });
 
-        if (act === 'close') return setOpen(false);
+        if (act === 'close' || act === 'x') {
+          // X closes the settings pop first, then the panel (both headers render data-act="x").
+          if (api.popOpen) return openPop(false);
+          return setOpen(false);
+        }
         if (act === 'theme') return cycleTheme(btn);
         if (act === 'settings') return openPop(true);
         if (act === 'tab') return setTab(btn.getAttribute('data-tab'));

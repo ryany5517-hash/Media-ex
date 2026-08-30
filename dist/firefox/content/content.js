@@ -70,6 +70,16 @@
     }
   }
 
+  /** Fire a background action and surface failures as a toast — never silent. */
+  function sendAction(name, extra) {
+    return send('action', Object.assign({ name: name }, extra || {})).then((res) => {
+      if (res && res.ok === false && res.reason) {
+        toast(t('toast.error', { msg: res.reason }), 'err');
+      }
+      return res;
+    });
+  }
+
   function safeIsTop() {
     try {
       return root.top === root;
@@ -289,7 +299,7 @@
         const it = findItem(payload.id);
         if (it && it.category === 'blob') { toast(t('player.blob'), 'warn'); return; }
         toast(t('toast.player'), 'ok');
-        return void send('action', { name: 'play', id: payload.id });
+        return void sendAction('play', { id: payload.id });
       }
       case 'watchparty': {
         // disable 900ms so a double click cannot open two rooms
@@ -303,13 +313,13 @@
         const it = findItem(payload.id);
         if (it && it.category === 'blob') { toast(t('watchparty.noBlob'), 'warn'); return; }
         // fire-and-forget; background reports failure back over 'party-status'
-        return void send('action', { name: 'watchparty', id: payload.id });
+        return void sendAction('watchparty', { id: payload.id });
       }
       case 'scan-now':
         postCmd('scan');
         scanner && scanner.scan('manual');
         scanner && scanner.readTitle(true);
-        return void send('action', { name: 'rescan' });
+        return void sendAction('rescan');
       case 'subs': {
         // Panel row / subtitles-tab retry button. Re-read the title first so a
         // click right after page load (or after an SPA swap) searches with a
@@ -324,7 +334,7 @@
         if (!info.title && !info.imdbId && !info.tmdbId && !info.urlTmdbId) {
           toast(hasStream ? t('toast.subsNoTitle') : t('toast.subsNoStream'), 'warn');
         }
-        return void send('action', { name: 'subs-search' });
+        return void sendAction('subs-search');
       }
       case 'set-setting': {
         settings = Object.assign({}, settings, { [payload.key]: payload.value });
@@ -335,10 +345,10 @@
         }
         postCmd('config', publicConfig());
         render();
-        return void send('action', { payload: { name: 'set-setting', key: payload.key, value: payload.value } });
+        return void sendAction('set-setting', { key: payload.key, value: payload.value });
       }
       default:
-        return void send('action', { name: action, id: payload.id, index: payload.index });
+        return void sendAction(action, { id: payload.id, index: payload.index });
     }
   }
 
@@ -450,7 +460,7 @@
           return;
         case 'attach-subtitle': {
           const r = attachSubtitle(msg.vtt, msg.name);
-          respond({ ok: true, applied: !!r });
+          respond({ ok: true, applied: r }); // raw: number of players or 'queued'
           return true;
         }
         case 'get-title':

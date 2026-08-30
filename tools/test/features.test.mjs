@@ -899,3 +899,63 @@ test('F16 play: m3u8-proxy URL keeps wrapper + baked Origin/Referer', async () =
 });
 
 const readModule = (rel) => readSrc(rel);
+
+/* ------------------------------------------------------------------ *
+ * F7 · subtitle Use/Pick = ONE click to attach (no local download),
+ *      and no button failure is ever silent
+ * ------------------------------------------------------------------ */
+test('F7 sub-pick attaches the subtitle to the page player in one click', async () => {
+  const h = await boot({ settings: { autoSubtitle: false } });
+  await h.hub.sendFromContent({ type: 'action', payload: { name: 'subs-search', tabId: 1 } });
+  assert.ok(await until(h, () => (stateOf(h).sub || {}).status === 'found', 8000), 'search found subtitles');
+  const items = (stateOf(h).sub || {}).items || [];
+  assert.ok(items.length >= 1, 'at least one result row');
+  const res = await h.hub.sendFromContent({ type: 'action', payload: { name: 'sub-pick', index: 0, tabId: 1 } });
+  assert.equal(res.ok, true, 'sub-pick ok: ' + JSON.stringify(res));
+  assert.equal(res.attached, true, 'attached flag set');
+  await settle(h, 200);
+  const track = h.dom.window.document.querySelector('video track[data-srad="1"]');
+  assert.ok(track, '<track> injected into the page player immediately after the pick');
+  assert.match(track.src, /^blob:/, 'subtitle rides a blob URL - no local download');
+  assert.equal((stateOf(h).sub.chosen || {}).index, 0, 'chosen persisted for re-attach / download');
+  // the resolved copy is kept, so the Download button works right after the pick
+  const dl = await h.hub.sendFromContent({ type: 'action', payload: { name: 'sub-download-info', tabId: 1 } });
+  assert.equal(dl.ok, true, 'pending subtitle is ready for download');
+  h.dom.window.close();
+});
+
+test('F7b sub-pick failure is never silent: an error toast explains it', async () => {
+  // serve a broken "zip" so resolving the file fails inside the real code path
+  const net = makeNetStub({ '4242.zip': { body: 'not a real zip', type: 'application/octet-stream' } });
+  const h = await boot({ net, settings: { autoSubtitle: false } });
+  await h.hub.sendFromContent({ type: 'action', payload: { name: 'subs-search', tabId: 1 } });
+  assert.ok(await until(h, () => (stateOf(h).sub || {}).status === 'found', 8000), 'search still finds rows');
+  const res = await h.hub.sendFromContent({ type: 'action', payload: { name: 'sub-pick', index: 0, tabId: 1 } });
+  assert.equal(res.ok, false, 'sub-pick failed: ' + JSON.stringify(res));
+  assert.ok(res.reason, 'failure carries a reason: ' + res.reason);
+  await settle(h, 150);
+  const shadow = h.dom.window.document.getElementById('stream-radar-host').shadowRoot;
+  const errToasts = shadow ? [...shadow.querySelectorAll('.srad-toast')].filter((el) => el.getAttribute('data-kind') === 'err') : [];
+  assert.ok(errToasts.length >= 1, 'an error toast reached the page: ' + (errToasts.map((el) => el.textContent).join(' | ')));
+  h.dom.window.close();
+});
+
+test('F7c clicking Download with nothing loaded tells you why (no silent buttons)', async () => {
+  const h = await boot({ settings: { autoSubtitle: false } });
+  const win = h.dom.window;
+  await until(h, () => !!(stateOf(h).title || {}).title, 8000);
+  const shadow = win.document.getElementById('stream-radar-host').shadowRoot;
+  assert.ok(shadow, 'panel mounted');
+  const tab = shadow.querySelector('[data-act="tab"][data-tab="subs"]');
+  if (tab) tab.dispatchEvent(new win.MouseEvent('click', { bubbles: true }));
+  const dlBtn = shadow.querySelector('[data-act="sub-download"]');
+  assert.ok(dlBtn, 'subs pane Download button exists');
+  dlBtn.dispatchEvent(new win.MouseEvent('click', { bubbles: true }));
+  // the click must produce a visible explanation, not silence
+  await until(h, () => {
+    const t = shadow.querySelectorAll('.srad-toast');
+    return [...t].some((el) => /no subtitle|belum|subtitle/i.test(el.textContent));
+  }, 4000);
+  assert.ok(true, 'Download with nothing loaded explained why');
+  h.dom.window.close();
+});

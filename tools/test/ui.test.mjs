@@ -124,3 +124,91 @@ test('panel reflects settings changes (ads toggle, enabled switch, theme)', () =
   ui.render(Object.assign({}, STATE, { items: [], ads: [] }));
   assert.ok(true, 're-render across all UI states is safe');
 });
+
+test('every panel button fires its intended action or a visible local effect (full sweep)', () => {
+  const dom = boot();
+  const win = dom.window;
+  const actions = [];
+  const settings = Object.assign({}, STATE.settings);
+  const ui = win.SR.ui.create({
+    shadowMode: 'open',
+    getSettings: () => settings,
+    onAction: (a, p) => actions.push([a, p || {}]),
+  });
+  ui.mount();
+  const sub = {
+    status: 'found',
+    query: 'The Eye',
+    imdbId: 'tt0264464',
+    items: [
+      { provider: 'wyzie', providerLabel: 'Wyzie Subs', id: 's1', name: 'The Eye (2002)', filename: 'The.Eye.2002.srt', langCode: 'id', format: 'srt', downloads: 1500, verified: true, uploader: 'opensubtitles', fileUrl: 'https://sub.example/e.srt' },
+      { provider: 'subdl', providerLabel: 'SubDL', id: 's2', name: 'The Eye (2002) AI', filename: 'Eye.ai.srt', langCode: 'en', format: 'srt', downloads: 42, aiTranslated: true },
+      { provider: 'yify', providerLabel: 'YIFY', id: 's3', name: 'The Eye HI', filename: 'Eye.HI.srt', langCode: 'id', format: 'srt', downloads: 7, hearingImpaired: true },
+    ],
+    chosen: null,
+  };
+  ui.render(Object.assign({}, STATE, { sub }));
+  ui.setOpen(true);
+  const shadow = win.document.getElementById('stream-radar-host').shadowRoot;
+  assert.ok(shadow, 'shadow root open for the sweep');
+
+  const click = (sel, label) => {
+    const el = shadow.querySelector(sel);
+    assert.ok(el, label + ' button exists');
+    el.dispatchEvent(new win.MouseEvent('click', { bubbles: true }));
+  };
+  const routed = (name, note) =>
+    assert.ok(actions.some(([a]) => a === name), note + ' routed action "' + name + '" (got: ' + actions.map((x) => x[0]).join(',') + ')');
+
+  // --- streams tab -------------------------------------------------
+  click('[data-act="play"]', 'Play'); routed('play', 'Play');
+  click('[data-act="watchparty"]', 'WatchParty'); routed('watchparty', 'WatchParty');
+  click('[data-act="copy"]', 'Copy'); routed('copy', 'Copy');
+  click('[data-act="download"]', 'Download'); routed('download', 'Download');
+  click('[data-act="ffmpeg"]', 'ffmpeg'); routed('ffmpeg', 'ffmpeg');
+  click('[data-act="toggle-expand"]', 'Variants expand'); // local: aria flips, no action
+  assert.ok(!actions.some(([a]) => a === 'toggle-expand'), 'toggle-expand stays local');
+  click('[data-act="variant"]', 'Variant copy'); routed('variant', 'Variant copy');
+  click('[data-act="record"]', 'Record (blob row)'); routed('record', 'Record');
+  click('[data-act="subs"]', 'Row Subtitles'); routed('subs', 'Row Subtitles');
+  // panel should now be on the subs tab
+  const subsTab = shadow.querySelector('[data-act="tab"][data-tab="subs"]');
+  assert.equal(subsTab.getAttribute('aria-selected'), 'true', 'subs tab selected after row subs click');
+
+  // --- subs pane buttons -------------------------------------------
+  click('[data-act="sub-pick"][data-index="0"]', 'Use first result'); routed('sub-pick', 'Use first result');
+  const pick0 = actions.filter(([a]) => a === 'sub-pick')[0];
+  assert.equal(pick0[1].index, 0, 'Use carries index 0');
+  click('[data-act="sub-pick"][data-index="2"]', 'Pick third result'); routed('sub-pick', 'Pick third result');
+  click('[data-act="sub-attach"]', 'Attach here'); routed('sub-attach', 'Attach here');
+  click('[data-act="sub-download"]', 'Download .vtt'); routed('sub-download', 'Download .vtt');
+  click('[data-act="subs"][data-primary="1"]', 'Subs retry'); routed('subs', 'Subs retry');
+
+  // --- footer ------------------------------------------------------
+  click('[data-act="copy-all"]', 'Copy all'); routed('copy-all', 'Copy all');
+  click('[data-act="ads"]', 'Ads toggle'); routed('set-setting', 'Ads toggle');
+  click('[data-act="clear"]', 'Clear'); routed('clear', 'Clear');
+  click('[data-act="options"]', 'Options'); routed('options', 'Options');
+
+  // --- settings pop -------------------------------------------------
+  click('[data-act="settings"]', 'Settings button'); // local: opens pop, no action
+  assert.ok(!actions.some(([a]) => a === 'settings'), 'settings button stays local');
+  click('[data-act="update-check"]', 'Update check'); routed('update-check', 'Update check');
+  click('[data-act="reset-fab"]', 'Reset FAB'); routed('reset-fab', 'Reset FAB');
+  click('[data-act="theme-system"]', 'Theme system'); routed('set-setting', 'Theme system');
+  click('[data-act="lang-id"]', 'Lang ID'); routed('set-setting', 'Lang ID');
+
+  // --- tab / theme / close are local & visible ----------------------
+  click('[data-act="tab"][data-tab="info"]', 'Info tab');
+  assert.equal(shadow.querySelector('[data-act="tab"][data-tab="info"]').getAttribute('aria-selected'), 'true', 'info tab switches');
+  click('[data-act="tab"][data-tab="media"]', 'Media tab');
+  assert.equal(shadow.querySelector('[data-act="tab"][data-tab="media"]').getAttribute('aria-selected'), 'true', 'media tab switches');
+  click('[data-act="theme"]', 'Theme cycle'); // cycles without an action
+  assert.ok(!actions.some(([a]) => a === 'theme'), 'theme cycle stays local');
+  // X close: the settings pop is still open, so the first X closes the pop,
+  // the second X closes the panel (both headers render data-act="x").
+  click('[data-act="x"]', 'X close (settings pop)');
+  assert.equal(ui.popOpen, false, 'settings pop closed by its X');
+  click('[data-act="x"]', 'X close (panel)');
+  assert.equal(shadow.querySelector('.srad-panel').getAttribute('data-open'), '0', 'panel closes via X');
+});

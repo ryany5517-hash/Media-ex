@@ -1760,11 +1760,26 @@ try {
           const vtt = await SR.subs.resolve(it, settings, {});
           st.pendingSub = { vtt: vtt, name: it.filename || it.name, provider: it.provider };
           st.sub.chosen = { index: Number(msg.index || 0), name: it.name };
-          toastTo(tabId, t('panel.subs.found') + ': ' + shorten(it.name || it.filename, 30), 'ok', { id: 'sub-attach', label: t('panel.subs.attach') });
+          // One click = done: attach straight to the page player (blob URL, no
+          // local download). The toast keeps a Download action for people who
+          // still want the file.
+          const att = await api.tabs
+            .sendMessage(tabId, { type: 'attach-subtitle', vtt: vtt, name: st.pendingSub.name })
+            .catch(() => null);
+          const applied = att && att.applied;
+          if (!att) {
+            // Content script unreachable: be honest, offer the manual attach path.
+            toastTo(tabId, t('panel.subs.found') + ': ' + shorten(it.name || it.filename, 30), 'ok', { id: 'sub-attach', label: t('panel.subs.attach') });
+          } else {
+            const done = applied === 'queued' ? t('panel.subs.attachedQueued') : t('panel.subs.attached', { name: shorten(it.name || it.filename, 30) });
+            toastTo(tabId, done, 'ok', { id: 'sub-download', label: t('panel.subs.download') });
+          }
           broadcast(tabId, 'sub');
-          return { ok: true };
+          return { ok: true, attached: !!applied };
         } catch (e) {
-          return { ok: false, reason: String((e && e.message) || e) };
+          const reason = String((e && e.message) || e);
+          toastTo(tabId, t('panel.subs.attachFail', { reason: shorten(reason, 90) }), 'err');
+          return { ok: false, reason: reason };
         }
       }
       case 'sub-download-info':
@@ -1805,6 +1820,7 @@ try {
       case 'update-status':
         return { ok: true, update: updateState, dynamic: SR.dynamic ? { version: SR.dynamic.version, embedHosts: SR.dynamic.embedHosts.length, adHosts: SR.dynamic.adHosts.length, signed: SR.dynamic.signatureOk } : null, patch: Number(settings.patchVersion || 0) };
       case 'check-updates':
+      case 'update-check':
         return await checkForUpdates('manual');
       case 'search-subtitles-manual':
         return { ok: true, res: await SR.subs.search({ title: msg.title, year: msg.year || null, season: msg.season || null, episode: msg.episode || null }, settings, {}) };

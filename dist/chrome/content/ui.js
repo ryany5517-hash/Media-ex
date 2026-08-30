@@ -608,7 +608,11 @@
         const vbtn = e.target.closest ? e.target.closest('[data-variant-id]') : null;
         if (vbtn) return fire('variant', { id: holder ? holder.getAttribute('data-id') : id, index: Number(vbtn.getAttribute('data-variant-id')) });
 
-        if (act === 'close') return setOpen(false);
+        if (act === 'close' || act === 'x') {
+          // X closes the settings pop first, then the panel (both headers render data-act="x").
+          if (api.popOpen) return openPop(false);
+          return setOpen(false);
+        }
         if (act === 'theme') return cycleTheme(btn);
         if (act === 'settings') return openPop(true);
         if (act === 'tab') return setTab(btn.getAttribute('data-tab'));
