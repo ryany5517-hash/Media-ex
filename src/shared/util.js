@@ -15,7 +15,7 @@
   'use strict';
 
   const SR = (root.SR = root.SR || {});
-  SR.VERSION = '1.1.16';
+  SR.VERSION = '1.1.17';
   SR.NS = 'streamRadar'; // message channel id / storage prefix
   SR.PREFIX = 'srad'; // css class prefix
 
@@ -259,19 +259,19 @@
       if (/\.(m3u8|mpd|mp4|webm|mkv|mov|m4v|m3u)(\?|#|$)/i.test(path)) return true;
       if (util.isHlsProxy(url)) return true;
       // 2) Resolver/gateway endpoints return JSON/HTML (d.shows.st/api?d=…).
-      //    Only the last path segment — /api/playlist/token is a real stream.
-      try {
-        const segs = path.replace(/\/+$/, '').split('/');
-        const last = String(segs[segs.length - 1] || '').toLowerCase();
-        if (last === 'api' || last === 'resolve' || last === 'redirect' || last === 'gateway') return false;
-      } catch (_) {}
-      // 3) A classified direct-media category (content-type/parsed manifest,
-      //    served without a clean extension) is playable too. Token /mpd/<id>
-      //    becomes playable after ensureWpHlsUrl adds a .m3u8 query hint.
-      if (category === 'hls' || category === 'dash' || category === 'mp4' || category === 'webm') {
-        if (/\/mpd\//i.test(path) && !/\.m3u8|\.mpd/i.test(url)) return false;
-        return true;
+      //    Only veto when we do NOT already know this is media (67movies serves
+      //    real HLS at /api?d= and /mpd/<token> — those must go to Watch Party).
+      const mediaCat = category === 'hls' || category === 'dash' || category === 'mp4' || category === 'webm';
+      if (!mediaCat) {
+        try {
+          const segs = path.replace(/\/+$/, '').split('/');
+          const last = String(segs[segs.length - 1] || '').toLowerCase();
+          if (last === 'api' || last === 'resolve' || last === 'redirect' || last === 'gateway') return false;
+        } catch (_) {}
       }
+      // 3) A classified direct-media category (content-type/parsed manifest,
+      //    served without a clean extension, including token /mpd/<id>).
+      if (mediaCat) return true;
       return false;
     },
 

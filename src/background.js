@@ -674,14 +674,16 @@ try {
     let picked = pickPlayable(st, itemId);
     let media = picked.item || clicked;
     let url = picked.url || (clicked && util.localPlayable(clicked.url, clicked.category) ? clicked.url : null);
-    if (url) url = await preferWatchPartyUrl(st, media, url);
-    if (url && media && media.url && !/\.m3u8/i.test(url) && !/\.(mpd|mp4|webm)(\?|#|$)/i.test(url) && util.localPlayable(url, media.category)) {
+    if (!url && media && media.url && util.localPlayable(media.url, media.category)) url = media.url;
+    // Unwrap JSON resolvers BEFORE adding a .m3u8 hint — the hint would skip unwrap.
+    if (url && media && !/\.(m3u8|mpd|mp4|webm|mkv|m4v|mov)(\?|#|$)/i.test(url) && !util.isHlsProxy(url) && util.localPlayable(url, media.category)) {
       const resolved = await resolvePlaySource(st, media, url);
       if (resolved && resolved.url) {
-        url = await preferWatchPartyUrl(st, Object.assign({}, media, { category: resolved.category || media.category }), resolved.url);
+        url = resolved.url;
         media = Object.assign({}, media, { url: url, category: resolved.category || media.category });
       }
     }
+    if (url) url = await preferWatchPartyUrl(st, media, url);
     // Never fall through to Play / in-page overlay — Watch Party must open a room.
     if (!url || !util.watchPartyPlayable(url, (media && media.category) || '')) {
       return { ok: false, reason: t('watchparty.needDirect'), hint: 'vbrowser' };
@@ -1265,20 +1267,14 @@ try {
     if (!url) return url;
     if (/\.m3u8/i.test(url)) return url;
     let path = '';
-    let search = '';
     try {
-      const u = new URL(url);
-      path = u.pathname || '';
-      search = u.search || '';
+      path = new URL(url).pathname || '';
     } catch (_) {
       return url;
     }
-    const last = (path.replace(/\/+$/, '').split('/').pop() || '').toLowerCase();
-    // JSON resolvers: last segment is api/resolve/redirect/gateway AND has a query.
-    if (/^(api|resolve|redirect|gateway)$/.test(last) && search) return url;
-    const hlsish = category === 'hls' || /\/mpd\//i.test(path) || /\/playlist\//i.test(path);
-    if (!hlsish) return url;
     if (/\.(mp4|webm|mpd|mkv|m4v|mov)(\?|#|$)/i.test(url)) return url;
+    const hlsish = category === 'hls' || /\/mpd\//i.test(path) || /\/playlist\//i.test(path) || /mpegurl/i.test(category);
+    if (!hlsish) return url;
     return url + (url.indexOf('?') >= 0 ? '&' : '?') + 'srad=playlist.m3u8';
   }
 

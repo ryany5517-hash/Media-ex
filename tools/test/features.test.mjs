@@ -335,6 +335,54 @@ test('F6d watch party: HLS on /api/playlist opens a room, never plays in-page', 
   h.dom.window.close();
 });
 
+test('F6e watch party: token /mpd/ HLS on 67movies opens a room', async () => {
+  const HLS = 'https://a2.shows.st/mpd/tokNoExt';
+  const body = '#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXTINF:6.0,\nseg.ts\n#EXT-X-ENDLIST\n';
+  const net = makeNetStub({
+    '/mpd/tokNoExt': { body, type: 'application/vnd.apple.mpegurl' },
+  });
+  const h = await boot({ net, settings: { autoSubtitle: false, lastUpdateCheck: Date.now() } });
+  h.hub.fireWebRequest({
+    url: HLS,
+    type: 'media',
+    statusCode: 200,
+    responseHeaders: h.hub.header({ 'content-type': 'application/vnd.apple.mpegurl', 'content-length': '4000' }),
+  });
+  await until(h, () => (stateOf(h).items || []).some((i) => i.url === HLS));
+  const item = h.hub.lastBroadcast.items.find((i) => i.url === HLS);
+  const res = await h.hub.sendFromContent({ type: 'action', payload: { name: 'watchparty', id: item.id, tabId: 1 } });
+  assert.equal(res.ok, true, 'watchparty launched: ' + JSON.stringify(res));
+  assert.equal(res.inpage, undefined, 'must not fall back to in-page Play');
+  const tab = h.hub.tabs.created[h.hub.tabs.created.length - 1];
+  assert.ok(String(tab.url).includes('watchparty.me'), 'opens Watch Party: ' + tab.url);
+  assert.ok(String(tab.url).includes('srad') || String(tab.url).includes('tokNoExt'), 'sends the token url: ' + tab.url);
+  h.dom.window.close();
+});
+
+test('F6f watch party: /api?d= that is itself HLS opens a room', async () => {
+  const API = 'https://a2.shows.st/api?d=zDi0HsW9playlist';
+  const body = '#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXTINF:6.0,\nseg.ts\n#EXT-X-ENDLIST\n';
+  const net = makeNetStub({
+    'a2.shows.st/api': { body, type: 'application/vnd.apple.mpegurl' },
+  });
+  const h = await boot({ net, settings: { autoSubtitle: false, lastUpdateCheck: Date.now() } });
+  h.hub.fireWebRequest({
+    url: API,
+    type: 'media',
+    statusCode: 200,
+    responseHeaders: h.hub.header({ 'content-type': 'application/vnd.apple.mpegurl', 'content-length': '4000' }),
+  });
+  await until(h, () => (stateOf(h).items || []).some((i) => i.url === API));
+  const item = h.hub.lastBroadcast.items.find((i) => i.url === API);
+  const res = await h.hub.sendFromContent({ type: 'action', payload: { name: 'watchparty', id: item.id, tabId: 1 } });
+  assert.equal(res.ok, true, 'watchparty launched: ' + JSON.stringify(res));
+  assert.equal(res.inpage, undefined, 'must not fall back to in-page Play');
+  const tab = h.hub.tabs.created[h.hub.tabs.created.length - 1];
+  assert.ok(String(tab.url).includes('watchparty.me'), 'opens Watch Party: ' + tab.url);
+  assert.ok(!String(tab.url).includes('player/player.html'), 'does not open the local player');
+  h.dom.window.close();
+});
+
 test('F13d play: silent v0.m3u8 is replaced by master with AUDIO', async () => {
   const V0 = 'https://cdn.cineplex.test/mpd/tok/v0.m3u8';
   const MASTER = 'https://cdn.cineplex.test/mpd/tok/index.m3u8';
