@@ -1446,6 +1446,146 @@
     return Math.max(0, Math.min(100, Math.round(n + 45)));
   }
 
+  /* ---- media id extraction (IMDb / TMDB) --------------------------- */
+
+  /** Words that usually introduce a media id in a URL path. */
+  const MEDIA_PATH_WORDS = new Set([
+    'watch', 'movie', 'movies', 'film', 'films', 'tv', 'series', 'serie', 'show', 'anime', 'title',
+    'episode', 'video', 'play', 'watching', 'media', 'detail', 'details', 'view',
+  ]);
+
+  const isYearLike = (s) => /^(?:18|19|20)\d{2}$/.test(String(s));
+
+  function canonicalHref(doc) {
+    try {
+      const el = doc.querySelector('link[rel="canonical"]');
+      const v = el && (el.getAttribute('href') || el.getAttribute('data-href') || el.getAttribute('content'));
+      return v ? String(v).trim() : '';
+    } catch (_) {
+      return '';
+    }
+  }
+
+  /** Extract IMDb / TMDB ids from one URL-like string. */
+  function idsFromUrl(url) {
+    const out = { imdbId: '', tmdbId: '' };
+    const s = String(url || '');
+    if (!s) return out;
+
+    let m = s.match(/(?:^|[^\w])(tt\d{6,10})(?:[^\w]|$)/i);
+    if (m) out.imdbId = m[1];
+
+    m = s.match(/themoviedb\.org\/(?:movie|tv|show)\/(\d+)/i);
+    if (m) {
+      out.tmdbId = m[1];
+      return out;
+    }
+
+    let u = null;
+    try {
+      u = new URL(s);
+    } catch (_) {
+      u = null;
+    }
+    if (!u) return out;
+
+    const path = u.pathname.replace(/%2f/gi, '/');
+    const segs = path
+      .split('/')
+      .filter(Boolean)
+      .map((seg) => {
+        try {
+          return decodeURIComponent(seg);
+        } catch (_) {
+          return seg;
+        }
+      });
+
+    const numericCandidate = (val) => {
+      const x = String(val || '').trim();
+      if (/^\d{4,9}$/.test(x) && !isYearLike(x)) return x;
+      // "10389-the-eye" still works; "tt3659388" must not.
+      const n = x.match(/^(\d{4,9})(?:[-_/]|$)/);
+      return n && !isYearLike(n[1]) ? n[1] : '';
+    };
+    const trailingCandidate = (val) => {
+      const x = String(val || '');
+      const n = x.match(/(?:^|[-_/])(\d{4,9})$/);
+      return n && !isYearLike(n[1]) ? n[1] : '';
+    };
+
+    for (let i = 0; i < segs.length; i++) {
+      const seg = segs[i].toLowerCase();
+      // a segment like "movie-10389" (some sites put the id right after the word)
+      if (i === 0 || /^(?:movie|movies|film|films|tv|series|serie|show|anime|title|episode|video|play|watch)[-_]/i.test(seg)) {
+        const own = trailingCandidate(seg);
+        if (own) {
+          out.tmdbId = own;
+          return out;
+        }
+      }
+      if (MEDIA_PATH_WORDS.has(seg)) {
+        const next = segs[i + 1] || '';
+        const direct = numericCandidate(next);
+        if (direct) {
+          out.tmdbId = direct;
+          return out;
+        }
+        const trailing = trailingCandidate(next.replace(/\.html?$/i, ''));
+        if (trailing) {
+          out.tmdbId = trailing;
+          return out;
+        }
+      }
+    }
+
+    for (const key of ['tmdb', 'tmdb_id', 'tmdbid', 'movie', 'film', 'title']) {
+      const v = u.searchParams.get(key);
+      if (!v) continue;
+      const n = numericCandidate(v);
+      if (n) {
+        out.tmdbId = n;
+        break;
+      }
+    }
+    return out;
+  }
+
+  /** Extract IMDb / TMDB ids from free text (JSON-LD, page title, config). */
+  function idsFromText(text) {
+    const out = { imdbId: '', tmdbId: '' };
+    const s = String(text || '');
+    if (!s) return out;
+    const imdb = s.match(/\b(tt\d{6,10})\b/i);
+    if (imdb) out.imdbId = imdb[1];
+
+    let m = s.match(/themoviedb\.org\/(?:movie|tv|show)\/(\d+)/i);
+    if (m) out.tmdbId = m[1];
+    if (!out.tmdbId) {
+      m = s.match(/(?:tmdb[_-]?id|tmdb_id|"tmdb_id"|"id"\s*:\s*"?\d*)\s*[:=]?\s*"?(\d{4,10})"?/i);
+      if (m && !isYearLike(m[1])) out.tmdbId = m[1];
+    }
+    if (!out.tmdbId) {
+      m = s.match(/\/(?:movie|movies|film|tv|series|show|anime|title|watch)[/_-]?(?:movie|movies|film|tv|series|show|anime)?[-_/]?(\d{4,9})\b/i);
+      if (m && !isYearLike(m[1])) out.tmdbId = m[1];
+    }
+    return out;
+  }
+
+  /** Merge id extraction from many candidate strings. */
+  function extractIds() {
+    const out = { imdbId: '', tmdbId: '' };
+    for (let i = 0; i < arguments.length; i++) {
+      const fromUrl = idsFromUrl(arguments[i]);
+      if (!out.imdbId && fromUrl.imdbId) out.imdbId = fromUrl.imdbId;
+      if (!out.tmdbId && fromUrl.tmdbId) out.tmdbId = fromUrl.tmdbId;
+      const fromText = idsFromText(arguments[i]);
+      if (!out.imdbId && fromText.imdbId) out.imdbId = fromText.imdbId;
+      if (!out.tmdbId && fromText.tmdbId) out.tmdbId = fromText.tmdbId;
+    }
+    return out;
+  }
+
   /* ---- DOM-driven collection --------------------------------------- */
 
   function firstMeta(doc, selectors) {
@@ -1573,15 +1713,35 @@
     /* --- 5. document.title ---------------------------------------- */
     push(doc.title || '', 'document.title');
 
-    /* --- extras: canonical slug + breadcrumbs + IMDb id ----------- */
-    res.slug = firstMeta(doc, ['link[rel="canonical"]']).replace(/^https?:\/\//, '');
+    /* --- extras: canonical slug + breadcrumbs + IMDb/TMDB ids ----- */
+    const canonical = canonicalHref(doc);
+    res.canonical = canonical;
+    res.slug = canonical ? canonical.replace(/^https?:\/\//, '') : '';
     try {
       const crumb = [...doc.querySelectorAll('a[rel="nofollow"], .breadcrumb a, [itemprop="itemListElement"]')].map((a) => a.textContent.trim()).filter(Boolean);
       if (crumb.length) res.crumbs = crumb.slice(0, 6).join(' > ');
-      res.links = [...doc.querySelectorAll('a[href*="imdb.com/title/"], a[href*="themoviedb.org/"]')]
-        .slice(0, 8)
+      res.links = [...doc.querySelectorAll('a[href*="imdb.com/title/"], a[href*="themoviedb.org/"], a[href*="tmdb.org/"]')]
+        .slice(0, 10)
         .map((a) => a.href);
     } catch (_) {}
+
+    /* IDs are the engine of Wyzie/SubDL/OpenSubtitles search. Many streaming
+     * sites do not expose schema.org at all, but they always carry the TMDB or
+     * IMDb id in the canonical URL (e.g. 67movies /watch/movie/10389) or in a
+     * JSON-LD / inline `tmdb_id` blob. Extract it everywhere we can before the
+     * title resolution returns. */
+    if (!res.info) res.info = {};
+    const metaUrl = firstMeta(doc, ['meta[property="og:url"]', 'meta[name="og:url"]', 'meta[property="video:url"]']);
+    const candidateTexts = [doc.URL || '', canonical, res.slug, metaUrl, og, doc.title || '', h1, res.crumbs || ''];
+    let ids = extractIds.apply(null, candidateTexts);
+    if (!ids.imdbId && !ids.tmdbId) {
+      try {
+        ids = extractIds.apply(null, (doc.documentElement.innerHTML || '').slice(0, 400000));
+      } catch (_) {}
+    }
+    if (!res.info.imdbId && ids.imdbId) res.info.imdbId = ids.imdbId;
+    if (!res.info.tmdbId && ids.tmdbId) res.info.tmdbId = ids.tmdbId;
+    res.idSource = ids.tmdbId ? 'url/tmdb' : ids.imdbId ? 'url/imdb' : (ld.length ? 'schema' : '');
     return res;
   }
 
@@ -1609,11 +1769,13 @@
       best.episode = best.episode || (coll.info.episode ? String(coll.info.episode).padStart(2, '0') : null);
       best.poster = coll.info.poster || coll.slug || '';
       best.imdbId = coll.info.imdbId || '';
+      best.tmdbId = coll.info.tmdbId || '';
       best.kind = coll.info.kind !== 'unknown' ? coll.info.kind : best.kind;
       const fromLinks = (coll.links.join(' ').match(/tt\d{6,10}/i) || [])[0];
       if (!best.imdbId && fromLinks) best.imdbId = fromLinks;
       const tmdb = (coll.links.join(' ').match(/themoviedb\.org\/(?:movie|tv)\/(\d+)/i) || [])[1];
-      if (tmdb) best.tmdbId = tmdb;
+      if (!best.tmdbId && tmdb) best.tmdbId = tmdb;
+      if (best.imdbId || best.tmdbId) best.idSource = coll.idSource || best.idSource || 'schema';
     }
     best.mediaFromMeta = coll.media;
     return best;
@@ -1642,6 +1804,9 @@
     episodeLabel,
     extractMeta,
     stripPhrases,
+    extractIds,
+    idsFromUrl,
+    idsFromText,
     _lists: { PHRASES, TOKENS, JUNK_EXACT, TLD_RE },
   };
 })(typeof globalThis !== 'undefined' ? globalThis : typeof window !== 'undefined' ? window : this);
@@ -1941,8 +2106,17 @@
     async search(want, settings, ctx) {
       const key = settings.wyzieApiKey;
       if (!key) return { ok: false, skipped: true, reason: 'API key belum diisi' };
-      // Wyzie searches by IMDb (tt...) or TMDB numeric id, never by title text.
-      const id = want.imdbId || want.tmdbId;
+      const fetchImpl = ctx.fetchImpl || (util.fetchImpl ? util.fetchImpl.bind(util) : root.fetch);
+      let id = want.imdbId || want.tmdbId || '';
+      let resolvedTitle = want.title || '';
+      let resolvedYear = want.year || '';
+      if (!id && want.title) {
+        const hit = await this.resolveTmdbByTitle(want, key, fetchImpl);
+        if (!hit) return { ok: false, skipped: true, reason: 'butuh id IMDb/TMDB, pencarian judul ke TMDB tidak menemukan' };
+        id = String(hit.id);
+        resolvedTitle = resolvedTitle || hit.title;
+        resolvedYear = resolvedYear || hit.year;
+      }
       if (!id) return { ok: false, skipped: true, reason: 'butuh id IMDb/TMDB' };
       const params = new URLSearchParams();
       params.set('id', String(id));
@@ -1956,7 +2130,6 @@
       params.set('encoding', 'utf-8');
       params.set('source', 'all');
       params.set('key', key);
-      const fetchImpl = ctx.fetchImpl || (util.fetchImpl ? util.fetchImpl.bind(util) : root.fetch);
       const res = await fetchImpl(this.base + '/search?' + params.toString(), { headers: { Accept: 'application/json' } });
       if (res.status === 401 || res.status === 403) throw new Error('Wyzie key ditolak (HTTP ' + res.status + ')');
       if (!res.ok) throw new Error('Wyzie HTTP ' + res.status);
@@ -1968,12 +2141,12 @@
           provider: 'wyzie',
           providerLabel: 'Wyzie Subs',
           id: String(r.id || r.url || ''),
-          name: r.media || want.title,
-          filename: r.fileName || (r.media ? r.media + '.srt' : 'subtitle.srt'),
+          name: r.media || resolvedTitle || want.title || '',
+          filename: r.fileName || ((r.media || resolvedTitle || '').replace(/[^\w\s-]+/g, '') + '.srt').trim(),
           langCode: String(r.language || 'id').slice(0, 2).toLowerCase(),
           langName: r.display || r.language || 'Indonesian',
           format: String(r.format || 'srt').toLowerCase(),
-          year: want.year || '',
+          year: want.year || resolvedYear || '',
           season: want.season ? String(want.season) : '',
           episode: want.episode ? String(want.episode) : '',
           downloads: Number(r.downloadCount || 0),
@@ -1987,7 +2160,52 @@
           raw: r,
         }))
         .filter((x) => /^https?:/.test(x.fileUrl));
-      return { ok: true, items };
+      return { ok: true, items, mediaId: id, mediaTitle: resolvedTitle, mediaYear: resolvedYear };
+    },
+
+    /** Fallback: resolve a clean page title to a TMDB id through Wyzie's TMDB helper. */
+    async resolveTmdbByTitle(want, key, fetchImpl) {
+      const q = String(want.title || '').trim();
+      if (!q) return null;
+      const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
+      const fetchJson = async (withKey) => {
+        const params = new URLSearchParams({ q: q, language: 'en-US' });
+        if (withKey) params.set('key', key);
+        const res = await fetchImpl(this.base + '/api/tmdb/search?' + params.toString(), { headers: { Accept: 'application/json' } });
+        if (!res.ok) throw new Error('Wyzie TMDB HTTP ' + res.status);
+        const text = await res.text();
+        return util.safeJSON ? util.safeJSON(text, null) : JSON.parse(text);
+      };
+      let json;
+      try {
+        json = await fetchJson(true);
+      } catch (_) {
+        try {
+          json = await fetchJson(false);
+        } catch (e) {
+          throw new Error('Wyzie TMDB resolve gagal: ' + ((e && e.message) || e));
+        }
+      }
+      const rows = Array.isArray(json) ? json : (json && Array.isArray(json.results) ? json.results : []);
+      if (!rows.length) return null;
+      const qn = norm(q);
+      const scored = rows
+        .map((r) => {
+          const title = r.title || r.name || '';
+          const tn = norm(title);
+          const tokens = qn.split(' ').filter((t) => t.length > 1);
+          const hit = tokens.filter((t) => tn.includes(t)).length;
+          let score = tn === qn ? 60 : tn.includes(qn) ? 45 : tokens.length ? Math.round((hit / tokens.length) * 35) : 0;
+          const year = String(r.release_date || r.first_air_date || '').slice(0, 4);
+          if (want.year && year === String(want.year)) score += 25;
+          if (!want.episode && r.media_type === 'movie') score += 8;
+          if (want.episode && r.media_type === 'tv') score += 8;
+          if (r.vote_average) score += Math.min(10, Number(r.vote_average));
+          return { id: String(r.id || ''), title: title, year: year, mediaType: r.media_type || '', score: score };
+        })
+        .filter((r) => r.id && r.title)
+        .sort((a, b) => b.score - a.score);
+      return scored[0] || null;
     },
     async fetchFile(item, settings, ctx) {
       const f = ctx.fetchImpl || (util.fetchImpl ? util.fetchImpl.bind(util) : root.fetch);
@@ -3898,7 +4116,7 @@
     const st = getTab(tabId);
     if (!st || !st.title) return;
     if (!force && !settings.autoSubtitle) return;
-    if (!st.title.title && !st.title.imdbId) return;
+    if (!st.title.title && !st.title.imdbId && !st.title.tmdbId) return;
     if (!force && st.sub && (st.sub.status === 'searching' || (st.sub.status === 'found' && Date.now() - st.sub.at < 600000))) return;
     const prev = subTimers.get(tabId);
     if (prev) prev.cancel();
@@ -3925,6 +4143,21 @@
       const res = await SR.subs.search(want, settings, {});
       st.sub = { status: res.results.length ? 'found' : 'none', items: res.results.slice(0, 12), providers: res.providerInfo, errors: res.errors, query: want.title, at: Date.now() };
       if (res.results.length) {
+        // If the page hid the real title behind a junk <title> (SPA, blocked
+        // shell), recover it from the found subtitle's `media` field. This is
+        // exactly the case where an id was detected but the h1/title was not.
+        if (!st.title.title || st.title.isJunk) {
+          const mediaName = res.results[0].name || '';
+          const mediaClean = mediaName ? SR.title.clean(mediaName, { source: 'subtitle-result' }) : null;
+          if (mediaClean && mediaClean.title) {
+            st.title = Object.assign({}, st.title, mediaClean, {
+              source: mediaClean.source || 'subtitle-result',
+              imdbId: st.title.imdbId || want.imdbId,
+              tmdbId: st.title.tmdbId || want.tmdbId,
+              year: st.title.year || mediaClean.year,
+            });
+          }
+        }
         const best = res.results[0];
         try {
           const vtt = await SR.subs.resolve(best, settings, {});

@@ -181,11 +181,15 @@
   async function testSearch() {
     const out = $('#testOut');
     out.textContent = '...';
+    const rawId = $('#testId').value.trim();
+    const isImdb = /^tt\d+/i.test(rawId);
     const want = {
       title: $('#testTitle').value.trim() || 'Dune Part Two',
       year: $('#testYear').value.trim() || null,
       season: $('#testSeason').value.trim() || null,
       episode: $('#testEpisode').value.trim() || null,
+      imdbId: isImdb ? rawId : (rawId ? null : null),
+      tmdbId: !isImdb && rawId ? rawId : null,
     };
     try {
       const res = await SR.subs.search(want, settings, {});

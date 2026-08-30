@@ -167,6 +167,17 @@ test('title.clean: keeps punctuation inside real titles', () => {
   assert.match(r.title, /Alien: Romulus/);
 });
 
+test('title ids: 67movies /watch/movie/<tmdb-id> and TMDB/IMDb urls are detected', () => {
+  assert.deepEqual(title.idsFromUrl('https://67movies.nl/watch/movie/10389'), { imdbId: '', tmdbId: '10389' });
+  assert.deepEqual(title.idsFromUrl('https://67movies.net/watch/tv/289219/1/9'), { imdbId: '', tmdbId: '289219' });
+  assert.deepEqual(title.idsFromUrl('https://movie.example/film/the-eye-10389'), { imdbId: '', tmdbId: '10389' });
+  assert.deepEqual(title.idsFromUrl('https://www.themoviedb.org/movie/10389'), { imdbId: '', tmdbId: '10389' });
+  assert.deepEqual(title.idsFromUrl('https://www.imdb.com/title/tt3659388/'), { imdbId: 'tt3659388', tmdbId: '' });
+  const ids = title.extractIds('The Eye tt3659388 tmdb_id 10389');
+  assert.equal(ids.imdbId, 'tt3659388');
+  assert.equal(ids.tmdbId, '10389');
+});
+
 /* ------------------------------------------------------------------ *
  * subtitles
  * ------------------------------------------------------------------ */
@@ -252,7 +263,7 @@ test('subs.search: missing API key marks provider as skipped, never throws', asy
   assert.equal(res.providerInfo.wyzie.status, 'skipped', 'wyzie with no key is skipped, never throws');
 });
 
-test('wyzie: searches by IMDb id, maps Indonesian srt result, requires key and id', async () => {
+test('wyzie: searches by id or auto-resolves title→TMDB, maps Indonesian srt result', async () => {
   const wyzieRows = [
     { id: 'a1', url: 'https://sub.wyzie.io/c/abc/id/a1?format=srt&encoding=UTF-8', language: 'id', display: 'Indonesian', format: 'srt', media: 'The Martian', fileName: 'martian.id.srt', source: 'opensubtitles', ai: false, downloadCount: 50 },
     { id: 'a2', url: 'https://sub.wyzie.io/c/abc/en/a2?format=srt', language: 'en', display: 'English', format: 'srt', media: 'The Martian', fileName: 'martian.en.srt', ai: false },
@@ -262,6 +273,18 @@ test('wyzie: searches by IMDb id, maps Indonesian srt result, requires key and i
     requestedUrl = String(url);
     if (requestedUrl.startsWith('https://sub.wyzie.io/search')) {
       return { ok: true, status: 200, async text() { return JSON.stringify(wyzieRows); }, async json() { return wyzieRows; } };
+    }
+    if (requestedUrl.startsWith('https://sub.wyzie.io/api/tmdb/search')) {
+      return {
+        ok: true,
+        status: 200,
+        async text() {
+          return JSON.stringify([{ id: 286217, title: 'The Martian', release_date: '2015-10-02', media_type: 'movie', vote_average: 7.2 }]);
+        },
+        async json() {
+          return [{ id: 286217, title: 'The Martian', release_date: '2015-10-02', media_type: 'movie', vote_average: 7.2 }];
+        },
+      };
     }
     if (requestedUrl.includes('/c/abc/id/a1')) {
       return { ok: true, status: 200, async text() { return '1\n00:00:01,000 --> 00:00:03,000\nHalo dunia'; } };
@@ -274,10 +297,12 @@ test('wyzie: searches by IMDb id, maps Indonesian srt result, requires key and i
   let res = await subs.search({ title: 'The Martian', imdbId: 'tt3659388' }, settings, { fetchImpl: fakeFetch });
   assert.equal(res.providerInfo.wyzie.status, 'skipped');
 
-  // 2. key but no id -> skipped (wyzie cannot search by title text)
+  // 2. key + title but no id → Wyzie resolves the TMDB id automatically
   settings = Object.assign({}, SR.defaults, { wyzieApiKey: 'k', providers: { wyzie: true, subdl: false, opensubtitles: false, yify: false } });
-  res = await subs.search({ title: 'No Id Movie' }, settings, { fetchImpl: fakeFetch });
-  assert.equal(res.providerInfo.wyzie.status, 'skipped');
+  res = await subs.search({ title: 'The Martian' }, settings, { fetchImpl: fakeFetch });
+  assert.equal(res.providerInfo.wyzie.status, 'ok');
+  assert.match(requestedUrl, /id=286217/);
+  assert.equal(res.results.length, 1);
 
   // 3. key + id -> Indonesian result mapped
   settings = Object.assign({}, SR.defaults, { wyzieApiKey: 'k', subtitleLang: 'id', providers: { wyzie: true, subdl: false, opensubtitles: false, yify: false } });
