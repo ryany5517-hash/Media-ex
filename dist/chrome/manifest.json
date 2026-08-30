@@ -70,6 +70,7 @@
         "shared/updater.js",
         "shared/dom-scanner.js",
         "vendor/motion.min.js",
+        "shared/subtitles.js",
         "content/ui-styles.js",
         "content/ui.js",
         "content/content.js"

@@ -2361,6 +2361,9 @@
       'panel.layers': '{n} of 5 layers active',
       'panel.none': 'none reported yet',
       'panel.subs.hint': 'Add a Wyzie, SubDL or OpenSubtitles key in Settings. Wyzie uses the IMDb/TMDB id of the current title.',
+      'panel.subs.verified': 'verified',
+      'panel.subs.by': 'by',
+      'panel.subs.downloads': 'downloads',
       'action.use': 'Use',
       'action.pick': 'Pick',
       'action.downloadPlaylist': 'Save playlist',
@@ -2606,6 +2609,9 @@
       'panel.layers': '{n} dari 5 layer aktif',
       'panel.none': 'belum ada laporan',
       'panel.subs.hint': 'Isi API key SubDL atau OpenSubtitles di Pengaturan untuk mengambil subtitle Indonesia.',
+      'panel.subs.verified': 'terverifikasi',
+      'panel.subs.by': 'oleh',
+      'panel.subs.downloads': 'download',
       'action.use': 'Pakai',
       'action.pick': 'Ambil',
       'action.downloadPlaylist': 'Simpan playlist',
@@ -3647,6 +3653,40 @@
     if (name && /indonesia/.test(name)) return true;
     if (!lang && !name) return ID_RE.test(String(item.filename || '') + ' ' + String(item.name || ''));
     return false;
+  };
+
+  /* ---- display helpers: language names + flag emoji (pure, for the UI) ---- */
+  const LANG_NAMES = {
+    id: 'Bahasa Indonesia', in: 'Bahasa Indonesia', en: 'English', es: 'Español', fr: 'Français', de: 'Deutsch', it: 'Italiano',
+    pt: 'Português', nl: 'Nederlands', ru: 'Русский', ja: '日本語', ko: '한국어', zh: '中文',
+    ar: 'العربية', th: 'ไทย', vi: 'Tiếng Việt', hi: 'हिन्दी', he: 'עברית', el: 'Ελληνικά',
+    pl: 'Polski', tr: 'Türkçe', sv: 'Svenska', da: 'Dansk', no: 'Norsk', fi: 'Suomi',
+    cs: 'Čeština', ro: 'Română', hu: 'Magyar', uk: 'Українська', ms: 'Bahasa Melayu',
+    tl: 'Filipino', bn: 'বাংলা', ur: 'اردو', fa: 'فارسی', ta: 'தமிழ்', ne: 'नेपाली', km: 'ខ្មែរ',
+  };
+  const FLAG_CODES = {
+    id: 'id', in: 'id', en: 'gb', es: 'es', fr: 'fr', de: 'de', it: 'it', pt: 'br', nl: 'nl', ru: 'ru',
+    ja: 'jp', ko: 'kr', zh: 'cn', ar: 'sa', th: 'th', vi: 'vn', hi: 'in', he: 'il', el: 'gr',
+    pl: 'pl', tr: 'tr', sv: 'se', da: 'dk', no: 'no', fi: 'fi', cs: 'cz', ro: 'ro', hu: 'hu',
+    uk: 'ua', ms: 'my', tl: 'ph', bn: 'bd', ur: 'pk', fa: 'ir', ta: 'in', ne: 'np', km: 'kh',
+  };
+  /** Human language name for a subtitle row (falls back to uppercase code). */
+  subs.langName = function (code) {
+    const c = String(code || '').toLowerCase().slice(0, 2);
+    return LANG_NAMES[c] || String(code || '').toUpperCase();
+  };
+  /** Country-flag emoji for a language code ('' when unknown). */
+  subs.flagOf = function (code) {
+    const cc = FLAG_CODES[String(code || '').toLowerCase().slice(0, 2)];
+    if (!cc) return '';
+    return [...cc.toUpperCase()].map((c) => String.fromCodePoint(0x1f1e6 + c.charCodeAt(0) - 65)).join('');
+  };
+  /** Compact count: 1500 -> 1.5k, 42 -> 42. */
+  subs.countLabel = function (n) {
+    const v = Number(n) || 0;
+    if (v >= 1000000) return (v / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
+    if (v >= 1000) return (v / 1000).toFixed(1).replace(/\.0$/, '') + 'k';
+    return v ? String(v) : '';
   };
 
   subs.matchesLang = function (item, code) {
@@ -5184,10 +5224,23 @@
 .srad-pv { font-size: 10.5px; padding: 2px 7px; border-radius: 7px; border: 1px solid var(--sr-line-2); color: var(--sr-ink-2); }
 .srad-pv[data-s="ok"] { color: var(--sr-ok); border-color: var(--sr-ok); }
 .srad-pv[data-s="error"], .srad-pv[data-s="skipped"] { color: var(--sr-warn); border-color: var(--sr-warn); }
-.srad-sub-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 12px; padding: 6px 8px; border-radius: 10px; background: var(--sr-surface-2); }
-.srad-sub-row span { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.srad-sub-row em { font-style: normal; color: var(--sr-ink-2); font-size: 11px; }
-.srad-sub-row[data-picked="1"] { outline: 1px solid var(--sr-accent); }
+.srad-sub-list { margin-top: 9px; display: flex; flex-direction: column; gap: 5px; }
+.srad-sub-row { display: flex; align-items: center; gap: 10px; font-size: 12px; padding: 8px 10px; border-radius: 11px; background: var(--sr-surface-2); border: 1px solid var(--sr-line-2); transition: border-color var(--sr-t-fast) ease, background var(--sr-t-fast) ease, transform var(--sr-t-fast) var(--sr-spring), box-shadow var(--sr-t-fast) ease; }
+.srad-sub-row:hover { background: var(--sr-surface-3); border-color: var(--sr-accent-line); transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0, 0, 0, .08); }
+.srad-sub-row[data-picked="1"] { outline: 1px solid var(--sr-accent); background: var(--sr-accent-soft); }
+.srad-sflag { font-size: 18px; line-height: 1; flex: 0 0 auto; filter: drop-shadow(0 1px 1px rgba(0,0,0,.18)); }
+.srad-smain { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.srad-sname { font-weight: 650; color: var(--sr-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.srad-smeta { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 7px; color: var(--sr-ink-2); font-size: 10.5px; }
+.srad-smeta svg { width: 10px; height: 10px; vertical-align: -1px; }
+.srad-slang { font-weight: 700; color: var(--sr-ink); }
+.srad-sdot { font-style: normal; color: var(--sr-ink-3); margin: 0 2px; }
+.srad-sup { color: var(--sr-ink-2); max-width: 140px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.srad-sbadge { font-size: 10px; font-weight: 800; letter-spacing: .03em; padding: 1px 6px; border-radius: 6px; line-height: 1.5; display: inline-flex; align-items: center; gap: 3px; }
+.srad-sbadge svg { width: 9px; height: 9px; }
+.srad-sbadge[data-tone="ok"] { color: var(--sr-ok); background: var(--sr-ok-soft); }
+.srad-sbadge[data-tone="warn"] { color: var(--sr-warn); background: var(--sr-warn-soft); }
+.srad-sbadge[data-tone="q"] { color: var(--sr-accent); background: var(--sr-accent-soft); }
 .srad-sub-actions { display: flex; gap: 6px; margin-top: 9px; flex-wrap: wrap; }
 
 /* ── settings sheet ─────────────────────────────────────── */
@@ -5682,6 +5735,7 @@
           skipped: t('panel.subs.skipped'),
         };
         const providers = sub.providers || {};
+        const rows = (sub.items || []).slice(0, 6).map((it, i) => subRowHtml(it, i, sub)).join('');
         bodyEl.innerHTML =
           '<div class="srad-sub-card">' +
           '<div class="srad-sub-head">' + ico('captions') + '<span>' + esc(t('panel.subs.title')) + '</span>' +
@@ -5692,25 +5746,47 @@
             .map((k) => '<span class="srad-pv" data-s="' + esc(providers[k].status || '') + '" title="' + esc(providers[k].reason || '') + '">' + esc(providers[k].label || k) + ' ' + (providers[k].count != null ? providers[k].count : '') + '</span>')
             .join('') +
           '</div>' +
-          ((sub.items || []).length
-            ? '<div style="margin-top:9px">' +
-              sub.items
-                .slice(0, 6)
-                .map(
-                  (it, i) =>
-                    '<div class="srad-sub-row" data-picked="' + ((sub.chosen && sub.chosen.index === i) || (i === 0 && sub.chosen) ? 1 : 0) + '">' +
-                    '<span title="' + esc(it.name || it.filename || '') + '">' + esc(it.name || it.filename || t('panel.subs.found')) + '</span>' +
-                    '<em>' + esc(((it.langCode || it.lang || '').toUpperCase() ? (it.langCode || it.lang || '').toUpperCase() + ' / ' : '') + (it.providerLabel || it.provider || '') + ' ' + (it.format || 'srt')) + '</em>' +
-                    '<button class="srad-btn" data-act="sub-pick" data-index="' + i + '">' + esc(i === 0 ? t('action.use') : t('action.pick')) + '</button></div>'
-                )
-                .join('') +
-              '</div>'
+          (rows
+            ? '<div class="srad-sub-list">' + rows + '</div>'
             : '<div class="srad-note">' + ico('info') + '<span>' + esc(sub.error || t('panel.subs.hint')) + '</span></div>') +
           '<div class="srad-sub-actions">' +
           '<button class="srad-btn" data-act="subs" data-primary="1">' + ico('search') + esc(t('panel.subs.retry')) + '</button>' +
           '<button class="srad-btn" data-act="sub-attach">' + ico('captions') + esc(t('panel.subs.attach')) + '</button>' +
           '<button class="srad-btn" data-act="sub-download">' + ico('file-down') + esc(t('panel.subs.download')) + '</button>' +
           '</div></div>';
+        const subRows = [...bodyEl.querySelectorAll('.srad-sub-row')];
+        subRows.forEach((el, i) => {
+          animate(el, { opacity: [0, 1], transform: ['translateY(7px) scale(.97)', 'none'] }, { duration: 0.24, delay: i * 0.04 });
+        });
+      }
+
+      /** One informative subtitle result row: flag, language, format, badges, editor. */
+      function subRowHtml(it, i, sub) {
+        const name = it.name || it.filename || t('panel.subs.found');
+        const flag = (SR.subs && SR.subs.flagOf) ? SR.subs.flagOf(it.langCode || it.lang) : '';
+        const bits = [];
+        const lang = (SR.subs && SR.subs.langName) ? SR.subs.langName(it.langCode || it.lang) : (it.langCode || it.lang || '').toUpperCase();
+        if (lang) bits.push('<span class="srad-slang">' + esc(lang) + '</span>');
+        const fmt = String(it.format || 'srt').toUpperCase();
+        if (fmt) bits.push('<span>' + esc(fmt) + '</span>');
+        const dl = (SR.subs && SR.subs.countLabel) ? SR.subs.countLabel(it.downloads) : '';
+        if (dl) bits.push('<span title="' + esc(t('panel.subs.downloads')) + '">' + ico('download') + ' ' + esc(dl) + '</span>');
+        if (it.verified) bits.push('<span class="srad-sbadge" data-tone="ok">' + ico('check') + esc(t('panel.subs.verified')) + '</span>');
+        if (it.aiTranslated) bits.push('<span class="srad-sbadge" data-tone="warn">AI</span>');
+        if (it.hearingImpaired) bits.push('<span class="srad-sbadge" data-tone="q">HI</span>');
+        const by = it.uploader ? (SR.i18n ? t('panel.subs.by') : 'by') + ' ' + it.uploader : '';
+        if (by) bits.push('<span class="srad-sup" title="' + esc(by) + '">' + esc(by) + '</span>');
+        const picked = (sub.chosen && sub.chosen.index === i) || (i === 0 && sub.chosen) ? 1 : 0;
+        return (
+          '<div class="srad-sub-row" data-picked="' + picked + '">' +
+          (flag ? '<span class="srad-sflag" aria-hidden="true">' + flag + '</span>' : '') +
+          '<span class="srad-smain">' +
+          '<b class="srad-sname" title="' + esc(name) + '">' + esc(name) + '</b>' +
+          '<small class="srad-smeta">' + bits.join('<i class="srad-sdot" aria-hidden="true">|</i>') + '</small>' +
+          '</span>' +
+          '<button class="srad-btn" data-act="sub-pick" data-index="' + i + '">' + esc(i === 0 ? t('action.use') : t('action.pick')) + '</button>' +
+          '</div>'
+        );
       }
 
       /* ================= info pane ================= */

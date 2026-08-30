@@ -96,9 +96,13 @@ body {
 .pv[data-s="ok"] { color: var(--sr-ok); border-color: var(--sr-ok-soft); background: var(--sr-ok-soft); }
 .pv[data-s="error"], .pv[data-s="skipped"] { color: var(--sr-err); border-color: var(--sr-err-soft); background: var(--sr-err-soft); }
 .subs-list { margin-top: 7px; display: flex; flex-direction: column; gap: 4px; }
-.sub-item { display: flex; align-items: center; gap: 7px; font-size: 11.5px; padding: 4px 6px; border-radius: var(--sr-r-1); background: var(--sr-surface-2); }
-.sub-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1 1 auto; }
-.sub-item b { color: var(--sr-ink-2); font-weight: 600; }
+.sub-item { display: flex; align-items: center; gap: 8px; font-size: 11.5px; padding: 6px 8px; border-radius: 9px; background: var(--sr-surface-2); border: 1px solid var(--sr-line-2); transition: border-color var(--sr-t-fast) ease, background var(--sr-t-fast) ease; }
+.sub-item:hover { background: var(--sr-surface-3); border-color: var(--sr-accent-line); }
+.sub-item[data-picked="1"] { outline: 1px solid var(--sr-accent); background: var(--sr-accent-soft); }
+.sub-item .sflag { font-size: 15px; line-height: 1; flex: 0 0 auto; }
+.sub-item .smain { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.sub-item .smain b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--sr-ink); }
+.sub-item .smain small { color: var(--sr-ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 10px; }
 .subs-actions { display: flex; gap: 6px; margin-top: var(--sr-sp-2); flex-wrap: wrap; }
 
 .list { padding: 2px 12px 6px; display: flex; flex-direction: column; gap: 7px; }

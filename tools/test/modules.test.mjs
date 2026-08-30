@@ -45,6 +45,34 @@ test('subtitles.js self-registers alone in an empty world and keeps providers', 
   }
 });
 
+test('subtitles.js langName/flagOf/countLabel power the rich result rows', () => {
+  const world = freshWorld();
+  runIn('shared/subtitles.js', world);
+  const subs = world.SR.subs;
+
+  // Language names: 'id' -> Bahasa Indonesia, ISO 639-2/aliases handled, unknown falls back.
+  assert.equal(subs.langName('id'), 'Bahasa Indonesia');
+  assert.equal(subs.langName('en'), 'English');
+  assert.equal(subs.langName('IN'), 'Bahasa Indonesia');
+  assert.equal(subs.langName('ind'), 'Bahasa Indonesia', 'ISO 639-2/alias ind also resolves');
+  assert.equal(subs.langName('pt-BR'), 'Português', 'pt-BR shows Portuguese name (Brazil flag disambiguates)');
+  assert.ok(typeof subs.langName('xx-nope') === 'string' && subs.langName('xx-nope').length > 0, 'unknown code still yields a readable fallback');
+
+  // Flags: real code gets a regional-indicator pair, unknown gets empty (UI hides the span).
+  assert.match(subs.flagOf('id'), /^[\u{1F1E6}-\u{1F1FF}][\u{1F1E6}-\u{1F1FF}]$/u, 'id maps to an emoji flag pair');
+  assert.match(subs.flagOf('en'), /^[\u{1F1E6}-\u{1F1FF}][\u{1F1E6}-\u{1F1FF}]$/u, 'en maps to an emoji flag pair');
+  assert.equal(subs.flagOf('xx-nope'), '', 'unknown code yields no flag');
+
+  // Compact counts: plain numbers stay plain, big numbers become 1.2k, etc.
+  assert.equal(subs.countLabel(0), '', 'zero downloads renders nothing');
+  assert.equal(subs.countLabel(42), '42');
+  assert.equal(subs.countLabel(1200), '1.2k');
+  assert.equal(subs.countLabel(1500), '1.5k');
+  assert.equal(subs.countLabel(1200000), '1.2M');
+  assert.equal(subs.countLabel(undefined), '', 'missing count renders nothing');
+  assert.equal(subs.countLabel(null), '', 'null count renders nothing');
+});
+
 test('content.js missing shared module warns once and stops instead of throwing per frame', () => {
   const warnings = [];
   const fakeConsole = { warn: m => warnings.push(String(m)), error: () => {}, log: () => {} };

@@ -343,10 +343,23 @@
 .srad-pv { font-size: 10.5px; padding: 2px 7px; border-radius: 7px; border: 1px solid var(--sr-line-2); color: var(--sr-ink-2); }
 .srad-pv[data-s="ok"] { color: var(--sr-ok); border-color: var(--sr-ok); }
 .srad-pv[data-s="error"], .srad-pv[data-s="skipped"] { color: var(--sr-warn); border-color: var(--sr-warn); }
-.srad-sub-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 12px; padding: 6px 8px; border-radius: 10px; background: var(--sr-surface-2); }
-.srad-sub-row span { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.srad-sub-row em { font-style: normal; color: var(--sr-ink-2); font-size: 11px; }
-.srad-sub-row[data-picked="1"] { outline: 1px solid var(--sr-accent); }
+.srad-sub-list { margin-top: 9px; display: flex; flex-direction: column; gap: 5px; }
+.srad-sub-row { display: flex; align-items: center; gap: 10px; font-size: 12px; padding: 8px 10px; border-radius: 11px; background: var(--sr-surface-2); border: 1px solid var(--sr-line-2); transition: border-color var(--sr-t-fast) ease, background var(--sr-t-fast) ease, transform var(--sr-t-fast) var(--sr-spring), box-shadow var(--sr-t-fast) ease; }
+.srad-sub-row:hover { background: var(--sr-surface-3); border-color: var(--sr-accent-line); transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0, 0, 0, .08); }
+.srad-sub-row[data-picked="1"] { outline: 1px solid var(--sr-accent); background: var(--sr-accent-soft); }
+.srad-sflag { font-size: 18px; line-height: 1; flex: 0 0 auto; filter: drop-shadow(0 1px 1px rgba(0,0,0,.18)); }
+.srad-smain { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.srad-sname { font-weight: 650; color: var(--sr-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.srad-smeta { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 7px; color: var(--sr-ink-2); font-size: 10.5px; }
+.srad-smeta svg { width: 10px; height: 10px; vertical-align: -1px; }
+.srad-slang { font-weight: 700; color: var(--sr-ink); }
+.srad-sdot { font-style: normal; color: var(--sr-ink-3); margin: 0 2px; }
+.srad-sup { color: var(--sr-ink-2); max-width: 140px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.srad-sbadge { font-size: 10px; font-weight: 800; letter-spacing: .03em; padding: 1px 6px; border-radius: 6px; line-height: 1.5; display: inline-flex; align-items: center; gap: 3px; }
+.srad-sbadge svg { width: 9px; height: 9px; }
+.srad-sbadge[data-tone="ok"] { color: var(--sr-ok); background: var(--sr-ok-soft); }
+.srad-sbadge[data-tone="warn"] { color: var(--sr-warn); background: var(--sr-warn-soft); }
+.srad-sbadge[data-tone="q"] { color: var(--sr-accent); background: var(--sr-accent-soft); }
 .srad-sub-actions { display: flex; gap: 6px; margin-top: 9px; flex-wrap: wrap; }
 
 /* ── settings sheet ─────────────────────────────────────── */

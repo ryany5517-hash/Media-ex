@@ -410,6 +410,7 @@
           skipped: t('panel.subs.skipped'),
         };
         const providers = sub.providers || {};
+        const rows = (sub.items || []).slice(0, 6).map((it, i) => subRowHtml(it, i, sub)).join('');
         bodyEl.innerHTML =
           '<div class="srad-sub-card">' +
           '<div class="srad-sub-head">' + ico('captions') + '<span>' + esc(t('panel.subs.title')) + '</span>' +
@@ -420,25 +421,47 @@
             .map((k) => '<span class="srad-pv" data-s="' + esc(providers[k].status || '') + '" title="' + esc(providers[k].reason || '') + '">' + esc(providers[k].label || k) + ' ' + (providers[k].count != null ? providers[k].count : '') + '</span>')
             .join('') +
           '</div>' +
-          ((sub.items || []).length
-            ? '<div style="margin-top:9px">' +
-              sub.items
-                .slice(0, 6)
-                .map(
-                  (it, i) =>
-                    '<div class="srad-sub-row" data-picked="' + ((sub.chosen && sub.chosen.index === i) || (i === 0 && sub.chosen) ? 1 : 0) + '">' +
-                    '<span title="' + esc(it.name || it.filename || '') + '">' + esc(it.name || it.filename || t('panel.subs.found')) + '</span>' +
-                    '<em>' + esc(((it.langCode || it.lang || '').toUpperCase() ? (it.langCode || it.lang || '').toUpperCase() + ' / ' : '') + (it.providerLabel || it.provider || '') + ' ' + (it.format || 'srt')) + '</em>' +
-                    '<button class="srad-btn" data-act="sub-pick" data-index="' + i + '">' + esc(i === 0 ? t('action.use') : t('action.pick')) + '</button></div>'
-                )
-                .join('') +
-              '</div>'
+          (rows
+            ? '<div class="srad-sub-list">' + rows + '</div>'
             : '<div class="srad-note">' + ico('info') + '<span>' + esc(sub.error || t('panel.subs.hint')) + '</span></div>') +
           '<div class="srad-sub-actions">' +
           '<button class="srad-btn" data-act="subs" data-primary="1">' + ico('search') + esc(t('panel.subs.retry')) + '</button>' +
           '<button class="srad-btn" data-act="sub-attach">' + ico('captions') + esc(t('panel.subs.attach')) + '</button>' +
           '<button class="srad-btn" data-act="sub-download">' + ico('file-down') + esc(t('panel.subs.download')) + '</button>' +
           '</div></div>';
+        const subRows = [...bodyEl.querySelectorAll('.srad-sub-row')];
+        subRows.forEach((el, i) => {
+          animate(el, { opacity: [0, 1], transform: ['translateY(7px) scale(.97)', 'none'] }, { duration: 0.24, delay: i * 0.04 });
+        });
+      }
+
+      /** One informative subtitle result row: flag, language, format, badges, editor. */
+      function subRowHtml(it, i, sub) {
+        const name = it.name || it.filename || t('panel.subs.found');
+        const flag = (SR.subs && SR.subs.flagOf) ? SR.subs.flagOf(it.langCode || it.lang) : '';
+        const bits = [];
+        const lang = (SR.subs && SR.subs.langName) ? SR.subs.langName(it.langCode || it.lang) : (it.langCode || it.lang || '').toUpperCase();
+        if (lang) bits.push('<span class="srad-slang">' + esc(lang) + '</span>');
+        const fmt = String(it.format || 'srt').toUpperCase();
+        if (fmt) bits.push('<span>' + esc(fmt) + '</span>');
+        const dl = (SR.subs && SR.subs.countLabel) ? SR.subs.countLabel(it.downloads) : '';
+        if (dl) bits.push('<span title="' + esc(t('panel.subs.downloads')) + '">' + ico('download') + ' ' + esc(dl) + '</span>');
+        if (it.verified) bits.push('<span class="srad-sbadge" data-tone="ok">' + ico('check') + esc(t('panel.subs.verified')) + '</span>');
+        if (it.aiTranslated) bits.push('<span class="srad-sbadge" data-tone="warn">AI</span>');
+        if (it.hearingImpaired) bits.push('<span class="srad-sbadge" data-tone="q">HI</span>');
+        const by = it.uploader ? (SR.i18n ? t('panel.subs.by') : 'by') + ' ' + it.uploader : '';
+        if (by) bits.push('<span class="srad-sup" title="' + esc(by) + '">' + esc(by) + '</span>');
+        const picked = (sub.chosen && sub.chosen.index === i) || (i === 0 && sub.chosen) ? 1 : 0;
+        return (
+          '<div class="srad-sub-row" data-picked="' + picked + '">' +
+          (flag ? '<span class="srad-sflag" aria-hidden="true">' + flag + '</span>' : '') +
+          '<span class="srad-smain">' +
+          '<b class="srad-sname" title="' + esc(name) + '">' + esc(name) + '</b>' +
+          '<small class="srad-smeta">' + bits.join('<i class="srad-sdot" aria-hidden="true">|</i>') + '</small>' +
+          '</span>' +
+          '<button class="srad-btn" data-act="sub-pick" data-index="' + i + '">' + esc(i === 0 ? t('action.use') : t('action.pick')) + '</button>' +
+          '</div>'
+        );
       }
 
       /* ================= info pane ================= */

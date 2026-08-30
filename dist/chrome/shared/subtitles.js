@@ -235,6 +235,40 @@
     return false;
   };
 
+  /* ---- display helpers: language names + flag emoji (pure, for the UI) ---- */
+  const LANG_NAMES = {
+    id: 'Bahasa Indonesia', in: 'Bahasa Indonesia', en: 'English', es: 'Español', fr: 'Français', de: 'Deutsch', it: 'Italiano',
+    pt: 'Português', nl: 'Nederlands', ru: 'Русский', ja: '日本語', ko: '한국어', zh: '中文',
+    ar: 'العربية', th: 'ไทย', vi: 'Tiếng Việt', hi: 'हिन्दी', he: 'עברית', el: 'Ελληνικά',
+    pl: 'Polski', tr: 'Türkçe', sv: 'Svenska', da: 'Dansk', no: 'Norsk', fi: 'Suomi',
+    cs: 'Čeština', ro: 'Română', hu: 'Magyar', uk: 'Українська', ms: 'Bahasa Melayu',
+    tl: 'Filipino', bn: 'বাংলা', ur: 'اردو', fa: 'فارسی', ta: 'தமிழ்', ne: 'नेपाली', km: 'ខ្មែរ',
+  };
+  const FLAG_CODES = {
+    id: 'id', in: 'id', en: 'gb', es: 'es', fr: 'fr', de: 'de', it: 'it', pt: 'br', nl: 'nl', ru: 'ru',
+    ja: 'jp', ko: 'kr', zh: 'cn', ar: 'sa', th: 'th', vi: 'vn', hi: 'in', he: 'il', el: 'gr',
+    pl: 'pl', tr: 'tr', sv: 'se', da: 'dk', no: 'no', fi: 'fi', cs: 'cz', ro: 'ro', hu: 'hu',
+    uk: 'ua', ms: 'my', tl: 'ph', bn: 'bd', ur: 'pk', fa: 'ir', ta: 'in', ne: 'np', km: 'kh',
+  };
+  /** Human language name for a subtitle row (falls back to uppercase code). */
+  subs.langName = function (code) {
+    const c = String(code || '').toLowerCase().slice(0, 2);
+    return LANG_NAMES[c] || String(code || '').toUpperCase();
+  };
+  /** Country-flag emoji for a language code ('' when unknown). */
+  subs.flagOf = function (code) {
+    const cc = FLAG_CODES[String(code || '').toLowerCase().slice(0, 2)];
+    if (!cc) return '';
+    return [...cc.toUpperCase()].map((c) => String.fromCodePoint(0x1f1e6 + c.charCodeAt(0) - 65)).join('');
+  };
+  /** Compact count: 1500 -> 1.5k, 42 -> 42. */
+  subs.countLabel = function (n) {
+    const v = Number(n) || 0;
+    if (v >= 1000000) return (v / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
+    if (v >= 1000) return (v / 1000).toFixed(1).replace(/\.0$/, '') + 'k';
+    return v ? String(v) : '';
+  };
+
   subs.matchesLang = function (item, code) {
     const c = String(code || '').toLowerCase();
     if (!c || c === 'all') return true;
