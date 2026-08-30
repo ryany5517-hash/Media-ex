@@ -45,17 +45,16 @@
     updateThemeBtn(s.theme);
     $('#refreshBtn').innerHTML = ico('refresh-cw');
     $('#optionsBtn').innerHTML = ico('settings');
-    $('#brandSub').textContent = (state.title && state.title.title) || util.host((state.title && state.title.url) || '') || t('app.tagline');
+    const enable = $('#enableSite');
+    enable.checked = !s.blockedHosts || !s.blockedHosts[util.host((state.title && state.title.url) || location.host)] ? true : false;
+    SR.i18n.apply(document);
+    $('#brandSub').textContent = liveStatusLine();
+    $('#enableLabel').textContent = s.enabled === false ? t('popup.disabled') : t('popup.tabMedia');
     renderLayers();
     renderMeta();
     renderSubs();
     renderList();
     renderHistory();
-    const enable = $('#enableSite');
-    enable.checked = !s.blockedHosts || !s.blockedHosts[util.host((state.title && state.title.url) || location.host)] ? true : false;
-    $('#enableLabel').textContent = s.enabled === false ? t('popup.disabled') : t('popup.tabMedia');
-    // static labels last, so every dynamic node above is translated too
-    SR.i18n.apply(document);
   }
 
   function resolvedLang(pref) {
@@ -101,23 +100,68 @@
     btn.setAttribute('aria-label', label);
   }
 
+  function layerVia(k, via) {
+    const v = String(via || '');
+    if (k === 'network') return v === 'network' || v === 'fetch';
+    if (k === 'dom') return v.indexOf('dom') === 0;
+    if (k === 'mse') return /mse/.test(v);
+    if (k === 'sw') return /cache/.test(v);
+    if (k === 'heuristic') return /heuristic|player|hls-js|jwplayer|videojs|inline-script|performance|global-config/.test(v);
+    return false;
+  }
+
+  function liveStatusLine() {
+    const info = state.title || {};
+    const n = (state.items || []).length;
+    const host = util.host(info.url || '') || '';
+    if (info.title) return info.title + (info.year ? ' (' + info.year + ')' : '');
+    if (n) return t('panel.items', { n: n }) + (host ? ' - ' + host : '');
+    if (state.pagePaused) return t('panel.paused');
+    return host || t('app.tagline');
+  }
+
   function renderLayers() {
     const L = state.layers || {};
+    const s = state.settings || {};
+    const paused = !!state.pagePaused || s.enabled === false;
+    const items = state.items || [];
     const defs = [
-      ['network', 'L1', t('panel.detecting')],
-      ['dom', 'L2', 'DOM'],
-      ['mse', 'L3', 'MSE'],
-      ['sw', 'L4', 'SW/Cache'],
-      ['heuristic', 'L5', 'Heuristics'],
+      ['network', 'L1', 'layerNetwork', 'layer.wait'],
+      ['dom', 'L2', 'layerDom', 'layer.waitDom'],
+      ['mse', 'L3', 'layerMse', 'layer.waitMse'],
+      ['sw', 'L4', 'layerSw', 'layer.waitSw'],
+      ['heuristic', 'L5', 'layerHeuristic', 'layer.waitHeu'],
     ];
     $('#layers').innerHTML = defs
-      .map(([k, n, label]) => `<div class="layer" data-on="${L[k] ? 1 : 0}" title="${esc(label)}"><b>${n}</b>${esc(label)}</div>`)
+      .map(([k, n, setKey, waitKey]) => {
+        const enabled = s[setKey] !== false && !paused;
+        const hits = items.filter((it) => (it.via || []).some((v) => layerVia(k, v))).length;
+        const armed = !!(L[k] || hits);
+        let mode = 'idle';
+        let label = t('layer.idle');
+        if (paused) {
+          mode = 'paused';
+          label = t('layer.paused');
+        } else if (s[setKey] === false) {
+          mode = 'off';
+          label = t('layer.off');
+        } else if (hits || (k === 'network' && items.length)) {
+          mode = 'live';
+          label = t('layer.live');
+        } else if (armed || enabled) {
+          mode = 'wait';
+          label = t(waitKey);
+        }
+        const title = n + ' - ' + label + (hits ? ' - ' + hits : '');
+        return `<div class="layer" data-on="${enabled && (armed || mode === 'wait') ? 1 : 0}" data-mode="${mode}" title="${esc(title)}"><b>${n}</b>${esc(label)}</div>`;
+      })
       .join('');
   }
 
   function renderMeta() {
     const info = state.title || {};
-    $('#metaTitle').textContent = info.title || t('panel.empty');
+    const n = (state.items || []).length;
+    $('#metaTitle').textContent = info.title || (n ? (state.items[0].name || t('panel.untitled')) : t('panel.empty'));
     const chips = [];
     if (info.year) chips.push(`<span class="chip" data-tone="ep">${esc(info.year)}</span>`);
     const ep = SR.title.episodeLabel(info);
@@ -137,7 +181,7 @@
   function renderSubs() {
     const sub = state.sub || { status: 'idle', items: [] };
     const labels = {
-      idle: t('action.subs'),
+      idle: t('panel.subs.idle'),
       searching: t('panel.subs.searching'),
       found: t('panel.subs.found'),
       none: t('panel.subs.none'),
