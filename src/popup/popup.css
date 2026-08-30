@@ -126,8 +126,8 @@ body {
 .btn svg, .ibtn svg, .brand-ico svg { width: 15px; height: 15px; }
 .btn:hover { border-color: var(--sr-accent); }
 .btn:active { transform: scale(.97); }
-.btn[data-primary="1"] { background: var(--sr-brand-gradient); color: var(--sr-accent-ink); border-color: transparent; box-shadow: var(--sr-shadow-accent); }
-.btn[data-primary="1"]:hover { filter: brightness(1.07); transform: translateY(-1px); opacity: 1; }
+.btn[data-primary="1"] { background: var(--sr-accent); color: var(--sr-accent-ink); border-color: transparent; }
+.btn[data-primary="1"]:hover { filter: brightness(1.04); transform: translateY(-1px); opacity: 1; }
 .btn.tiny { min-height: 32px; font-size: 11px; padding: 0 8px; }
 .btn[disabled] { opacity: .55; pointer-events: none; }
 

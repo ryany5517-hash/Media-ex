@@ -675,16 +675,15 @@ try {
     let media = picked.item || clicked;
     let url = picked.url || (clicked && util.localPlayable(clicked.url, clicked.category) ? clicked.url : null);
     if (url) url = await preferWatchPartyUrl(st, media, url);
-    if (url && media && media.url && !/\.(m3u8|mpd|mp4|webm)(\?|#|$)/i.test(url) && util.localPlayable(url, media.category)) {
+    if (url && media && media.url && !/\.m3u8/i.test(url) && !/\.(mpd|mp4|webm)(\?|#|$)/i.test(url) && util.localPlayable(url, media.category)) {
       const resolved = await resolvePlaySource(st, media, url);
-      if (resolved && resolved.url && util.watchPartyPlayable(resolved.url, resolved.category)) {
-        url = await preferWatchPartyUrl(st, media, resolved.url);
+      if (resolved && resolved.url) {
+        url = await preferWatchPartyUrl(st, Object.assign({}, media, { category: resolved.category || media.category }), resolved.url);
         media = Object.assign({}, media, { url: url, category: resolved.category || media.category });
       }
     }
+    // Never fall through to Play / in-page overlay — Watch Party must open a room.
     if (!url || !util.watchPartyPlayable(url, (media && media.category) || '')) {
-      const play = await launchPlayer(st, itemId);
-      if (play && play.ok) return play;
       return { ok: false, reason: t('watchparty.needDirect'), hint: 'vbrowser' };
     }
     const ti = st.title || {};
@@ -1260,13 +1259,25 @@ try {
     }
   }
 
-  // WatchParty's isHls() is `src.includes('.m3u8')`. A /mpd/token without that
-  // substring is treated as a raw <video src> and never loads audio renditions.
-  function ensureWpHlsUrl(url) {
+  // WatchParty's isHls() is `src.includes('.m3u8')`. Token HLS (/mpd/, /api/playlist)
+  // without that substring is treated as a raw <video src> and never loads.
+  function ensureWpHlsUrl(url, category) {
     if (!url) return url;
     if (/\.m3u8/i.test(url)) return url;
-    // Only token paths without a media extension need a fake .m3u8 suffix.
-    if (!/\/mpd\//i.test(url)) return url;
+    let path = '';
+    let search = '';
+    try {
+      const u = new URL(url);
+      path = u.pathname || '';
+      search = u.search || '';
+    } catch (_) {
+      return url;
+    }
+    const last = (path.replace(/\/+$/, '').split('/').pop() || '').toLowerCase();
+    // JSON resolvers: last segment is api/resolve/redirect/gateway AND has a query.
+    if (/^(api|resolve|redirect|gateway)$/.test(last) && search) return url;
+    const hlsish = category === 'hls' || /\/mpd\//i.test(path) || /\/playlist\//i.test(path);
+    if (!hlsish) return url;
     if (/\.(mp4|webm|mpd|mkv|m4v|mov)(\?|#|$)/i.test(url)) return url;
     return url + (url.indexOf('?') >= 0 ? '&' : '?') + 'srad=playlist.m3u8';
   }
@@ -1287,7 +1298,7 @@ try {
   }
 
   async function preferWatchPartyUrl(st, media, url) {
-    return ensureWpHlsUrl(await preferAudioMaster(st, media, url));
+    return ensureWpHlsUrl(await preferAudioMaster(st, media, url), (media && media.category) || '');
   }
 
   function preferPlayUrl(st, media, url) {

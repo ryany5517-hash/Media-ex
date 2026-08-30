@@ -417,6 +417,8 @@ test('util.watchPartyPlayable: direct media yes, resolver/API links no', () => {
     // a real .m3u8 on the path must still play despite "api" in the URL
     ['https://a2.shows.st/api/playlist/aBc.m3u8?token=x', 'hls'],
     ['https://cdn.x/api/manifest/master.m3u8', 'hls'],
+    ['https://a2.shows.st/api/playlist/tok123', 'hls'],
+    ['https://cdn.x/v0.m3u8?srad=playlist.m3u8', 'hls'],
   ];
   for (const [u, c] of yes) assert.equal(util.watchPartyPlayable(u, c), true, 'should play ' + u);
   const no = [

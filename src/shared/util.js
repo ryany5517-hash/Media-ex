@@ -15,7 +15,7 @@
   'use strict';
 
   const SR = (root.SR = root.SR || {});
-  SR.VERSION = '1.1.15';
+  SR.VERSION = '1.1.16';
   SR.NS = 'streamRadar'; // message channel id / storage prefix
   SR.PREFIX = 'srad'; // css class prefix
 
@@ -249,20 +249,27 @@
       if (category === 'blob' || category === 'segment' || category === 'texttrack') return false;
       let path = String(url);
       try { path = new URL(url).pathname; } catch (_) {}
+      // WatchParty's HLS check is `src.includes('.m3u8')`. Only our own query
+      // hint (or a real path extension) counts — encoded inner URLs in
+      // ?to=/ ?url= must not make a redirect look like a playlist.
+      if (/[?&]srad=playlist\.m3u8/i.test(url)) return true;
       // 1) A media extension on the PATH is directly playable. This wins over
       //    everything: real HLS CDNs often serve .../api/playlist.m3u8, so a
       //    resolver-looking path must not veto an explicit manifest/file.
       if (/\.(m3u8|mpd|mp4|webm|mkv|mov|m4v|m3u)(\?|#|$)/i.test(path)) return true;
       if (util.isHlsProxy(url)) return true;
-      // 2) Resolver/gateway endpoints return JSON/HTML (a2.shows.st/api?d=…).
-      //    Even if webRequest labelled them HLS from a misleading content-type,
-      //    WatchParty cannot play them — reject before the category shortcut.
-      if (/(^|\/)(api|resolve|redirect|gateway|link|source|get|serve)(\/|$)/i.test(path)) return false;
+      // 2) Resolver/gateway endpoints return JSON/HTML (d.shows.st/api?d=…).
+      //    Only the last path segment — /api/playlist/token is a real stream.
+      try {
+        const segs = path.replace(/\/+$/, '').split('/');
+        const last = String(segs[segs.length - 1] || '').toLowerCase();
+        if (last === 'api' || last === 'resolve' || last === 'redirect' || last === 'gateway') return false;
+      } catch (_) {}
       // 3) A classified direct-media category (content-type/parsed manifest,
-      //    served without a clean extension) is playable too.
+      //    served without a clean extension) is playable too. Token /mpd/<id>
+      //    becomes playable after ensureWpHlsUrl adds a .m3u8 query hint.
       if (category === 'hls' || category === 'dash' || category === 'mp4' || category === 'webm') {
-        // Token CDNs like .../mpd/<id> are not a file WatchParty can fetch.
-        if (/\/mpd\//i.test(path) && !/\.mpd(\?|#|$)/i.test(path)) return false;
+        if (/\/mpd\//i.test(path) && !/\.m3u8|\.mpd/i.test(url)) return false;
         return true;
       }
       return false;
