@@ -229,17 +229,46 @@ test('title.lookupIds: fail-soft on network errors', async () => {
   assert.deepEqual(r, {});
 });
 
-test('title.idsFromUrl: 67movies /watch/movie/10389 is TMDB', () => {
+test('title.idsFromUrl: catalog ids on any watch-site path / query / embed', () => {
   const a = title.idsFromUrl('https://67movies.nl/watch/movie/10389');
   assert.equal(a.tmdbId, '10389');
   assert.equal(a.kind, 'movie');
-  const b = title.idsFromUrl('https://67movies.nl/watch/tv/1396');
+  const b = title.idsFromUrl('https://random.site/watch/tv/1396');
   assert.equal(b.tmdbId, '1396');
   assert.equal(b.kind, 'episode');
   const c = title.idsFromUrl('https://www.imdb.com/title/tt0314196/');
   assert.equal(c.imdbId, 'tt0314196');
+  assert.equal(title.idsFromUrl('https://vidsrc.to/embed/movie/10389').tmdbId, '10389');
+  assert.equal(title.idsFromUrl('https://vidlink.pro/movie/10389').tmdbId, '10389');
+  assert.equal(title.idsFromUrl('https://x.example/play?tmdb=10389').tmdbId, '10389');
+  assert.equal(title.idsFromUrl('https://x.example/watch?imdb=tt0314196').imdbId, 'tt0314196');
+  assert.equal(title.idsFromUrl('https://lk21.example/movie/the-eye-10389').tmdbId, '10389');
+  assert.equal(title.idsFromUrl('https://x.example/nonton/10389').tmdbId, '10389');
+  assert.equal(title.idsFromUrl('https://x.example/film/the-eye-tt0314196').imdbId, 'tt0314196');
+  assert.equal(title.idsFromUrl('https://cdn.x/hls/1080/index.m3u8').tmdbId || '', '');
+  assert.equal(title.idsFromUrl('https://x.example/movie/inception-2010').tmdbId || '', '');
   assert.equal(title.namesMatch('The Eye', 'The Eye (2002)'), true);
   assert.equal(title.namesMatch('The Eye', 'Interstellar'), false);
+});
+
+test('title.idsFromDoc: iframe embed and data-tmdb on a slug page', async () => {
+  const { JSDOM } = await import('jsdom');
+  const dom = new JSDOM(
+    `<!doctype html><html><head><link rel="canonical" href="https://site.example/nonton/the-eye"></head>
+<body><h1>Nonton</h1><iframe src="https://vidsrc.to/embed/movie/10389"></iframe></body></html>`,
+    { url: 'https://site.example/nonton/the-eye' }
+  );
+  const got = title.idsFromDoc(dom.window.document);
+  assert.equal(got.tmdbId, '10389');
+  const dom2 = new JSDOM(
+    `<!doctype html><html><body><div data-imdb="tt0314196" data-tmdb="10389"></div></body></html>`,
+    { url: 'https://other.example/watch/foo' }
+  );
+  const got2 = title.idsFromDoc(dom2.window.document);
+  assert.equal(got2.imdbId, 'tt0314196');
+  assert.equal(got2.tmdbId, '10389');
+  dom.window.close();
+  dom2.window.close();
 });
 
 test('title.lookupIds: TMDB catalog id hydrates title when the page is junk', async () => {
