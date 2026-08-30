@@ -220,10 +220,24 @@
         });
       }
 
+      function unmuteOnce() {
+        if (state.unmuted) return;
+        const list = doc.querySelectorAll('video, audio');
+        if (!list.length) return;
+        for (const el of list) {
+          try {
+            el.muted = false;
+            if (!el.volume) el.volume = 1;
+          } catch (_) {}
+        }
+        state.unmuted = true;
+      }
+
       function tick() {
         try {
           tryForm();
           chip();
+          unmuteOnce();
           if (!state.attached && p.subtitle && p.subtitle.vtt && doc.querySelector('video')) attachTracks(p.subtitle.vtt, p.subtitle.name, false);
         } catch (_) {}
       }

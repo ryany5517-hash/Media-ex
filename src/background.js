@@ -630,11 +630,11 @@ try {
     let picked = pickPlayable(st, itemId);
     let media = picked.item || clicked;
     let url = picked.url || (clicked && util.localPlayable(clicked.url, clicked.category) ? clicked.url : null);
-    if (url) url = preferPlayUrl(st, media, url);
+    if (url) url = await preferWatchPartyUrl(st, media, url);
     if (url && media && media.url && !/\.(m3u8|mpd|mp4|webm)(\?|#|$)/i.test(url) && util.localPlayable(url, media.category)) {
       const resolved = await resolvePlaySource(st, media, url);
       if (resolved && resolved.url && util.watchPartyPlayable(resolved.url, resolved.category)) {
-        url = preferPlayUrl(st, media, resolved.url);
+        url = await preferWatchPartyUrl(st, media, resolved.url);
         media = Object.assign({}, media, { url: url, category: resolved.category || media.category });
       }
     }
@@ -1168,6 +1168,73 @@ try {
     } catch (e) {
       return { played: false, reason: String((e && e.message) || e) };
     }
+  }
+
+  function playlistHasAudio(text) {
+    const s = String(text || '');
+    if (!/#EXTM3U/.test(s)) return false;
+    if (/TYPE=AUDIO|#EXT-X-MEDIA:/i.test(s)) return true;
+    if (/mp4a|ac-3|ec-3|opus|fLaC|\baac\b/i.test(s)) return true;
+    return false;
+  }
+
+  function hlsMasterAlts(st, url) {
+    const out = [];
+    const push = (u) => {
+      if (u && out.indexOf(u) < 0) out.push(u);
+    };
+    try {
+      const u = new URL(url);
+      const dir = u.origin + u.pathname.replace(/\/v\d+\.m3u8$/i, '').replace(/\/$/, '');
+      const q = u.search || '';
+      if (st && st.store) {
+        for (const it of st.store.byId.values()) {
+          if (!it || !it.url || it.isAd) continue;
+          if (it.url.indexOf(dir) !== 0) continue;
+          if (/(master|index|playlist)\.m3u8/i.test(it.url)) push(it.url);
+        }
+      }
+      if (/\/v\d+\.m3u8$/i.test(u.pathname) || (/\/mpd\//i.test(u.pathname) && !/\.(m3u8|mpd)$/i.test(u.pathname))) {
+        push(dir + '/index.m3u8' + q);
+        push(dir + '/master.m3u8' + q);
+        push(dir + '/playlist.m3u8' + q);
+      }
+    } catch (_) {}
+    return out;
+  }
+
+  async function fetchPlaylistText(url, referer, origin) {
+    try {
+      const headers = {};
+      if (referer) headers.Referer = referer;
+      if (origin) headers.Origin = origin;
+      return await util.fetchText(url, { timeoutMs: 5000, maxBytes: 200000, headers: headers, credentials: 'include' });
+    } catch (_) {
+      return '';
+    }
+  }
+
+  // WatchParty's isHls() is `src.includes('.m3u8')`. A /mpd/token without that
+  // substring is treated as a raw <video src> and never loads audio renditions.
+  function ensureWpHlsUrl(url) {
+    if (!url) return url;
+    if (/\.m3u8/i.test(url)) return url;
+    return url + (url.indexOf('?') >= 0 ? '&' : '?') + 'srad=playlist.m3u8';
+  }
+
+  // v0.m3u8 on token CDNs is often video-only. WP needs the master (AUDIO= group).
+  async function preferWatchPartyUrl(st, media, url) {
+    if (!url) return url;
+    const referer = pageReferer(st, media);
+    const origin = originOf(referer) || util.origin(url);
+    const body = await fetchPlaylistText(url, referer, origin);
+    if (playlistHasAudio(body) || /CODECS="[^"]*mp4a/i.test(body)) return ensureWpHlsUrl(url);
+    const alts = hlsMasterAlts(st, url);
+    for (let i = 0; i < alts.length; i++) {
+      const text = await fetchPlaylistText(alts[i], referer, origin);
+      if (playlistHasAudio(text) || /#EXT-X-STREAM-INF/i.test(text)) return ensureWpHlsUrl(alts[i]);
+    }
+    return url;
   }
 
   function preferPlayUrl(st, media, url) {
