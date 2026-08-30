@@ -212,15 +212,43 @@ test('F6 watch party: opens watchparty.me with media + cleaned room name + subti
   assert.equal(payload.autoJoin, true);
   assert.ok(payload.subtitle && /^WEBVTT/.test(payload.subtitle.vtt), 'subtitle travels with the room');
 
-  // and the hand-off is single-use: only the watchparty tab itself may read it
+  // Keep the payload until /watch/:id so a long-URL POST→redirect can still read it.
   const wpSender = { tab: { id: tab.id, url: tab.url }, url: tab.url };
   const got = await h.hub.sendFromContent({ type: 'get-party-payload' }, wpSender);
   assert.equal(got.ok, true, 'the new tab receives the payload');
-  assert.equal(h.hub.storage[key], undefined, 'payload removed after read');
-  const again = await h.hub.sendFromContent({ type: 'get-party-payload' }, wpSender);
+  assert.ok(h.hub.storage[key], 'payload kept until the room URL loads');
+  const roomUrl = 'https://www.watchparty.me/watch/abc123';
+  const roomSender = { tab: { id: tab.id, url: roomUrl }, url: roomUrl };
+  const gotRoom = await h.hub.sendFromContent({ type: 'get-party-payload' }, roomSender);
+  assert.equal(gotRoom.ok, true);
+  assert.equal(h.hub.storage[key], undefined, 'payload removed after the room loads');
+  const again = await h.hub.sendFromContent({ type: 'get-party-payload' }, roomSender);
   assert.equal(again.ok, false, 'cannot be replayed');
   const thief = await h.hub.sendFromContent({ type: 'get-party-payload', tabId: tab.id });
   assert.equal(thief.ok, false, 'another tab cannot steal the payload');
+  h.dom.window.close();
+});
+
+test('F6b watch party: long token POSTs /createRoom then opens /watch/{id}', async () => {
+  const LONG = 'https://cdn.cineplex.test/movie/v0.m3u8?t=' + 'A'.repeat(2000);
+  const net = makeNetStub({
+    'watchparty.me/createRoom': { body: JSON.stringify({ name: '/room99' }), type: 'application/json' },
+  });
+  const h = await boot({ net, settings: { autoSubtitle: false, lastUpdateCheck: Date.now() } });
+  h.hub.fireWebRequest({
+    url: LONG,
+    type: 'media',
+    statusCode: 200,
+    responseHeaders: h.hub.header({ 'content-type': 'application/vnd.apple.mpegurl', 'content-length': '1000' }),
+  });
+  await until(h, () => (stateOf(h).items || []).some((i) => i.url === LONG));
+  const item = h.hub.lastBroadcast.items.find((i) => i.url === LONG);
+  const res = await h.hub.sendFromContent({ type: 'action', payload: { name: 'watchparty', id: item.id, tabId: 1 } });
+  assert.equal(res.ok, true, 'watchparty launched: ' + JSON.stringify(res));
+  assert.ok(net.calls.some(([u, m]) => String(u).includes('/createRoom') && String(m).toUpperCase() === 'POST'), 'POSTed createRoom');
+  const tab = h.hub.tabs.created[h.hub.tabs.created.length - 1];
+  assert.equal(tab.url, 'https://www.watchparty.me/watch/room99');
+  assert.ok(!tab.url.includes('watchNow'), 'never opens the missing /watchNow route');
   h.dom.window.close();
 });
 

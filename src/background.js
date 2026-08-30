@@ -579,11 +579,28 @@ try {
   /* ================================================================== *
    * WatchParty (PART 3)
    * ================================================================== */
-  // /create?video= auto-creates the room server-side and redirects into it.
+  // /create?video= auto-creates the room. Token URLs are multi-KB and 414 the
+  // query; there is no /watchNow route. Long URLs POST /createRoom then /watch{name}.
   function watchPartyCreateUrl(mediaUrl) {
     const encoded = encodeURIComponent(mediaUrl || '');
-    if (encoded.length > 1600) return 'https://www.watchparty.me/watchNow';
-    return 'https://www.watchparty.me/create?video=' + encoded;  }
+    if (encoded.length > 1600) return 'https://www.watchparty.me/';
+    return 'https://www.watchparty.me/create?video=' + encoded;
+  }
+
+  async function createWatchPartyRoom(mediaUrl) {
+    try {
+      const res = await util.fetchImpl('https://www.watchparty.me/createRoom', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ video: String(mediaUrl || '').slice(0, 20000) }),
+      });
+      const data = await res.json();
+      if (data && data.name) return 'https://www.watchparty.me/watch' + data.name;
+    } catch (e) {
+      log('createRoom', String((e && e.message) || e));
+    }
+    return '';
+  }
 
   // WatchParty's direct-URL mode only plays a file it can fetch as media
   // (.m3u8/.mpd/.mp4/.webm/...). A resolver/API link such as
@@ -645,7 +662,7 @@ try {
       origin: origin,
       createdAt: Date.now(),
     };
-    const target = watchPartyCreateUrl(url);
+    const target = (encodeURIComponent(url).length > 1600 ? await createWatchPartyRoom(url) : '') || watchPartyCreateUrl(url);
     const tab = await api.tabs.create({ url: target, active: true }).catch(async () => await api.tabs.create({ url: target }));
     if (tab && tab.id > 0) {
       await api.storage.local.set({ [PARTY_PREFIX + tab.id]: payload });
@@ -1645,7 +1662,8 @@ try {
             const payload = stored[key];
             if (payload && Date.now() - (payload.createdAt || 0) < 6 * 60 * 1000) {
               await installPartyNetRules(tabId, payload.referer, payload.origin, payload.mediaUrl);
-              await api.storage.local.remove(key);
+              const href = (sender && (sender.url || (sender.tab && sender.tab.url))) || '';
+              if (/watchparty\.me\/watch\//i.test(href)) await api.storage.local.remove(key);
               return { ok: true, payload: payload };
             }
             return { ok: false };
@@ -1808,7 +1826,8 @@ try {
         } else if (info.menuItemId === 'sr-watchparty') {
           const best = st.store.best() || {};
           if (url && util.watchPartyPlayable(url, '')) {
-            await api.storage.local.set({ [PARTY_PREFIX + (await api.tabs.create({ url: watchPartyCreateUrl(url) })).id]: { mediaUrl: url, roomName: (st.title && st.title.title) || 'Stream Radar room', autoJoin: true, createdAt: Date.now() } });
+            const target = (encodeURIComponent(url).length > 1600 ? await createWatchPartyRoom(url) : '') || watchPartyCreateUrl(url);
+            await api.storage.local.set({ [PARTY_PREFIX + (await api.tabs.create({ url: target })).id]: { mediaUrl: url, roomName: (st.title && st.title.title) || 'Stream Radar room', autoJoin: true, createdAt: Date.now() } });
           } else await launchWatchParty(st, best.id);
         } else if (info.menuItemId === 'sr-copy' && url) {
           api.tabs.sendMessage(tab.id, { type: 'copy-clipboard', text: url }).catch(() => {});

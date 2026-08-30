@@ -24,8 +24,7 @@
       const res = await api.runtime.sendMessage({ type: 'get-party-payload' });
       if (res && res.ok && res.payload) return res.payload;
     } catch (_) {}
-    // Hand-opened tab? fall back to the URL params. /create?video= auto-creates
-    // the room (preferred); /watchNow?url= pre-fills a form (legacy fallback).
+    // Hand-opened tab? /create?video= auto-creates the room. There is no /watchNow.
     try {
       const q = new URLSearchParams(root.location.search);
       const url = q.get('video') || q.get('url');
@@ -41,11 +40,26 @@
   }
 
   async function boot() {
-    if (!SR.watchparty) return; // shared module missing → nothing to do
+    if (!SR.watchparty) return;
     const payload = await getPayload();
     if (!payload) return;
     const settings = (await SR.settings.load()) || {};
     payload.autoJoin = settings.watchpartyAutoJoin !== false;
+    const path = String(root.location.pathname || '');
+    if (payload.mediaUrl && !/^\/watch\//i.test(path) && !/^\/r\//i.test(path) && !/^\/create/i.test(path)) {
+      try {
+        const res = await fetch('/createRoom', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ video: String(payload.mediaUrl).slice(0, 20000) }),
+        });
+        const data = await res.json();
+        if (data && data.name) {
+          root.location.assign('/watch' + data.name);
+          return;
+        }
+      } catch (_) {}
+    }
     runner = SR.watchparty.run({
       doc: doc,
       payload: payload,
