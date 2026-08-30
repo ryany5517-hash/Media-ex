@@ -582,25 +582,42 @@
       out.tmdbId = qTmdb[1];
       out.kind = out.kind || 'movie';
     }
-    const tvPath = s.match(/\/(?:embed\/|player\/|play\/|watch\/|stream\/|nonton\/)?(?:tv|series|shows?|episode)\/(?:tmdb\/)?(\d{2,8})(?:\/|$|\?|#|&)/i);
+    const qOther = s.match(/[?&#](?:film_id|movie_id|media_id|video_id|show_id|episode_id)\s*=\s*(\d{2,8})\b/i);
+    if (qOther && !isNoiseId(qOther[1]) && !out.tmdbId) {
+      out.tmdbId = qOther[1];
+      out.kind = out.kind || 'movie';
+    }
+    const tvPath = s.match(/\/(?:embed\/|player\/|play\/|watch\/|stream\/|nonton\/)?(?:tv|series|shows?|episode)\/(?:tmdb\/)?(\d{2,8})(?:\/|\.html?|$|\?|#|&)/i);
     if (tvPath && !isNoiseId(tvPath[1])) {
       out.tmdbId = out.tmdbId || tvPath[1];
       out.kind = 'episode';
       return out;
     }
-    const moviePath = s.match(/\/(?:embed\/|player\/|play\/|watch\/|stream\/|nonton\/)?(?:movies?|films?|title)\/(?:tmdb\/)?(\d{2,8})(?:\/|$|\?|#|&)/i);
+    const moviePath = s.match(/\/(?:embed\/|player\/|play\/|watch\/|stream\/|nonton\/)?(?:movies?|films?|title)\/(?:tmdb\/)?(\d{2,8})(?:\/|\.html?|$|\?|#|&)/i);
     if (moviePath && !isNoiseId(moviePath[1])) {
       out.tmdbId = out.tmdbId || moviePath[1];
       out.kind = out.kind || 'movie';
       return out;
     }
-    const unlabeled = s.match(/\/(?:watch|play|nonton|films?)\/(\d{2,8})(?:\/|$|\?|#)/i);
+    // id-first slugs:  /movie/10389-the-eye.html   /films/1396-arcane
+    const idSlug = s.match(/\/(?:embed\/|player\/|play\/|watch\/|stream\/|nonton\/)?(?:movies?|films?|title|tv|series|shows?)\/(\d{2,8})[-_][a-z0-9._-]+(?:\/|\.html?|$|\?|#)/i);
+    if (idSlug && !isNoiseId(idSlug[1]) && !out.tmdbId) {
+      out.tmdbId = idSlug[1];
+      out.kind = /\/(?:tv|series|shows?)\//i.test(s) ? 'episode' : out.kind || 'movie';
+    }
+    // short media prefixes:  /film/1234  /detail/1234  /view/1234  /show/1234
+    const mediaPath = s.match(/\/(?:film|detail|view|show|videos?|media|episode|ep)\/(\d{2,8})(?:\/|\.html?|$|\?|#)/i);
+    if (mediaPath && !isNoiseId(mediaPath[1]) && !out.tmdbId) {
+      out.tmdbId = mediaPath[1];
+      out.kind = /\/(?:episode|ep)\//i.test(s) ? 'episode' : out.kind || 'movie';
+    }
+    const unlabeled = s.match(/\/(?:watch|play|nonton|films?)\/(\d{2,8})(?:\/|\.html?|$|\?|#)/i);
     if (unlabeled && !isNoiseId(unlabeled[1]) && !out.tmdbId) {
       out.tmdbId = unlabeled[1];
       out.kind = out.kind || 'movie';
     }
     if (!out.tmdbId) {
-      const slug = s.match(/\/(?:movies?|films?|watch|tv|embed|play)\/[a-z0-9._-]*?(?:-|_|\/)(\d{3,8})(?:\/|$|\?|#)/i);
+      const slug = s.match(/\/(?:movies?|films?|watch|tv|embed|play)\/[a-z0-9._-]*?(?:-|_|\/)(\d{3,8})(?:\/|\.html?|$|\?|#)/i);
       if (slug && !isNoiseId(slug[1])) {
         out.tmdbId = slug[1];
         out.kind = /\/(?:tv|series|shows?)\//i.test(s) ? 'episode' : out.kind || 'movie';

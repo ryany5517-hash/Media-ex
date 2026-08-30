@@ -39,10 +39,16 @@ Cek berurutan (buka DevTools → Console):
 | Penyebab | Cara pastiin |
 |---|---|
 | API key kosong | panel status: “Add an API key in Settings” |
+| **Wyzie: tidak ada ID IMDb/TMDB di halaman** | Wyzie cari berdasarkan ID, bukan judul. Cek panel subtitle — kalau line query cuma judul (tanpa `tt…` / `tmdb …`) berarti ID tidak ketemu. URL situs harus mengandung ID (`/watch/movie/10389`, `?tmdb=…`, `?imdb=…`); klik **Scan ulang** biar ID terdeteksi, atau pakai SubDL yang bisa cari by judul |
 | Key OpenSubtitles ditolak | panel: `OpenSubtitles: API key ditolak (401/403)` → samakan User-Agent persis |
 | Judul salah karena situs pakai title aneh | klik Copy di baris judul panel, bandingkan; atau test manual di Options → *Test the search* |
 | Series, episode belum rilis | subtitle memang belum ada — coba `Search again` |
 | Provider Indonesia telat | matikan filter bahasa (Options → *Language filter* → All languages) buat cek apakah ada sama sekali |
+
+Kalau tombol **Cari Subtitle / Search** diklik tapi tidak terjadi apa-apa: muat ulang extension
+(Chrome: `chrome://extensions` → reload; Firefox: `about:debugging` → Remove → Load Temporary Add-on lagi),
+lalu pastikan kamu pakai `dist/` hasil `npm run build` terbaru — versi lama pernah mengirim action `subs`
+yang tidak dikenali background (sudah diperbaiki).
 
 ### Extension tidak mau install / hilang tiap restart
 

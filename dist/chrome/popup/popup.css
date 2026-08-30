@@ -62,6 +62,14 @@ body {
 .layer[data-on="1"] { color: var(--sr-ink); border-color: var(--sr-accent-line); box-shadow: var(--sr-inset); }
 .layer b { display: block; font-size: 12px; color: var(--sr-accent); }
 .layer[data-on="0"] b { color: var(--sr-ink-2); }
+.layer[data-mode="wait"] { animation: sr-breathe 2.8s ease-in-out infinite; }
+.layer[data-mode="live"] { color: var(--sr-ok); border-color: var(--sr-ok-soft); background: var(--sr-ok-soft); }
+.layer[data-mode="live"] b { color: var(--sr-ok); }
+.layer[data-mode="paused"], .layer[data-mode="off"] { opacity: 0.72; }
+@keyframes sr-breathe {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.62; }
+}
 
 .meta { padding: 10px 12px 4px; }
 .meta-title { font-weight: 700; font-size: 14px; }
@@ -126,8 +134,8 @@ body {
 .btn svg, .ibtn svg, .brand-ico svg { width: 15px; height: 15px; }
 .btn:hover { border-color: var(--sr-accent); }
 .btn:active { transform: scale(.97); }
-.btn[data-primary="1"] { background: var(--sr-brand-gradient); color: var(--sr-accent-ink); border-color: transparent; box-shadow: var(--sr-shadow-accent); }
-.btn[data-primary="1"]:hover { filter: brightness(1.07); transform: translateY(-1px); opacity: 1; }
+.btn[data-primary="1"] { background: var(--sr-accent); color: var(--sr-accent-ink); border-color: transparent; }
+.btn[data-primary="1"]:hover { filter: brightness(1.04); transform: translateY(-1px); opacity: 1; }
 .btn.tiny { min-height: 32px; font-size: 11px; padding: 0 8px; }
 .btn[disabled] { opacity: .55; pointer-events: none; }
 

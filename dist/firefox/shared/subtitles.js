@@ -235,6 +235,31 @@
     return false;
   };
 
+  subs.matchesLang = function (item, code) {
+    const c = String(code || '').toLowerCase();
+    if (!c || c === 'all') return true;
+    if (c === 'id' || c === 'ind') return subs.isIndonesian(item);
+    const lang = String(item.langCode || item.lang || item.language || '').toLowerCase();
+    const name = String(item.langName || item.languageName || '').toLowerCase();
+    return lang === c || lang.indexOf(c) === 0 || (name && name.indexOf(c) === 0);
+  };
+
+  subs.filterByLang = function (list, settings) {
+    const lang = (settings && settings.subtitleLang) || 'id';
+    if (lang === 'all') return list;
+    const primary = list.filter((x) => subs.matchesLang(x, lang));
+    const extra = lang === 'id' ? [] : list.filter((x) => subs.isIndonesian(x));
+    const seen = new Set();
+    const out = [];
+    for (const it of primary.concat(extra)) {
+      const k = (it.provider || '') + '|' + (it.id || '') + '|' + (it.fileUrl || it.filename || '');
+      if (seen.has(k)) continue;
+      seen.add(k);
+      out.push(it);
+    }
+    return out.length ? out : list;
+  };
+
   subs.score = function (item, want) {
     const w = want || {};
     let s = 0;
@@ -266,13 +291,24 @@
     if (item.verified) s += 6;
     if (item.downloads) s += Math.min(15, Math.log10(item.downloads + 1) * 6);
     if (item.aiTranslated) s -= 12;
-    if (subs.isIndonesian(item)) s += 25;
+    const pref = String(w.lang || 'id').toLowerCase();
+    if (pref && pref !== 'all') {
+      if (subs.matchesLang(item, pref)) s += 28;
+      else if (subs.isIndonesian(item)) s += 18;
+    } else if (subs.isIndonesian(item)) s += 22;
     return s;
   };
 
   subs.filterIndonesian = function (list, strict) {
-    const kept = list.filter((x) => subs.isIndonesian(x));
-    return kept.length || strict ? kept : list;
+    return subs.filterByLang(list, { subtitleLang: strict ? 'id' : 'all' });
+  };
+
+  /** Wyzie `language=` query: always include Indonesian unless the user asked for all. */
+  subs.wyzieLanguageParam = function (settings) {
+    const lang = (settings && settings.subtitleLang) || 'id';
+    if (lang === 'all') return '';
+    if (lang === 'id') return 'id';
+    return 'id,' + lang;
   };
 
   /* ---------------------------------------------------------------- *
@@ -301,8 +337,8 @@
         params.set('season', String(want.season));
         params.set('episode', String(want.episode));
       }
-      const lang = settings.subtitleLang && settings.subtitleLang !== 'all' ? settings.subtitleLang : 'id';
-      params.set('language', lang);
+      const lang = subs.wyzieLanguageParam(settings);
+      if (lang) params.set('language', lang);
       params.set('format', 'srt');
       params.set('encoding', 'utf-8');
       params.set('source', 'all');
@@ -348,7 +384,7 @@
       if (key && url.indexOf('key=') < 0) {
         url += (url.indexOf('?') >= 0 ? '&' : '?') + 'key=' + encodeURIComponent(key);
       }
-      return await subs.loadSubtitleFile(url, { fetchImpl: f, want: 'id' });
+      return await subs.loadSubtitleFile(url, { fetchImpl: f, want: item.langCode || 'id' });
     },
   };
 
@@ -533,7 +569,11 @@
               fileUrl: /^https?:/.test(String(r.subtitle_link || '')) ? r.subtitle_link : base + r.subtitle_link,
               raw: r,
             }))
-            .filter((x) => subs.isIndonesian(x) || !settings.autoSubtitle);
+            .filter((x) => {
+              const lang = (settings && settings.subtitleLang) || 'id';
+              if (lang === 'all' || !settings.autoSubtitle) return true;
+              return subs.matchesLang(x, lang) || subs.isIndonesian(x);
+            });
           return { ok: true, items };
         } catch (e) {
           lastErr.push(base + ': ' + e.message);
@@ -601,10 +641,10 @@
     });
 
     const scored = deduped
-      .map((it) => Object.assign(it, { score: subs.score(it, want) }))
+      .map((it) => Object.assign(it, { score: subs.score(it, Object.assign({}, want, { lang: (settings && settings.subtitleLang) || 'id' })) }))
       .sort((a, b) => b.score - a.score);
 
-    const filtered = subs.filterIndonesian(scored, (settings.subtitleLang || 'id') !== 'all');
+    const filtered = subs.filterByLang(scored, settings);
     const list = (filtered.length ? filtered : scored).slice(0, o.limit || 25);
     list.forEach((it, i) => (it.rank = i + 1));
     return { results: list, providerInfo, errors };
@@ -617,7 +657,7 @@
     if (!provider) throw new Error('unknown provider ' + item.provider);
     const fetchImpl = o.fetchImpl || (util.fetchImpl ? util.fetchImpl.bind(util) : root.fetch);
     let text;
-    if (item.fileUrl) text = await subs.loadSubtitleFile(item.fileUrl, { fetchImpl, want: 'id' });
+    if (item.fileUrl) text = await subs.loadSubtitleFile(item.fileUrl, { fetchImpl, want: item.langCode || 'id' });
     else text = await provider.fetchFile(item, settings, { fetchImpl });
     if (!subs.looksLikeSubtitle(text)) throw new Error('file is not a subtitle track');
     return subs.srtToVtt(text);

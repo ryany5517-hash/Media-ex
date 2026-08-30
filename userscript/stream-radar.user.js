@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Stream Radar — Ultra Media Detector + WatchParty + Subtitle Indonesia
 // @namespace    https://github.com/ryany5517-hash/Media-ex
-// @version      1.1.4
+// @version      1.1.22
 // @description  Deteksi semua stream video (HLS/DASH/MP4/WebM/blob) lewat 5 layer — fetch/XHR/WebSocket, DOM deep scan, MediaSource, Service Worker/Cache, dan heuristik player (JWPlayer/Video.js/Plyr/HLS.js/DASH.js). Membersihkan judul film/series, mencari subtitle Indonesia (SubDL / OpenSubtitles / YIFY), dan membuka WatchParty.me otomatis. Dipakai kalau tidak bisa pasang extension (mis. Firefox Android).
 // @author       Stream Radar
 // @license      MIT
@@ -92,7 +92,7 @@
   'use strict';
 
   const SR = (root.SR = root.SR || {});
-  SR.VERSION = '1.1.4';
+  SR.VERSION = '1.1.22';
   SR.NS = 'streamRadar'; // message channel id / storage prefix
   SR.PREFIX = 'srad'; // css class prefix
 
@@ -326,17 +326,29 @@
       if (category === 'blob' || category === 'segment' || category === 'texttrack') return false;
       let path = String(url);
       try { path = new URL(url).pathname; } catch (_) {}
+      // WatchParty's HLS check is `src.includes('.m3u8')`. Only our own query
+      // hint (or a real path extension) counts — encoded inner URLs in
+      // ?to=/ ?url= must not make a redirect look like a playlist.
+      if (/[?&]srad=playlist\.m3u8/i.test(url) || /#playlist\.m3u8/i.test(url)) return true;
       // 1) A media extension on the PATH is directly playable. This wins over
       //    everything: real HLS CDNs often serve .../api/playlist.m3u8, so a
       //    resolver-looking path must not veto an explicit manifest/file.
       if (/\.(m3u8|mpd|mp4|webm|mkv|mov|m4v|m3u)(\?|#|$)/i.test(path)) return true;
       if (util.isHlsProxy(url)) return true;
-      // 2) A classified direct-media category (content-type/parsed manifest,
-      //    served without a clean extension) is playable too.
-      if (category === 'hls' || category === 'dash' || category === 'mp4' || category === 'webm') return true;
-      // 3) Generic/other URLs that point at a resolver/gateway endpoint return a
-      //    page or JSON, not media (e.g. d.shows.st/api?d=<token>): reject those.
-      if (/(^|\/)(api|resolve|redirect|gateway|link|source|get|serve)(\/|$)/i.test(path)) return false;
+      // 2) Resolver/gateway endpoints return JSON/HTML (d.shows.st/api?d=…).
+      //    Only veto when we do NOT already know this is media (67movies serves
+      //    real HLS at /api?d= and /mpd/<token> — those must go to Watch Party).
+      const mediaCat = category === 'hls' || category === 'dash' || category === 'mp4' || category === 'webm';
+      if (!mediaCat) {
+        try {
+          const segs = path.replace(/\/+$/, '').split('/');
+          const last = String(segs[segs.length - 1] || '').toLowerCase();
+          if (last === 'api' || last === 'resolve' || last === 'redirect' || last === 'gateway') return false;
+        } catch (_) {}
+      }
+      // 3) A classified direct-media category (content-type/parsed manifest,
+      //    served without a clean extension, including token /mpd/<id>).
+      if (mediaCat) return true;
       return false;
     },
 
@@ -1730,6 +1742,15 @@
 
     /* --- extras: canonical slug + breadcrumbs + IMDb id ----------- */
     res.slug = firstMeta(doc, ['link[rel="canonical"]']).replace(/^https?:\/\//, '');
+    const extraImdb =
+      firstMeta(doc, [
+        'meta[property="imdb:id"]',
+        'meta[name="imdb:id"]',
+        'meta[property="video:imdb"]',
+        'meta[itemprop="sameAs"]',
+      ]) || '';
+    const fromExtra = extraImdb.match(/tt\d{6,10}/i);
+    if (fromExtra && !res.info.imdbId) res.info.imdbId = fromExtra[0];
     try {
       const crumb = [...doc.querySelectorAll('a[rel="nofollow"], .breadcrumb a, [itemprop="itemListElement"]')].map((a) => a.textContent.trim()).filter(Boolean);
       if (crumb.length) res.crumbs = crumb.slice(0, 6).join(' > ');
@@ -1738,6 +1759,173 @@
         .map((a) => a.href);
     } catch (_) {}
     return res;
+  }
+
+  function namesMatch(a, b) {
+    const qn = (s) =>
+      String(s || '')
+        .toLowerCase()
+        .normalize('NFKD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]+/g, ' ')
+        .trim();
+    const na = qn(a);
+    const nb = qn(b);
+    if (!na || !nb) return false;
+    if (na === nb) return true;
+    if (na.indexOf(nb) >= 0 || nb.indexOf(na) >= 0) return true;
+    const tokens = na.split(' ').filter((t) => t.length > 2);
+    if (!tokens.length) return false;
+    const hit = tokens.filter((t) => nb.indexOf(t) >= 0).length;
+    return hit / tokens.length >= 0.6;
+  }
+
+  function isNoiseId(n) {
+    const s = String(n || '');
+    if (!s) return true;
+    if (/^(19|20)\d{2}$/.test(s)) return true;
+    if (/^(360|480|720|1080|1440|2160)$/.test(s)) return true;
+    return false;
+  }
+
+  function mergeCatalog(into, extra) {
+    if (!extra) return into;
+    if (extra.imdbId && !into.imdbId) into.imdbId = extra.imdbId;
+    if (extra.tmdbId && !into.tmdbId) into.tmdbId = extra.tmdbId;
+    if (extra.kind && (!into.kind || into.kind === 'movie')) into.kind = extra.kind;
+    return into;
+  }
+
+  /**
+   * Catalog ids hiding in any watch-site URL (not 67movies-only):
+   *   /watch/movie/10389  /embed/tv/1396  ?tmdb=10389  …/tt0314196  slug-10389
+   */
+  function idsFromUrl(raw) {
+    const s = String(raw || '');
+    if (!s) return {};
+    const out = {};
+    const imdb = s.match(/\b(tt\d{6,10})\b/i);
+    if (imdb) {
+      out.imdbId = imdb[1];
+      out.kind = 'movie';
+    } else {
+      const qImdb = s.match(/[?&#](?:imdb(?:_?id)?|imdbid)\s*=\s*(tt\d{6,10}|\d{6,10})\b/i);
+      if (qImdb) {
+        const v = qImdb[1];
+        out.imdbId = /^tt/i.test(v) ? v : 'tt' + v;
+        out.kind = 'movie';
+      }
+    }
+    const tmdbOrg = s.match(/themoviedb\.org\/(movie|tv)\/(\d{2,8})/i);
+    if (tmdbOrg && !isNoiseId(tmdbOrg[2])) {
+      out.tmdbId = tmdbOrg[2];
+      out.kind = tmdbOrg[1].toLowerCase() === 'tv' ? 'episode' : 'movie';
+      return out;
+    }
+    const qTmdb = s.match(/[?&#](?:tmdb(?:_?id)?|tmdbid)\s*=\s*(\d{2,8})\b/i);
+    if (qTmdb && !isNoiseId(qTmdb[1])) {
+      out.tmdbId = qTmdb[1];
+      out.kind = out.kind || 'movie';
+    }
+    const qOther = s.match(/[?&#](?:film_id|movie_id|media_id|video_id|show_id|episode_id)\s*=\s*(\d{2,8})\b/i);
+    if (qOther && !isNoiseId(qOther[1]) && !out.tmdbId) {
+      out.tmdbId = qOther[1];
+      out.kind = out.kind || 'movie';
+    }
+    const tvPath = s.match(/\/(?:embed\/|player\/|play\/|watch\/|stream\/|nonton\/)?(?:tv|series|shows?|episode)\/(?:tmdb\/)?(\d{2,8})(?:\/|\.html?|$|\?|#|&)/i);
+    if (tvPath && !isNoiseId(tvPath[1])) {
+      out.tmdbId = out.tmdbId || tvPath[1];
+      out.kind = 'episode';
+      return out;
+    }
+    const moviePath = s.match(/\/(?:embed\/|player\/|play\/|watch\/|stream\/|nonton\/)?(?:movies?|films?|title)\/(?:tmdb\/)?(\d{2,8})(?:\/|\.html?|$|\?|#|&)/i);
+    if (moviePath && !isNoiseId(moviePath[1])) {
+      out.tmdbId = out.tmdbId || moviePath[1];
+      out.kind = out.kind || 'movie';
+      return out;
+    }
+    // id-first slugs:  /movie/10389-the-eye.html   /films/1396-arcane
+    const idSlug = s.match(/\/(?:embed\/|player\/|play\/|watch\/|stream\/|nonton\/)?(?:movies?|films?|title|tv|series|shows?)\/(\d{2,8})[-_][a-z0-9._-]+(?:\/|\.html?|$|\?|#)/i);
+    if (idSlug && !isNoiseId(idSlug[1]) && !out.tmdbId) {
+      out.tmdbId = idSlug[1];
+      out.kind = /\/(?:tv|series|shows?)\//i.test(s) ? 'episode' : out.kind || 'movie';
+    }
+    // short media prefixes:  /film/1234  /detail/1234  /view/1234  /show/1234
+    const mediaPath = s.match(/\/(?:film|detail|view|show|videos?|media|episode|ep)\/(\d{2,8})(?:\/|\.html?|$|\?|#)/i);
+    if (mediaPath && !isNoiseId(mediaPath[1]) && !out.tmdbId) {
+      out.tmdbId = mediaPath[1];
+      out.kind = /\/(?:episode|ep)\//i.test(s) ? 'episode' : out.kind || 'movie';
+    }
+    const unlabeled = s.match(/\/(?:watch|play|nonton|films?)\/(\d{2,8})(?:\/|\.html?|$|\?|#)/i);
+    if (unlabeled && !isNoiseId(unlabeled[1]) && !out.tmdbId) {
+      out.tmdbId = unlabeled[1];
+      out.kind = out.kind || 'movie';
+    }
+    if (!out.tmdbId) {
+      const slug = s.match(/\/(?:movies?|films?|watch|tv|embed|play)\/[a-z0-9._-]*?(?:-|_|\/)(\d{3,8})(?:\/|\.html?|$|\?|#)/i);
+      if (slug && !isNoiseId(slug[1])) {
+        out.tmdbId = slug[1];
+        out.kind = /\/(?:tv|series|shows?)\//i.test(s) ? 'episode' : out.kind || 'movie';
+      }
+    }
+    return out;
+  }
+
+  function idsFromToken(raw) {
+    const s = String(raw || '').trim();
+    if (!s) return {};
+    if (/^tt\d{6,10}$/i.test(s)) return { imdbId: s, kind: 'movie' };
+    if (/^\d{2,8}$/.test(s) && !isNoiseId(s)) return { tmdbId: s, kind: 'movie' };
+    return idsFromUrl(s);
+  }
+
+  /** Location, canonical, og:url, iframes, data-imdb / data-tmdb — any site. */
+  function idsFromDoc(doc) {
+    const acc = {};
+    if (!doc) return acc;
+    const blobs = [];
+    const push = (v) => {
+      if (!v) return;
+      const s = String(v).trim();
+      if (s && blobs.length < 40) blobs.push(s);
+    };
+    push((doc.defaultView && doc.defaultView.location && doc.defaultView.location.href) || (doc.location && doc.location.href) || doc.URL || '');
+    push(firstMeta(doc, ['link[rel="canonical"]', 'meta[property="og:url"]', 'meta[name="og:url"]']));
+    try {
+      const nodes = doc.querySelectorAll(
+        'iframe[src], iframe[data-src], embed[src], object[data], [data-imdb], [data-tmdb], [data-imdb-id], [data-tmdb-id], [data-media-id], a[href*="imdb.com"], a[href*="themoviedb.org"], a[href*="/embed/"], a[href*="/watch/"]'
+      );
+      for (const el of nodes) {
+        if (blobs.length >= 38) break;
+        push(el.getAttribute('src') || el.getAttribute('data-src') || el.getAttribute('data') || el.getAttribute('href') || '');
+        push(el.getAttribute('data-imdb') || el.getAttribute('data-imdb-id') || '');
+        push(el.getAttribute('data-tmdb') || el.getAttribute('data-tmdb-id') || el.getAttribute('data-media-id') || '');
+      }
+    } catch (_) {}
+    for (let i = 0; i < blobs.length; i++) {
+      mergeCatalog(acc, i === 0 ? idsFromUrl(blobs[i]) : idsFromToken(blobs[i]));
+      if (acc.imdbId && acc.tmdbId) break;
+    }
+    return acc;
+  }
+
+  function parseTmdbHtml(html) {
+    const src = String(html || '');
+    let name = '';
+    const og = src.match(/property=["']og:title["'][^>]*content=["']([^"']+)["']/i) || src.match(/content=["']([^"']+)["'][^>]*property=["']og:title["']/i);
+    if (og) name = og[1];
+    if (!name) {
+      const t = src.match(/<title>([^<]+)<\/title>/i);
+      if (t) name = t[1];
+    }
+    name = String(name || '')
+      .replace(/\s*[—–|-]\s*The Movie Database.*$/i, '')
+      .replace(/\s*\|\s*TMDB.*$/i, '')
+      .trim();
+    const year = (name.match(/\(((?:19|20)\d{2})\)/) || [])[1] || '';
+    name = name.replace(/\s*\((?:19|20)\d{2}\)\s*$/, '').trim();
+    const imdb = (src.match(/imdb\.com\/title\/(tt\d{6,10})/i) || [])[1] || '';
+    return { name: name, year: year, imdbId: imdb };
   }
 
   /**
@@ -1758,13 +1946,26 @@
     }
     if (!best) best = clean(coll.slug ? coll.slug.replace(/-/g, ' ') : (doc && doc.title) || '', { source: 'fallback' });
 
+    const href =
+      (doc.defaultView && doc.defaultView.location && doc.defaultView.location.href) ||
+      (doc.location && doc.location.href) ||
+      doc.URL ||
+      '';
+    let fromUrl = idsFromDoc(doc);
+    if (!fromUrl.tmdbId && !fromUrl.imdbId) fromUrl = idsFromUrl(coll.slug ? 'https://x/' + coll.slug : '');
+    if (fromUrl.tmdbId) best.urlTmdbId = fromUrl.tmdbId;
+    if (fromUrl.imdbId && !best.imdbId) best.imdbId = fromUrl.imdbId;
+    if (fromUrl.kind && (best.kind === 'unknown' || !best.title)) best.kind = fromUrl.kind;
+    if (fromUrl.tmdbId && !best.title) best.tmdbId = fromUrl.tmdbId;
+    if (href) best.url = best.url || href;
+
     if (coll.info && Object.keys(coll.info).length) {
       best.year = best.year || coll.info.year || null;
       best.season = best.season || (coll.info.season ? String(coll.info.season).padStart(2, '0') : null);
       best.episode = best.episode || (coll.info.episode ? String(coll.info.episode).padStart(2, '0') : null);
       best.poster = coll.info.poster || coll.slug || '';
-      best.imdbId = coll.info.imdbId || '';
-      best.kind = coll.info.kind !== 'unknown' ? coll.info.kind : best.kind;
+      best.imdbId = coll.info.imdbId || best.imdbId || '';
+      best.kind = coll.info.kind && coll.info.kind !== 'unknown' ? coll.info.kind : best.kind;
       const fromLinks = (coll.links.join(' ').match(/tt\d{6,10}/i) || [])[0];
       if (!best.imdbId && fromLinks) best.imdbId = fromLinks;
       const tmdb = (coll.links.join(' ').match(/themoviedb\.org\/(?:movie|tv)\/(\d+)/i) || [])[1];
@@ -1772,6 +1973,147 @@
     }
     best.mediaFromMeta = coll.media;
     return best;
+  }
+
+  async function hydrateTmdb(id, kind, fetchImpl) {
+    const num = String(id || '').replace(/\D/g, '');
+    if (!num || !fetchImpl) return {};
+    const first = kind === 'episode' || kind === 'tv' || kind === 'series' ? 'tv' : 'movie';
+    const paths = first === 'tv' ? ['tv', 'movie'] : ['movie', 'tv'];
+    for (let i = 0; i < paths.length; i++) {
+      const path = paths[i];
+      try {
+        const res = await fetchImpl('https://www.themoviedb.org/' + path + '/' + num, { headers: { Accept: 'text/html' } });
+        if (!res || !res.ok) continue;
+        const html = typeof res.text === 'function' ? await res.text() : '';
+        const parsed = parseTmdbHtml(html);
+        if (!parsed.name) continue;
+        return { tmdbId: num, name: parsed.name, year: parsed.year, imdbId: parsed.imdbId, kind: path === 'tv' ? 'episode' : 'movie' };
+      } catch (_) {}
+    }
+    return {};
+  }
+
+  /**
+   * Resolve IMDb/TMDB ids from a cleaned title when the page has none.
+   * Catalog ids in the page URL (67movies /watch/movie/10389) are verified
+   * against the TMDB page name. Uses IMDb's public suggestion endpoint (no key). Fail-soft.
+   */
+  async function lookupIds(want, opts) {
+    const o = opts || {};
+    const fetchImpl = o.fetchImpl || (SR.util && SR.util.fetchImpl ? SR.util.fetchImpl.bind(SR.util) : null) || (typeof fetch === 'function' ? fetch : null);
+    if (!fetchImpl) return {};
+    const urlTmdb = String((want && (want.urlTmdbId || want.tmdbId)) || '').replace(/\D/g, '');
+    let hydrated = {};
+    if (urlTmdb) hydrated = await hydrateTmdb(urlTmdb, want && want.kind, fetchImpl);
+    const title = String((want && want.title) || hydrated.name || '').trim();
+    const out = {};
+    if (urlTmdb) {
+      const pageTitle = String((want && want.title) || '').trim();
+      const keepId = !pageTitle || (hydrated.name && namesMatch(pageTitle, hydrated.name));
+      if (keepId) {
+        out.tmdbId = urlTmdb;
+        if (hydrated.name) out.name = hydrated.name;
+        if (hydrated.year) out.year = hydrated.year;
+        if (hydrated.imdbId) out.imdbId = hydrated.imdbId;
+        if (hydrated.kind) out.kind = hydrated.kind;
+      }
+    }
+    if (!title || title.length < 2) return out;
+    const slug = title
+      .toLowerCase()
+      .normalize('NFKD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_|_$/g, '')
+      .slice(0, 48);
+    if (!slug) return out;
+    const url = 'https://v2.sg.media-imdb.com/suggestion/' + slug[0] + '/' + encodeURIComponent(slug) + '.json';
+    const wantYear = want.year ? String(want.year) : '';
+    const wantEp = !!(want.season || want.episode);
+    const qn = (s) =>
+      String(s || '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, ' ')
+        .trim();
+    const q = qn(title);
+    const scoreName = (nameRaw, yearRaw, kindRaw) => {
+      const name = qn(nameRaw);
+      if (!name) return -1e9;
+      let sc = 0;
+      if (name === q) sc += 80;
+      else if (name.indexOf(q) >= 0 || q.indexOf(name) >= 0) sc += 50;
+      else {
+        const tokens = q.split(' ').filter((t) => t.length > 2);
+        const hit = tokens.filter((t) => name.indexOf(t) >= 0).length;
+        sc += tokens.length ? Math.round((hit / tokens.length) * 40) : 0;
+      }
+      if (wantYear && String(yearRaw || '') === wantYear) sc += 25;
+      else if (wantYear && yearRaw && Math.abs(Number(yearRaw) - Number(wantYear)) > 1) sc -= 20;
+      const kind = String(kindRaw || '').toLowerCase();
+      if (wantEp && /tv|series|episode/.test(kind)) sc += 12;
+      if (!wantEp && /movie|feature|video/.test(kind)) sc += 8;
+      return sc;
+    };
+    const readJson = async (res) => {
+      if (!res || !res.ok) return null;
+      const text = typeof res.text === 'function' ? await res.text() : '';
+      return SR.util && SR.util.safeJSON ? SR.util.safeJSON(text, null) : JSON.parse(text || '{}');
+    };
+    try {
+      const json = await readJson(await fetchImpl(url, { headers: { Accept: 'application/json' } }));
+      const rows = (json && json.d) || [];
+      let best = null;
+      let bestScore = -1e9;
+      for (const r of rows) {
+        const id = String(r.id || '');
+        if (!/^tt\d{6,10}$/i.test(id)) continue;
+        const kind = String(r.qid || r.q || '').toLowerCase();
+        if (/game|podcast/.test(kind)) continue;
+        const sc = scoreName(r.l || r.s || '', r.y, kind);
+        if (sc > bestScore) {
+          bestScore = sc;
+          best = r;
+        }
+      }
+      if (best && bestScore >= 28) {
+        return Object.assign({}, out, {
+          imdbId: String(best.id),
+          year: (best.y ? String(best.y) : '') || out.year || '',
+          name: best.l || out.name || title,
+          kind: /tv|series|episode/.test(String(best.qid || '')) ? 'episode' : out.kind || 'movie',
+          tmdbId: out.tmdbId || '',
+        });
+      }
+    } catch (_) {}
+    try {
+      const kind = wantEp ? 'series' : 'movie';
+      const cUrl =
+        'https://v3-cinemeta.strem.io/catalog/' + kind + '/top/search=' + encodeURIComponent(title) + '.json';
+      const json = await readJson(await fetchImpl(cUrl, { headers: { Accept: 'application/json' } }));
+      const rows = (json && json.metas) || [];
+      let best = null;
+      let bestScore = -1e9;
+      for (const r of rows) {
+        const id = String(r.imdb_id || r.imdbId || '');
+        if (!/^tt\d{6,10}$/i.test(id)) continue;
+        const sc = scoreName(r.name || r.title || '', r.year || r.releaseInfo, r.type);
+        if (sc > bestScore) {
+          bestScore = sc;
+          best = r;
+        }
+      }
+      if (!best || bestScore < 28) return out;
+      return Object.assign({}, out, {
+        imdbId: String(best.imdb_id || best.imdbId),
+        tmdbId: out.tmdbId || (best.id && /^\d+$/.test(String(best.id)) ? String(best.id) : ''),
+        year: (best.year ? String(best.year) : '') || out.year || '',
+        name: best.name || out.name || title,
+        kind: /series|tv/.test(String(best.type || '')) ? 'episode' : out.kind || 'movie',
+      });
+    } catch (_) {
+      return out;
+    }
   }
 
   /** Build a search-friendly query for subtitle providers. */
@@ -1792,6 +2134,11 @@
     clean,
     collect,
     resolve,
+    lookupIds,
+    idsFromUrl,
+    idsFromDoc,
+    namesMatch,
+    hydrateTmdb,
     normalize,
     searchQuery,
     episodeLabel,
@@ -1819,6 +2166,17 @@
       'panel.empty': 'No video found yet',
       'panel.emptyHint': 'Play the video, Stream Radar watches network, DOM, MSE, Service Worker and player internals at once.',
       'panel.detecting': 'Watching...',
+      'panel.untitled': 'Untitled stream',
+      'panel.subs.idle': 'Waiting',
+      'layer.wait': 'Watching',
+      'layer.waitDom': 'Scanning',
+      'layer.waitMse': 'Buffer',
+      'layer.waitSw': 'Cache',
+      'layer.waitHeu': 'Probe',
+      'layer.live': 'Live',
+      'layer.idle': 'Idle',
+      'layer.off': 'Off',
+      'layer.paused': 'Paused',
       'panel.paused': 'Auto-detect paused',
       'panel.ads': '{n} ad requests hidden',
       'panel.toggleAds': 'Toggle ad and tracker requests',
@@ -1829,7 +2187,7 @@
       'panel.settings': 'Settings',
       'panel.openPanel': 'Open big panel',
       'panel.items': '{n} streams',
-      'panel.subs.title': 'Indonesian subtitles',
+      'panel.subs.title': 'Subtitles',
       'panel.subs.searching': 'Searching subtitles...',
       'panel.subs.found': 'Subtitle found',
       'panel.subs.none': 'No subtitle found',
@@ -1886,8 +2244,8 @@
       'watchparty.reloadTab': 'Reload tab',
       'toast.found': '{n} media detected on this page',
       'toast.newmedia': 'New {type} stream detected',
-      'toast.subs': 'Indonesian subtitle found: {name}',
-      'toast.subsNone': 'No Indonesian subtitle found for {title}',
+      'toast.subs': 'Subtitle found: {name}',
+      'toast.subsNone': 'No subtitle found for {title}',
       'toast.copied': 'URL copied to clipboard',
       'toast.error': 'Error: {msg}',
       'toast.watchparty': 'Opening WatchParty...',
@@ -1957,7 +2315,7 @@
       'panel.series': 'Series',
       'panel.layers': '{n} of 5 layers active',
       'panel.none': 'none reported yet',
-      'panel.subs.hint': 'Add a SubDL or OpenSubtitles key in Settings to fetch Indonesian subtitles.',
+      'panel.subs.hint': 'Add a Wyzie, SubDL or OpenSubtitles key in Settings. Wyzie uses the IMDb/TMDB id of the current title.',
       'action.use': 'Use',
       'action.pick': 'Pick',
       'action.downloadPlaylist': 'Save playlist',
@@ -2008,13 +2366,13 @@
       'options.recordCap': 'Recording cap (MB)',
       'options.subsLead': 'Wyzie, SubDL and OpenSubtitles need a free key; YIFY works without one. Keys stay in your browser.',
       'options.providers': 'Providers',
-      'options.wyzieNote': '(Indonesian, needs IMDb/TMDB id)',
+      'options.wyzieNote': '(needs IMDb/TMDB id of the current title)',
       'options.yifyNote': '(no key, often offline)',
       'options.wyzieHint': 'Free key at store.wyzie.io/redeem. Paste it below; never commit or share it.',
       'options.subdlHint': 'subdl.com then Account then API. Paste the key below.',
       'options.osHint': 'api.opensubtitles.com, Developers, Create App.',
       'options.langFilter': 'Language filter',
-      'options.langIdOnly': 'Indonesian only',
+      'options.langIdOnly': 'Indonesian (priority)',
       'options.langEn': 'English',
       'options.testSearch': 'Test the search',
       'options.fTitle': 'Title',
@@ -2050,6 +2408,17 @@
       'panel.empty': 'Belum ada video terdeteksi',
       'panel.emptyHint': 'Putar videonya, Stream Radar memantau jaringan, DOM, MSE, Service Worker dan internal player secara bersamaan.',
       'panel.detecting': 'Mendeteksi...',
+      'panel.untitled': 'Stream tanpa judul',
+      'panel.subs.idle': 'Menunggu',
+      'layer.wait': 'Memantau',
+      'layer.waitDom': 'Memindai',
+      'layer.waitMse': 'Buffer',
+      'layer.waitSw': 'Cache',
+      'layer.waitHeu': 'Probe',
+      'layer.live': 'Aktif',
+      'layer.idle': 'Siaga',
+      'layer.off': 'Mati',
+      'layer.paused': 'Jeda',
       'panel.paused': 'Deteksi otomatis dijeda',
       'panel.ads': '{n} request iklan disembunyikan',
       'panel.toggleAds': 'Tampilkan atau sembunyikan request iklan dan tracker',
@@ -2060,7 +2429,7 @@
       'panel.settings': 'Pengaturan',
       'panel.openPanel': 'Buka panel besar',
       'panel.items': '{n} stream',
-      'panel.subs.title': 'Subtitle Indonesia',
+      'panel.subs.title': 'Subtitle',
       'panel.subs.searching': 'Mencari subtitle...',
       'panel.subs.found': 'Subtitle ditemukan',
       'panel.subs.none': 'Subtitle tidak ditemukan',
@@ -2117,8 +2486,8 @@
       'watchparty.reloadTab': 'Muat ulang tab',
       'toast.found': '{n} media terdeteksi di halaman ini',
       'toast.newmedia': 'Stream {type} baru terdeteksi',
-      'toast.subs': 'Subtitle Indonesia ditemukan: {name}',
-      'toast.subsNone': 'Subtitle Indonesia tidak ditemukan untuk {title}',
+      'toast.subs': 'Subtitle ditemukan: {name}',
+      'toast.subsNone': 'Subtitle tidak ditemukan untuk {title}',
       'toast.copied': 'URL disalin ke clipboard',
       'toast.error': 'Error: {msg}',
       'toast.watchparty': 'Membuka WatchParty...',
@@ -2239,13 +2608,13 @@
       'options.recordCap': 'Batas rekam (MB)',
       'options.subsLead': 'Wyzie, SubDL dan OpenSubtitles butuh kunci gratis; YIFY tanpa kunci. Kunci hanya tersimpan di browsermu.',
       'options.providers': 'Penyedia',
-      'options.wyzieNote': '(Indonesia, butuh id IMDb/TMDB)',
+      'options.wyzieNote': '(butuh id IMDb/TMDB judul yang sedang diputar)',
       'options.yifyNote': '(tanpa kunci, sering mati)',
       'options.wyzieHint': 'Kunci gratis di store.wyzie.io/redeem. Tempel di bawah; jangan di-commit atau dibagikan.',
       'options.subdlHint': 'subdl.com lalu Account lalu API. Tempel kuncinya di bawah.',
       'options.osHint': 'api.opensubtitles.com, Developers, Create App.',
       'options.langFilter': 'Filter bahasa',
-      'options.langIdOnly': 'Hanya Indonesia',
+      'options.langIdOnly': 'Indonesia (prioritas)',
       'options.langEn': 'Inggris',
       'options.testSearch': 'Uji pencarian',
       'options.fTitle': 'Judul',
@@ -3232,6 +3601,31 @@
     return false;
   };
 
+  subs.matchesLang = function (item, code) {
+    const c = String(code || '').toLowerCase();
+    if (!c || c === 'all') return true;
+    if (c === 'id' || c === 'ind') return subs.isIndonesian(item);
+    const lang = String(item.langCode || item.lang || item.language || '').toLowerCase();
+    const name = String(item.langName || item.languageName || '').toLowerCase();
+    return lang === c || lang.indexOf(c) === 0 || (name && name.indexOf(c) === 0);
+  };
+
+  subs.filterByLang = function (list, settings) {
+    const lang = (settings && settings.subtitleLang) || 'id';
+    if (lang === 'all') return list;
+    const primary = list.filter((x) => subs.matchesLang(x, lang));
+    const extra = lang === 'id' ? [] : list.filter((x) => subs.isIndonesian(x));
+    const seen = new Set();
+    const out = [];
+    for (const it of primary.concat(extra)) {
+      const k = (it.provider || '') + '|' + (it.id || '') + '|' + (it.fileUrl || it.filename || '');
+      if (seen.has(k)) continue;
+      seen.add(k);
+      out.push(it);
+    }
+    return out.length ? out : list;
+  };
+
   subs.score = function (item, want) {
     const w = want || {};
     let s = 0;
@@ -3263,13 +3657,24 @@
     if (item.verified) s += 6;
     if (item.downloads) s += Math.min(15, Math.log10(item.downloads + 1) * 6);
     if (item.aiTranslated) s -= 12;
-    if (subs.isIndonesian(item)) s += 25;
+    const pref = String(w.lang || 'id').toLowerCase();
+    if (pref && pref !== 'all') {
+      if (subs.matchesLang(item, pref)) s += 28;
+      else if (subs.isIndonesian(item)) s += 18;
+    } else if (subs.isIndonesian(item)) s += 22;
     return s;
   };
 
   subs.filterIndonesian = function (list, strict) {
-    const kept = list.filter((x) => subs.isIndonesian(x));
-    return kept.length || strict ? kept : list;
+    return subs.filterByLang(list, { subtitleLang: strict ? 'id' : 'all' });
+  };
+
+  /** Wyzie `language=` query: always include Indonesian unless the user asked for all. */
+  subs.wyzieLanguageParam = function (settings) {
+    const lang = (settings && settings.subtitleLang) || 'id';
+    if (lang === 'all') return '';
+    if (lang === 'id') return 'id';
+    return 'id,' + lang;
   };
 
   /* ---------------------------------------------------------------- *
@@ -3298,8 +3703,8 @@
         params.set('season', String(want.season));
         params.set('episode', String(want.episode));
       }
-      const lang = settings.subtitleLang && settings.subtitleLang !== 'all' ? settings.subtitleLang : 'id';
-      params.set('language', lang);
+      const lang = subs.wyzieLanguageParam(settings);
+      if (lang) params.set('language', lang);
       params.set('format', 'srt');
       params.set('encoding', 'utf-8');
       params.set('source', 'all');
@@ -3345,7 +3750,7 @@
       if (key && url.indexOf('key=') < 0) {
         url += (url.indexOf('?') >= 0 ? '&' : '?') + 'key=' + encodeURIComponent(key);
       }
-      return await subs.loadSubtitleFile(url, { fetchImpl: f, want: 'id' });
+      return await subs.loadSubtitleFile(url, { fetchImpl: f, want: item.langCode || 'id' });
     },
   };
 
@@ -3530,7 +3935,11 @@
               fileUrl: /^https?:/.test(String(r.subtitle_link || '')) ? r.subtitle_link : base + r.subtitle_link,
               raw: r,
             }))
-            .filter((x) => subs.isIndonesian(x) || !settings.autoSubtitle);
+            .filter((x) => {
+              const lang = (settings && settings.subtitleLang) || 'id';
+              if (lang === 'all' || !settings.autoSubtitle) return true;
+              return subs.matchesLang(x, lang) || subs.isIndonesian(x);
+            });
           return { ok: true, items };
         } catch (e) {
           lastErr.push(base + ': ' + e.message);
@@ -3598,10 +4007,10 @@
     });
 
     const scored = deduped
-      .map((it) => Object.assign(it, { score: subs.score(it, want) }))
+      .map((it) => Object.assign(it, { score: subs.score(it, Object.assign({}, want, { lang: (settings && settings.subtitleLang) || 'id' })) }))
       .sort((a, b) => b.score - a.score);
 
-    const filtered = subs.filterIndonesian(scored, (settings.subtitleLang || 'id') !== 'all');
+    const filtered = subs.filterByLang(scored, settings);
     const list = (filtered.length ? filtered : scored).slice(0, o.limit || 25);
     list.forEach((it, i) => (it.rank = i + 1));
     return { results: list, providerInfo, errors };
@@ -3614,7 +4023,7 @@
     if (!provider) throw new Error('unknown provider ' + item.provider);
     const fetchImpl = o.fetchImpl || (util.fetchImpl ? util.fetchImpl.bind(util) : root.fetch);
     let text;
-    if (item.fileUrl) text = await subs.loadSubtitleFile(item.fileUrl, { fetchImpl, want: 'id' });
+    if (item.fileUrl) text = await subs.loadSubtitleFile(item.fileUrl, { fetchImpl, want: item.langCode || 'id' });
     else text = await provider.fetchFile(item, settings, { fetchImpl });
     if (!subs.looksLikeSubtitle(text)) throw new Error('file is not a subtitle track');
     return subs.srtToVtt(text);
@@ -3687,9 +4096,9 @@
     return (laid.length ? laid : all).map((el) => ({ el, label: labelOf(el) }));
   }
 
-  function setValue(el, value) {
+  function setValue(el, value, force) {
     if (!el || value == null || value === '') return false;
-    if (el.value && el.value.trim()) return false;
+    if (!force && el.value && el.value.trim()) return false;
     try {
       const proto = el.tagName === 'TEXTAREA' ? root.HTMLTextAreaElement : root.HTMLInputElement;
       const desc = Object.getOwnPropertyDescriptor(proto.prototype, 'value');
@@ -3794,7 +4203,7 @@
             }
             const track = doc.createElement('track');
             track.kind = 'subtitles';
-            track.srclang = 'id';
+            track.srclang = (p.subtitle && p.subtitle.lang) || 'id';
             track.label = (name || 'Indonesian') + ' (Stream Radar)';
             track.default = true;
             track.setAttribute('data-srad', '1');
@@ -3817,7 +4226,7 @@
         host.style.cssText = 'position:fixed;right:14px;bottom:14px;z-index:2147483000;font-family:system-ui,sans-serif';
         const shadow = host.attachShadow({ mode: 'closed' });
         shadow.innerHTML =
-          '<style>:host{all:initial}.wrap{display:flex;align-items:center;gap:6px;padding:6px 8px;border-radius:14px;background:rgba(20,23,38,.86);backdrop-filter:blur(10px);color:#e9edf7}button{font:600 12px system-ui;padding:8px 11px;border-radius:9px;border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.08);color:#fff;cursor:pointer;min-height:36px}button:hover{border-color:#8b7cff}span{font:700 11px system-ui;opacity:.7}</style>' +
+          '<style>:host{all:initial}.wrap{display:flex;align-items:center;gap:6px;padding:6px 8px;border-radius:14px;background:rgba(6,16,22,.88);backdrop-filter:blur(10px);color:#e6f4f6}button{font:600 12px system-ui;padding:8px 11px;border-radius:9px;border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.08);color:#fff;cursor:pointer;min-height:36px}button:hover{border-color:#5eead4}span{font:700 11px system-ui;opacity:.7}</style>' +
           '<div class="wrap"><span>STREAM RADAR</span><button data-a="subs">' + t('panel.subs.attach') + '</button><button data-a="copy">' + t('action.copy') + '</button><button data-a="dl">' + t('panel.subs.download') + '</button></div>';
         doc.body.appendChild(host);
         state.chip = host;
@@ -3846,11 +4255,42 @@
         });
       }
 
+      async function publishRoomSubtitle(vtt) {
+        if (state.published || !vtt || !root.fetch) return;
+        try {
+          const res = await root.fetch('/subtitle', { method: 'POST', body: vtt, headers: { 'Content-Type': 'text/plain' } });
+          const json = await res.json();
+          if (!json || !json.hash) return;
+          const url = (root.location && root.location.origin ? root.location.origin : '') + '/subtitle/' + json.hash;
+          const f = fields(doc);
+          const subField = f.find((x) => /subtitle/i.test(x.label));
+          if (subField) setValue(subField.el, url, true);
+          state.published = true;
+        } catch (_) {}
+      }
+
+      function unmuteOnce() {
+        if (state.unmuted) return;
+        const list = doc.querySelectorAll('video, audio');
+        if (!list.length) return;
+        for (const el of list) {
+          try {
+            el.muted = false;
+            if (!el.volume) el.volume = 1;
+          } catch (_) {}
+        }
+        state.unmuted = true;
+      }
+
       function tick() {
         try {
           tryForm();
           chip();
-          if (!state.attached && p.subtitle && p.subtitle.vtt && doc.querySelector('video')) attachTracks(p.subtitle.vtt, p.subtitle.name, false);
+          unmuteOnce();
+          if (!state.attached && p.subtitle && p.subtitle.vtt && doc.querySelector('video')) {
+            attachTracks(p.subtitle.vtt, p.subtitle.name, false);
+            publishRoomSubtitle(p.subtitle.vtt);
+          }
         } catch (_) {}
       }
 
@@ -4373,34 +4813,34 @@
 
 .srad-root {
 /* tokens:start - generated by tools/sync-theme.mjs, do not edit */
-  --sr-canvas: #f4f5fb;
-  --sr-surface: #ffffff;
-  --sr-surface-2: #f3f4fa;
-  --sr-surface-3: #e9ebf6;
-  --sr-glass: rgba(255, 255, 255, 0.72);
-  --sr-ink: #181c2b;
-  --sr-ink-2: #525b75;
-  --sr-ink-3: #8a92a9;
-  --sr-line: #e2e5f1;
-  --sr-line-2: #edeef7;
-  --sr-accent: #5b50e6;
-  --sr-accent-2: #8b46e8;
-  --sr-accent-ink: #ffffff;
-  --sr-accent-soft: #eceefd;
-  --sr-accent-line: #d0d4fb;
-  --sr-accent-glow: rgba(91, 80, 230, 0.38);
-  --sr-ok: #0d7c55;
-  --sr-ok-soft: #e6f6ee;
-  --sr-warn: #8a5b00;
-  --sr-warn-soft: #fdf2df;
-  --sr-err: #bd2118;
-  --sr-err-soft: #fcebea;
-  --sr-info: #0e6088;
-  --sr-info-soft: #e7f2fa;
-  --sr-shadow-1: 0 1px 0 rgba(24, 28, 43, 0.02), 0 1px 2px rgba(24, 28, 43, 0.05), 0 6px 16px -8px rgba(24, 28, 43, 0.14);
-  --sr-shadow-2: 0 1px 0 rgba(24, 28, 43, 0.03), 0 12px 24px -12px rgba(24, 28, 43, 0.18), 0 32px 64px -24px rgba(24, 28, 43, 0.30);
-  --sr-shadow-accent: 0 8px 22px -8px var(--sr-accent-glow);
-  --sr-inset: inset 0 1px 0 rgba(255, 255, 255, 0.85);
+  --sr-canvas: #f2efe8;
+  --sr-surface: #faf8f3;
+  --sr-surface-2: #f0ece4;
+  --sr-surface-3: #e5e0d6;
+  --sr-glass: rgba(250, 248, 243, 0.88);
+  --sr-ink: #2b2925;
+  --sr-ink-2: #5c5850;
+  --sr-ink-3: #8a847a;
+  --sr-line: #ddd7cc;
+  --sr-line-2: #ebe6dc;
+  --sr-accent: #3d5248;
+  --sr-accent-2: #3d5248;
+  --sr-accent-ink: #f6f3ec;
+  --sr-accent-soft: #e7eee9;
+  --sr-accent-line: #b7c4bd;
+  --sr-accent-glow: rgba(61, 82, 72, 0.22);
+  --sr-ok: #3b5c48;
+  --sr-ok-soft: #e7efe9;
+  --sr-warn: #7a5c28;
+  --sr-warn-soft: #f3ead8;
+  --sr-err: #8f3d36;
+  --sr-err-soft: #f6e8e6;
+  --sr-info: #3d5564;
+  --sr-info-soft: #e6eef2;
+  --sr-shadow-1: 0 1px 0 rgba(43, 41, 37, 0.03), 0 1px 2px rgba(43, 41, 37, 0.05), 0 6px 16px -8px rgba(43, 41, 37, 0.1);
+  --sr-shadow-2: 0 1px 0 rgba(43, 41, 37, 0.04), 0 12px 24px -12px rgba(43, 41, 37, 0.14), 0 32px 64px -24px rgba(43, 41, 37, 0.18);
+  --sr-shadow-accent: 0 8px 18px -10px var(--sr-accent-glow);
+  --sr-inset: inset 0 1px 0 rgba(255, 255, 255, 0.78);
   --sr-sp-1: 4px;
   --sr-sp-2: 8px;
   --sr-sp-3: 12px;
@@ -4417,16 +4857,16 @@
   --sr-spring: cubic-bezier(0.2, 0.9, 0.28, 1.24);
   --sr-font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --sr-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
-  --sr-brand-gradient: linear-gradient(150deg, var(--sr-accent) 0%, var(--sr-accent-2, #4338ca) 100%);
-  --sr-brand-sheen: linear-gradient(180deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0) 55%);
-  --sr-cat-hls: linear-gradient(140deg, #fbbf24, #ea580c);
-  --sr-cat-dash: linear-gradient(140deg, #38bdf8, #2563eb);
-  --sr-cat-mp4: linear-gradient(140deg, #34d399, #0d9488);
-  --sr-cat-webm: linear-gradient(140deg, #c084fc, #7c3aed);
-  --sr-cat-blob: linear-gradient(140deg, #94a3b8, #64748b);
-  --sr-cat-seg: linear-gradient(140deg, #facc15, #ca8a04);
-  --sr-cat-text: linear-gradient(140deg, #2dd4bf, #0d9488);
-  --sr-glyph-on-color: #ffffff;
+  --sr-brand-gradient: #3d5248;
+  --sr-brand-sheen: none;
+  --sr-cat-hls: #6d6558;
+  --sr-cat-dash: #4d5c62;
+  --sr-cat-mp4: #3d5248;
+  --sr-cat-webm: #5a5868;
+  --sr-cat-blob: #6b6760;
+  --sr-cat-seg: #6d6558;
+  --sr-cat-text: #3d5248;
+  --sr-glyph-on-color: #f6f3ec;
   --sr-scroll-thumb: var(--sr-ink-2);
   --sr-scroll-thumb-hover: var(--sr-accent);
   --sr-scroll-size: 10px;
@@ -4449,35 +4889,36 @@
 
 .srad-root[data-theme="dark"] {
 /* tokens:start - generated by tools/sync-theme.mjs, do not edit */
-  --sr-canvas: #0c0f1a;
-  --sr-surface: #141928;
-  --sr-surface-2: #1a2032;
-  --sr-surface-3: #232a40;
-  --sr-glass: rgba(20, 25, 40, 0.72);
-  --sr-ink: #e9edf7;
-  --sr-ink-2: #a1aac4;
-  --sr-ink-3: #6f7a96;
-  --sr-line: #28304a;
-  --sr-line-2: #1e2538;
-  --sr-accent: #8b93ff;
-  --sr-accent-2: #b98bff;
-  --sr-accent-ink: #0c0f1a;
-  --sr-accent-soft: rgba(139, 147, 255, 0.16);
-  --sr-accent-line: rgba(139, 147, 255, 0.40);
-  --sr-accent-glow: rgba(139, 147, 255, 0.45);
-  --sr-ok: #5ad39f;
-  --sr-ok-soft: rgba(90, 211, 159, 0.16);
-  --sr-warn: #e6b455;
-  --sr-warn-soft: rgba(230, 180, 85, 0.16);
-  --sr-err: #ff8a80;
-  --sr-err-soft: rgba(255, 138, 128, 0.16);
-  --sr-info: #7cc8f2;
-  --sr-info-soft: rgba(124, 200, 242, 0.16);
-  --sr-shadow-1: 0 1px 0 rgba(0, 0, 0, 0.4), 0 6px 18px -8px rgba(0, 0, 0, 0.55);
-  --sr-shadow-2: 0 16px 32px -16px rgba(0, 0, 0, 0.7), 0 40px 72px -28px rgba(0, 0, 0, 0.78);
-  --sr-shadow-accent: 0 10px 26px -8px var(--sr-accent-glow);
-  --sr-inset: inset 0 1px 0 rgba(255, 255, 255, 0.06);
-  --sr-brand-sheen: linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0) 55%);
+  --sr-canvas: #141312;
+  --sr-surface: #1c1b19;
+  --sr-surface-2: #252420;
+  --sr-surface-3: #2e2c28;
+  --sr-glass: rgba(28, 27, 25, 0.9);
+  --sr-ink: #e6e1d6;
+  --sr-ink-2: #a39e94;
+  --sr-ink-3: #7a756c;
+  --sr-line: #322f2b;
+  --sr-line-2: #262420;
+  --sr-accent: #8d9b92;
+  --sr-accent-2: #8d9b92;
+  --sr-accent-ink: #141312;
+  --sr-accent-soft: rgba(141, 155, 146, 0.12);
+  --sr-accent-line: rgba(141, 155, 146, 0.32);
+  --sr-accent-glow: rgba(141, 155, 146, 0.2);
+  --sr-ok: #8eaa98;
+  --sr-ok-soft: rgba(142, 170, 152, 0.12);
+  --sr-warn: #c4b08a;
+  --sr-warn-soft: rgba(196, 176, 138, 0.12);
+  --sr-err: #c9a09a;
+  --sr-err-soft: rgba(201, 160, 154, 0.12);
+  --sr-info: #9bb0bc;
+  --sr-info-soft: rgba(155, 176, 188, 0.12);
+  --sr-shadow-1: 0 1px 0 rgba(0, 0, 0, 0.32), 0 6px 16px -8px rgba(0, 0, 0, 0.4);
+  --sr-shadow-2: 0 16px 32px -16px rgba(0, 0, 0, 0.5), 0 40px 72px -28px rgba(0, 0, 0, 0.55);
+  --sr-shadow-accent: 0 8px 18px -10px var(--sr-accent-glow);
+  --sr-inset: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  --sr-brand-gradient: #8d9b92;
+  --sr-brand-sheen: none;
 /* tokens:end */
 
 }
@@ -4514,7 +4955,7 @@
 @keyframes srad-ring { 0% { opacity: .55; transform: scale(.9); } 100% { opacity: 0; transform: scale(1.28); } }
 .srad-badge {
   position: absolute; top: -6px; right: -6px; min-width: 21px; height: 21px; padding: 0 6px;
-  border-radius: var(--sr-r-pill); background: var(--sr-accent); color: #fff;
+  border-radius: var(--sr-r-pill); background: var(--sr-accent); color: var(--sr-accent-ink);
   font-size: 11.5px; font-weight: 700; line-height: 21px; text-align: center;
   border: 2px solid var(--sr-surface); transform: scale(0); transition: transform var(--sr-t-mid) var(--sr-spring);
 }
@@ -4541,7 +4982,7 @@
 .srad-brand { display: flex; align-items: center; gap: 9px; min-width: 0; flex: 1 1 auto; cursor: grab; }
 .srad-head[data-drag="1"] .srad-brand { cursor: grabbing; }
 .srad-mark { width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center; flex: none;
-  background: linear-gradient(150deg, var(--sr-accent), #3d3ac9 62%, var(--sr-ok)); color: #fff;
+  background: var(--sr-accent); color: var(--sr-accent-ink);
   box-shadow: 0 4px 14px -4px var(--sr-accent); }
 .srad-mark svg { width: 15px; height: 15px; }
 .srad-headtxt { min-width: 0; }
@@ -4614,7 +5055,7 @@
 .srad-item[data-ad="1"] { opacity: .78; }
 .srad-thumb {
   width: 50px; height: 50px; border-radius: 11px; overflow: hidden; position: relative; flex: none;
-  display: grid; place-items: center; background: var(--sr-surface-2); color: #fff;
+  display: grid; place-items: center; background: var(--sr-surface-2); color: var(--sr-glyph-on-color);
   font-size: 10px; font-weight: 800; letter-spacing: .04em;
 }
 .srad-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
@@ -4659,9 +5100,8 @@
 .srad-btn:hover { background: var(--sr-surface-2); border-color: var(--sr-accent); }
 .srad-btn:active { transform: scale(.96); }
 .srad-btn:focus-visible { outline: 2px solid var(--sr-accent); outline-offset: 2px; }
-.srad-btn[data-primary="1"] { color: var(--sr-accent-ink); border-color: transparent; background: var(--sr-brand-gradient); box-shadow: var(--sr-shadow-1), var(--sr-shadow-accent); }
-.srad-btn[data-primary="1"]::after { content: ""; position: absolute; inset: 0; border-radius: inherit; background: var(--sr-brand-sheen); pointer-events: none; }
-.srad-btn[data-primary="1"]:hover { filter: brightness(1.06); transform: translateY(-1px); box-shadow: var(--sr-shadow-2), var(--sr-shadow-accent); }
+.srad-btn[data-primary="1"] { color: var(--sr-accent-ink); border-color: transparent; background: var(--sr-accent); box-shadow: var(--sr-shadow-1); }
+.srad-btn[data-primary="1"]:hover { filter: brightness(1.04); transform: translateY(-1px); box-shadow: var(--sr-shadow-2); }
 .srad-btn[data-done="1"] { color: var(--sr-ok); border-color: var(--sr-ok); background: transparent; }
 .srad-btn[disabled] { opacity: .65; cursor: default; pointer-events: none; }
 .srad-btn[data-busy="1"] svg { animation: srad-spin .7s linear infinite; }
@@ -4715,7 +5155,7 @@
 .srad-field .hint { display: block; color: var(--sr-ink-2); font-weight: 400; font-size: 11.5px; margin-top: 1px; }
 .srad-seg { display: inline-flex; background: var(--sr-surface-2); border: 1px solid var(--sr-line-2); border-radius: 10px; padding: 2px; gap: 2px; }
 .srad-seg button { border: 0; background: transparent; color: var(--sr-ink-2); font: 600 11.5px/1 var(--sr-font); padding: 7px 10px; min-height: 32px; border-radius: 8px; cursor: pointer; -webkit-tap-highlight-color: transparent; }
-.srad-seg button[data-on="1"] { background: var(--sr-accent); color: #fff; }
+.srad-seg button[data-on="1"] { background: var(--sr-accent); color: var(--sr-accent-ink); }
 .srad-switch { position: relative; display: inline-flex; align-items: center; flex: none; width: 40px; height: 24px; border-radius: var(--sr-r-pill); background: var(--sr-line); border: 0; cursor: pointer; padding: 0; transition: background var(--sr-t-mid) var(--sr-ease); }
 .srad-switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.32); transition: transform var(--sr-t-mid) var(--sr-spring); }
 .srad-switch[aria-checked="true"] { background: var(--sr-accent); }
@@ -5036,6 +5476,8 @@
         const chips = [];
         if (info && info.isJunk) chips.push(chip('warn', 'search', t('panel.noTitle')));
         if (info && info.year) chips.push(chip('year', 'calendar', info.year));
+        if (info && info.imdbId) chips.push(chip('id', 'clapperboard', info.imdbId));
+        if (info && (info.tmdbId || info.urlTmdbId)) chips.push(chip('id', 'clapperboard', 'tmdb ' + (info.tmdbId || info.urlTmdbId)));
         const ep = info && SR.title && SR.title.episodeLabel ? SR.title.episodeLabel(info) : null;
         if (ep) chips.push(chip('ep', 'captions', ep));
         if (info && info.kind === 'episode') chips.push(chip('ep', 'monitor-smartphone', t('panel.series')));
@@ -5052,11 +5494,22 @@
         return '<span class="srad-chip"' + (kind ? ' data-kind="' + kind + '"' : '') + '>' + (icon ? ico(icon) : '') + esc(text) + '</span>';
       }
 
+      let bodySig = null;
       function renderBody() {
         if (!bodyEl) return;
         if (api.tab === 'subs') return renderSubs();
         if (api.tab === 'info') return renderInfo();
         const items = visible();
+        // Keep the row DOM alive while nothing about the list changed (title /
+        // subtitle re-scans broadcast new state constantly). Rebuilding the list
+        // mid-click detaches the button the user is pressing. The signature
+        // covers the tab, the set of rows and their live chips.
+        const sig =
+          api.tab +
+          '|' +
+          items.map((it) => [it.id, it.category, it.confidence, it.quality, (it.sub && it.sub.status) || ''].join(':')).join('~');
+        if (bodySig === sig && bodyEl.querySelector('[data-el="list"]')) return;
+        bodySig = sig;
         const before = captureRects();
         if (!items.length) {
           bodyEl.innerHTML =
@@ -5185,7 +5638,7 @@
           '<div class="srad-sub-card">' +
           '<div class="srad-sub-head">' + ico('captions') + '<span>' + esc(t('panel.subs.title')) + '</span>' +
           '<span class="srad-state" data-s="' + esc(sub.status) + '">' + (sub.status === 'searching' ? ico('loader') : '') + esc(st[sub.status] || sub.status) + '</span></div>' +
-          (sub.query ? '<div class="srad-url" style="margin-top:6px">' + esc(sub.query) + (sub.year ? ' (' + esc(String(sub.year)) + ')' : '') + '</div>' : '') +
+          (sub.query || sub.imdbId || sub.tmdbId ? '<div class="srad-url" style="margin-top:6px">' + esc(sub.query || '') + (sub.year ? ' (' + esc(String(sub.year)) + ')' : '') + (sub.imdbId ? ' <b>' + esc(sub.imdbId) + '</b>' : '') + (sub.tmdbId ? ' <b>tmdb ' + esc(String(sub.tmdbId)) + '</b>' : '') + '</div>' : '') +
           '<div class="srad-providers">' +
           Object.keys(providers)
             .map((k) => '<span class="srad-pv" data-s="' + esc(providers[k].status || '') + '" title="' + esc(providers[k].reason || '') + '">' + esc(providers[k].label || k) + ' ' + (providers[k].count != null ? providers[k].count : '') + '</span>')
@@ -5199,7 +5652,7 @@
                   (it, i) =>
                     '<div class="srad-sub-row" data-picked="' + ((sub.chosen && sub.chosen.index === i) || (i === 0 && sub.chosen) ? 1 : 0) + '">' +
                     '<span title="' + esc(it.name || it.filename || '') + '">' + esc(it.name || it.filename || t('panel.subs.found')) + '</span>' +
-                    '<em>' + esc((it.providerLabel || it.provider || '') + ' ' + (it.format || 'srt')) + '</em>' +
+                    '<em>' + esc(((it.langCode || it.lang || '').toUpperCase() ? (it.langCode || it.lang || '').toUpperCase() + ' / ' : '') + (it.providerLabel || it.provider || '') + ' ' + (it.format || 'srt')) + '</em>' +
                     '<button class="srad-btn" data-act="sub-pick" data-index="' + i + '">' + esc(i === 0 ? t('action.use') : t('action.pick')) + '</button></div>'
                 )
                 .join('') +
@@ -5394,7 +5847,10 @@
           if (panelEl) animate(panelEl, { opacity: [0, 1], transform: ['translateY(-4px)', 'none'] }, { duration: 0.2 });
           return;
         }
-        if (!id && ['copy', 'download', 'watchparty', 'play', 'subs', 'ffmpeg', 'record', 'open'].indexOf(act) >= 0) return;
+        // Item-scoped actions need a row id. 'subs' is exempt: the subtitles
+        // pane's retry button has no row and must still trigger a page-level
+        // search (row-level subs buttons carry their own id).
+        if (!id && ['copy', 'download', 'watchparty', 'play', 'ffmpeg', 'record', 'open'].indexOf(act) >= 0) return;
         if (act === 'copy') {
           btn.setAttribute('data-done', '1');
           const original = btn.innerHTML;
@@ -6775,6 +7231,122 @@
     if (failed.length) post('hook-error', { failed: failed });
   }
 
+  function needsUnwrap(url) {
+    if (!url) return false;
+    if (/\.(m3u8|mpd|mp4|webm|mkv|m4v|mov|m3u)(\?|#|$)/i.test(url)) return false;
+    if (util && util.isHlsProxy && util.isHlsProxy(url)) return false;
+    var path = url;
+    try {
+      path = new URL(url).pathname;
+    } catch (_) {}
+    return /\/api\/?$/i.test(path);
+  }
+
+  function playInPage(session, retried) {
+    try {
+      var url = session && session.url;
+      if (url && !session.__unwrapped && needsUnwrap(url) && typeof root.fetch === 'function') {
+        session.__unwrapped = true;
+        root
+          .fetch(url, { credentials: 'include' })
+          .then(function (res) {
+            return res.text();
+          })
+          .then(function (text) {
+            var inner = '';
+            if (!(text && /#EXTM3U/.test(String(text).slice(0, 64)))) {
+              inner = util.extractMediaUrl(util.safeJSON(text, null) || text);
+            }
+            if (inner) session.url = inner;
+            playInPage(session, retried);
+          })
+          .catch(function () {
+            playInPage(session, retried);
+          });
+        return;
+      }
+      var existing = doc && doc.getElementById('srad-inpage');
+      if (existing) existing.remove();
+      var H = root.Hls;
+      if ((!H || !H.isSupported) && session && session.hlsLib && !retried && doc) {
+        var tag = doc.getElementById('srad-hls-lib');
+        if (!tag) {
+          tag = doc.createElement('script');
+          tag.id = 'srad-hls-lib';
+          tag.src = session.hlsLib;
+          tag.onload = function () {
+            playInPage(session, true);
+          };
+          tag.onerror = function () {
+            playInPage(session, true);
+          };
+          (doc.head || doc.documentElement).appendChild(tag);
+          return;
+        }
+      }
+      if (H && H.isSupported && H.isSupported() && url) {
+        var wrap = doc.createElement('div');
+        wrap.id = 'srad-inpage';
+        wrap.setAttribute('style', 'position:fixed;inset:0;z-index:2147483646;background:#000;display:flex;flex-direction:column;');
+        var bar = doc.createElement('div');
+        bar.setAttribute('style', 'display:flex;justify-content:flex-end;gap:8px;padding:8px 12px;background:#111;color:#fff;font:14px sans-serif;');
+        var close = doc.createElement('button');
+        close.textContent = 'Close';
+        close.setAttribute('style', 'color:#fff;background:#333;border:0;padding:6px 12px;cursor:pointer;border-radius:4px');
+        close.onclick = function () {
+          try {
+            if (root.__sradInpageHls) root.__sradInpageHls.destroy();
+          } catch (_) {}
+          wrap.remove();
+        };
+        bar.appendChild(close);
+        var video = doc.createElement('video');
+        video.setAttribute('controls', '');
+        video.setAttribute('playsinline', '');
+        video.setAttribute('autoplay', '');
+        video.setAttribute('style', 'flex:1;width:100%;min-height:0;background:#000;');
+        wrap.appendChild(bar);
+        wrap.appendChild(video);
+        (doc.body || doc.documentElement).appendChild(wrap);
+        try {
+          if (root.__sradInpageHls) root.__sradInpageHls.destroy();
+        } catch (_) {}
+        var hls = new H({ enableWorker: false });
+        root.__sradInpageHls = hls;
+        hls.loadSource(url);
+        hls.attachMedia(video);
+        var parsed = H.Events && H.Events.MANIFEST_PARSED ? H.Events.MANIFEST_PARSED : 'hlsManifestParsed';
+        hls.on(parsed, function () {
+          try {
+            video.play();
+          } catch (_) {}
+        });
+        return;
+      }
+      var vids = doc ? doc.querySelectorAll('video') : [];
+      if (vids.length) {
+        var v = vids[0];
+        try {
+          if (v.requestFullscreen) v.requestFullscreen();
+          else if (v.webkitRequestFullscreen) v.webkitRequestFullscreen();
+        } catch (_) {}
+        try {
+          v.play();
+        } catch (_) {}
+        return;
+      }
+      if (url && doc) {
+        var v2 = doc.createElement('video');
+        v2.src = url;
+        v2.controls = true;
+        v2.setAttribute('style', 'position:fixed;inset:0;z-index:2147483646;width:100%;height:100%;background:#000;');
+        v2.id = 'srad-inpage';
+        (doc.body || doc.documentElement).appendChild(v2);
+        v2.play().catch(function () {});
+      }
+    } catch (_) {}
+  }
+
   function init() {
     installAll();
     startScanning();
@@ -6853,6 +7425,15 @@
         dumpRecording();
       } else if (d.cmd === 'ping') {
         post('pong', { version: SR.VERSION, reports: root.__streamRadarPage.reports });
+      } else if (d.cmd === 'play-in-page') {
+        playInPage(d.payload || {});
+      } else if (d.cmd === 'wp-hls-stop') {
+        try {
+          if (root.watchparty && root.watchparty.hls) {
+            root.watchparty.hls.destroy();
+            root.watchparty.hls = null;
+          }
+        } catch (_) {}
       }
     } catch (_) {}
   });

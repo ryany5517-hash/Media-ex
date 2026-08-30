@@ -247,6 +247,19 @@ test('title.idsFromUrl: catalog ids on any watch-site path / query / embed', () 
   assert.equal(title.idsFromUrl('https://x.example/film/the-eye-tt0314196').imdbId, 'tt0314196');
   assert.equal(title.idsFromUrl('https://cdn.x/hls/1080/index.m3u8').tmdbId || '', '');
   assert.equal(title.idsFromUrl('https://x.example/movie/inception-2010').tmdbId || '', '');
+  // id-first slugs, .html suffixes, extra query keys, short media prefixes
+  assert.equal(title.idsFromUrl('https://x.example/movie/10389-the-eye').tmdbId, '10389');
+  assert.equal(title.idsFromUrl('https://x.example/films/1396-arcane').tmdbId, '1396');
+  assert.equal(title.idsFromUrl('https://x.example/watch/movie/10389.html').tmdbId, '10389');
+  assert.equal(title.idsFromUrl('https://x.example/film/10389').tmdbId, '10389');
+  assert.equal(title.idsFromUrl('https://x.example/detail/10389.html').tmdbId, '10389');
+  assert.equal(title.idsFromUrl('https://x.example/view/10389').tmdbId, '10389');
+  assert.equal(title.idsFromUrl('https://x.example/watch?movie_id=10389').tmdbId, '10389');
+  assert.equal(title.idsFromUrl('https://x.example/embed?film_id=10389').tmdbId, '10389');
+  assert.equal(title.idsFromUrl('https://x.example/watch?episode_id=1396').tmdbId, '1396');
+  assert.equal(title.idsFromUrl('https://x.example/tv/1396/season/1/episode/3').tmdbId, '1396');
+  assert.equal(title.idsFromUrl('https://x.example/tv/1396/season/1/episode/3').kind, 'episode');
+  assert.equal(title.idsFromUrl('https://x.example/news/2024/05/10389').tmdbId || '', '');
   assert.equal(title.namesMatch('The Eye', 'The Eye (2002)'), true);
   assert.equal(title.namesMatch('The Eye', 'Interstellar'), false);
 });

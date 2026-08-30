@@ -70,7 +70,8 @@ dan (kalau kamu aktifkan) patch script konten. Yang tetap perlu build ulang: per
 ## 3. Setup pertama (2 menit)
 
 1. Buka video → play → tombol **◉** muncul di kanan-bawah dengan counter.
-2. Klik ⚙ (gear) → **isi API key SubDL** (gratis) → subtitle Indonesia otomatis nyari.
+2. Klik ⚙ (gear) → **isi API key Wyzie / SubDL** (gratis) → subtitle Indonesia otomatis nyari.
+   - Wyzie Subs: https://store.wyzie.io/redeem (cari berdasarkan **ID IMDb/TMDB** — dideteksi otomatis dari URL halaman kayak `67movies.nl/watch/movie/10389`, `?tmdb=…`, `?imdb=tt…`, embed, dsb.)
    - SubDL: https://subdl.com/panel/api
    - OpenSubtitles: https://www.opensubtitles.com/en/api-keys (wajib isi **User-Agent** yang sama persis seperti di form)
 3. Klik **Putar** pada stream yang terdeteksi. Player bawaan mengambil file dengan Referer halaman aslinya (cara yang sama IDM mendeteksi media). **Nonton Bareng** tetap membuka room WatchParty.me.
@@ -90,7 +91,7 @@ dan (kalau kamu aktifkan) patch script konten. Yang tetap perlu build ulang: per
 
 **PART 3 — WatchParty:** `https://www.watchparty.me/watchNow?url=<stream>&name=<judul>` + content script pengisi form (room name / user name / join). **Tidak** bikin player atau website sendiri — WatchParty sudah support file HTTP dan HLS. Payload hand-off disimpan 6 menit, cuma untuk tab itu, lalu dihapus.
 
-**PART 4 — subtitle ID:** SubDL (`api.subdl.com`) → OpenSubtitles REST (`api.opensubtitles.com`) → YIFY (fallback tanpa key). Filter bahasa Indonesia, ranking kemiripan judul+tahun+episode, download → **unzip/gunzip internal** → SRT→**VTT** → tombol *Pasang di sini* (inject `<track>` ke video halaman), *Download .vtt*, atau dikirim ke room WatchParty.
+**PART 4 — subtitle ID:** Wyzie Subs (`sub.wyzie.io`, cari by **ID IMDb/TMDB**) → SubDL (`api.subdl.com`) → OpenSubtitles REST (`api.opensubtitles.com`) → YIFY (fallback tanpa key). ID film dideteksi otomatis dari URL/kanonikal/iframe/meta halaman (`/watch/movie/10389`, `/embed/tv/1396`, `?tmdb=…`, `?imdb=…`, `tt0314196`, slug-`10389`); kalau cuma ada ID TMDB dari URL, nama film + IMDb di-resolve lewat halaman TMDB (tanpa key). Filter bahasa Indonesia, ranking kemiripan judul+tahun+episode, download → **unzip/gunzip internal** → SRT→**VTT** → tombol *Pasang di sini* (inject `<track>` ke video halaman), *Download .vtt*, atau dikirim ke room WatchParty.
 
 **PART 5 — UI/UX:** FAB glassmorphism (bisa di-drag, posisi disimpan), badge counter, animasi pulse saat stream baru; panel di atas FAB (judul, tipe, kualitas, thumbnail/poster, status subtitle, tombol Watch Party / Copy / Download / Subs / Open / ffmpeg / varian kualitas); toast pojok atas (auto 4 dtk); dark/light/system + toggle manual; settings via ⚙; semua di dalam **closed Shadow DOM** (tidak bisa di-restyle situs); target sentuh ≥44px, sheet full-width di layar ≤720px, navigasi Tab/Enter/Esc/↑↓, ARIA di semua kontrol.
 
@@ -139,7 +140,7 @@ src/content/ui.js,ui-styles.js FAB/panel/toast/settings (closed Shadow DOM)
 src/popup/ · src/options/      toolbar popup & halaman pengaturan
 src/watchparty/watchparty.js   adapter WatchParty (payload dari background)
 src/shared/                    util · rules (klasifikasi) · title-cleaner · store (dedupe/rank) ·
-                               subtitles (3 provider + SRT→VTT + unzip) · dom-scanner · i18n (en/id) ·
+                               subtitles (4 provider: Wyzie/SubDL/OpenSubtitles/YIFY + SRT→VTT + unzip) · dom-scanner · i18n (en/id) ·
                                icons (generate dari Lucide) · updater (rule pack + patch bertanda tangan) ·
                                watchparty-auto (otomasi form)
 src/vendor/                    motion.min.js (UMD, animasi) + catatan lisensi

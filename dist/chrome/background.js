@@ -16,7 +16,7 @@
   'use strict';
 
   const SR = (root.SR = root.SR || {});
-  SR.VERSION = '1.1.4';
+  SR.VERSION = '1.1.22';
   SR.NS = 'streamRadar'; // message channel id / storage prefix
   SR.PREFIX = 'srad'; // css class prefix
 
@@ -250,17 +250,29 @@
       if (category === 'blob' || category === 'segment' || category === 'texttrack') return false;
       let path = String(url);
       try { path = new URL(url).pathname; } catch (_) {}
+      // WatchParty's HLS check is `src.includes('.m3u8')`. Only our own query
+      // hint (or a real path extension) counts — encoded inner URLs in
+      // ?to=/ ?url= must not make a redirect look like a playlist.
+      if (/[?&]srad=playlist\.m3u8/i.test(url) || /#playlist\.m3u8/i.test(url)) return true;
       // 1) A media extension on the PATH is directly playable. This wins over
       //    everything: real HLS CDNs often serve .../api/playlist.m3u8, so a
       //    resolver-looking path must not veto an explicit manifest/file.
       if (/\.(m3u8|mpd|mp4|webm|mkv|mov|m4v|m3u)(\?|#|$)/i.test(path)) return true;
       if (util.isHlsProxy(url)) return true;
-      // 2) A classified direct-media category (content-type/parsed manifest,
-      //    served without a clean extension) is playable too.
-      if (category === 'hls' || category === 'dash' || category === 'mp4' || category === 'webm') return true;
-      // 3) Generic/other URLs that point at a resolver/gateway endpoint return a
-      //    page or JSON, not media (e.g. d.shows.st/api?d=<token>): reject those.
-      if (/(^|\/)(api|resolve|redirect|gateway|link|source|get|serve)(\/|$)/i.test(path)) return false;
+      // 2) Resolver/gateway endpoints return JSON/HTML (d.shows.st/api?d=…).
+      //    Only veto when we do NOT already know this is media (67movies serves
+      //    real HLS at /api?d= and /mpd/<token> — those must go to Watch Party).
+      const mediaCat = category === 'hls' || category === 'dash' || category === 'mp4' || category === 'webm';
+      if (!mediaCat) {
+        try {
+          const segs = path.replace(/\/+$/, '').split('/');
+          const last = String(segs[segs.length - 1] || '').toLowerCase();
+          if (last === 'api' || last === 'resolve' || last === 'redirect' || last === 'gateway') return false;
+        } catch (_) {}
+      }
+      // 3) A classified direct-media category (content-type/parsed manifest,
+      //    served without a clean extension, including token /mpd/<id>).
+      if (mediaCat) return true;
       return false;
     },
 
@@ -1654,6 +1666,15 @@
 
     /* --- extras: canonical slug + breadcrumbs + IMDb id ----------- */
     res.slug = firstMeta(doc, ['link[rel="canonical"]']).replace(/^https?:\/\//, '');
+    const extraImdb =
+      firstMeta(doc, [
+        'meta[property="imdb:id"]',
+        'meta[name="imdb:id"]',
+        'meta[property="video:imdb"]',
+        'meta[itemprop="sameAs"]',
+      ]) || '';
+    const fromExtra = extraImdb.match(/tt\d{6,10}/i);
+    if (fromExtra && !res.info.imdbId) res.info.imdbId = fromExtra[0];
     try {
       const crumb = [...doc.querySelectorAll('a[rel="nofollow"], .breadcrumb a, [itemprop="itemListElement"]')].map((a) => a.textContent.trim()).filter(Boolean);
       if (crumb.length) res.crumbs = crumb.slice(0, 6).join(' > ');
@@ -1662,6 +1683,173 @@
         .map((a) => a.href);
     } catch (_) {}
     return res;
+  }
+
+  function namesMatch(a, b) {
+    const qn = (s) =>
+      String(s || '')
+        .toLowerCase()
+        .normalize('NFKD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]+/g, ' ')
+        .trim();
+    const na = qn(a);
+    const nb = qn(b);
+    if (!na || !nb) return false;
+    if (na === nb) return true;
+    if (na.indexOf(nb) >= 0 || nb.indexOf(na) >= 0) return true;
+    const tokens = na.split(' ').filter((t) => t.length > 2);
+    if (!tokens.length) return false;
+    const hit = tokens.filter((t) => nb.indexOf(t) >= 0).length;
+    return hit / tokens.length >= 0.6;
+  }
+
+  function isNoiseId(n) {
+    const s = String(n || '');
+    if (!s) return true;
+    if (/^(19|20)\d{2}$/.test(s)) return true;
+    if (/^(360|480|720|1080|1440|2160)$/.test(s)) return true;
+    return false;
+  }
+
+  function mergeCatalog(into, extra) {
+    if (!extra) return into;
+    if (extra.imdbId && !into.imdbId) into.imdbId = extra.imdbId;
+    if (extra.tmdbId && !into.tmdbId) into.tmdbId = extra.tmdbId;
+    if (extra.kind && (!into.kind || into.kind === 'movie')) into.kind = extra.kind;
+    return into;
+  }
+
+  /**
+   * Catalog ids hiding in any watch-site URL (not 67movies-only):
+   *   /watch/movie/10389  /embed/tv/1396  ?tmdb=10389  …/tt0314196  slug-10389
+   */
+  function idsFromUrl(raw) {
+    const s = String(raw || '');
+    if (!s) return {};
+    const out = {};
+    const imdb = s.match(/\b(tt\d{6,10})\b/i);
+    if (imdb) {
+      out.imdbId = imdb[1];
+      out.kind = 'movie';
+    } else {
+      const qImdb = s.match(/[?&#](?:imdb(?:_?id)?|imdbid)\s*=\s*(tt\d{6,10}|\d{6,10})\b/i);
+      if (qImdb) {
+        const v = qImdb[1];
+        out.imdbId = /^tt/i.test(v) ? v : 'tt' + v;
+        out.kind = 'movie';
+      }
+    }
+    const tmdbOrg = s.match(/themoviedb\.org\/(movie|tv)\/(\d{2,8})/i);
+    if (tmdbOrg && !isNoiseId(tmdbOrg[2])) {
+      out.tmdbId = tmdbOrg[2];
+      out.kind = tmdbOrg[1].toLowerCase() === 'tv' ? 'episode' : 'movie';
+      return out;
+    }
+    const qTmdb = s.match(/[?&#](?:tmdb(?:_?id)?|tmdbid)\s*=\s*(\d{2,8})\b/i);
+    if (qTmdb && !isNoiseId(qTmdb[1])) {
+      out.tmdbId = qTmdb[1];
+      out.kind = out.kind || 'movie';
+    }
+    const qOther = s.match(/[?&#](?:film_id|movie_id|media_id|video_id|show_id|episode_id)\s*=\s*(\d{2,8})\b/i);
+    if (qOther && !isNoiseId(qOther[1]) && !out.tmdbId) {
+      out.tmdbId = qOther[1];
+      out.kind = out.kind || 'movie';
+    }
+    const tvPath = s.match(/\/(?:embed\/|player\/|play\/|watch\/|stream\/|nonton\/)?(?:tv|series|shows?|episode)\/(?:tmdb\/)?(\d{2,8})(?:\/|\.html?|$|\?|#|&)/i);
+    if (tvPath && !isNoiseId(tvPath[1])) {
+      out.tmdbId = out.tmdbId || tvPath[1];
+      out.kind = 'episode';
+      return out;
+    }
+    const moviePath = s.match(/\/(?:embed\/|player\/|play\/|watch\/|stream\/|nonton\/)?(?:movies?|films?|title)\/(?:tmdb\/)?(\d{2,8})(?:\/|\.html?|$|\?|#|&)/i);
+    if (moviePath && !isNoiseId(moviePath[1])) {
+      out.tmdbId = out.tmdbId || moviePath[1];
+      out.kind = out.kind || 'movie';
+      return out;
+    }
+    // id-first slugs:  /movie/10389-the-eye.html   /films/1396-arcane
+    const idSlug = s.match(/\/(?:embed\/|player\/|play\/|watch\/|stream\/|nonton\/)?(?:movies?|films?|title|tv|series|shows?)\/(\d{2,8})[-_][a-z0-9._-]+(?:\/|\.html?|$|\?|#)/i);
+    if (idSlug && !isNoiseId(idSlug[1]) && !out.tmdbId) {
+      out.tmdbId = idSlug[1];
+      out.kind = /\/(?:tv|series|shows?)\//i.test(s) ? 'episode' : out.kind || 'movie';
+    }
+    // short media prefixes:  /film/1234  /detail/1234  /view/1234  /show/1234
+    const mediaPath = s.match(/\/(?:film|detail|view|show|videos?|media|episode|ep)\/(\d{2,8})(?:\/|\.html?|$|\?|#)/i);
+    if (mediaPath && !isNoiseId(mediaPath[1]) && !out.tmdbId) {
+      out.tmdbId = mediaPath[1];
+      out.kind = /\/(?:episode|ep)\//i.test(s) ? 'episode' : out.kind || 'movie';
+    }
+    const unlabeled = s.match(/\/(?:watch|play|nonton|films?)\/(\d{2,8})(?:\/|\.html?|$|\?|#)/i);
+    if (unlabeled && !isNoiseId(unlabeled[1]) && !out.tmdbId) {
+      out.tmdbId = unlabeled[1];
+      out.kind = out.kind || 'movie';
+    }
+    if (!out.tmdbId) {
+      const slug = s.match(/\/(?:movies?|films?|watch|tv|embed|play)\/[a-z0-9._-]*?(?:-|_|\/)(\d{3,8})(?:\/|\.html?|$|\?|#)/i);
+      if (slug && !isNoiseId(slug[1])) {
+        out.tmdbId = slug[1];
+        out.kind = /\/(?:tv|series|shows?)\//i.test(s) ? 'episode' : out.kind || 'movie';
+      }
+    }
+    return out;
+  }
+
+  function idsFromToken(raw) {
+    const s = String(raw || '').trim();
+    if (!s) return {};
+    if (/^tt\d{6,10}$/i.test(s)) return { imdbId: s, kind: 'movie' };
+    if (/^\d{2,8}$/.test(s) && !isNoiseId(s)) return { tmdbId: s, kind: 'movie' };
+    return idsFromUrl(s);
+  }
+
+  /** Location, canonical, og:url, iframes, data-imdb / data-tmdb — any site. */
+  function idsFromDoc(doc) {
+    const acc = {};
+    if (!doc) return acc;
+    const blobs = [];
+    const push = (v) => {
+      if (!v) return;
+      const s = String(v).trim();
+      if (s && blobs.length < 40) blobs.push(s);
+    };
+    push((doc.defaultView && doc.defaultView.location && doc.defaultView.location.href) || (doc.location && doc.location.href) || doc.URL || '');
+    push(firstMeta(doc, ['link[rel="canonical"]', 'meta[property="og:url"]', 'meta[name="og:url"]']));
+    try {
+      const nodes = doc.querySelectorAll(
+        'iframe[src], iframe[data-src], embed[src], object[data], [data-imdb], [data-tmdb], [data-imdb-id], [data-tmdb-id], [data-media-id], a[href*="imdb.com"], a[href*="themoviedb.org"], a[href*="/embed/"], a[href*="/watch/"]'
+      );
+      for (const el of nodes) {
+        if (blobs.length >= 38) break;
+        push(el.getAttribute('src') || el.getAttribute('data-src') || el.getAttribute('data') || el.getAttribute('href') || '');
+        push(el.getAttribute('data-imdb') || el.getAttribute('data-imdb-id') || '');
+        push(el.getAttribute('data-tmdb') || el.getAttribute('data-tmdb-id') || el.getAttribute('data-media-id') || '');
+      }
+    } catch (_) {}
+    for (let i = 0; i < blobs.length; i++) {
+      mergeCatalog(acc, i === 0 ? idsFromUrl(blobs[i]) : idsFromToken(blobs[i]));
+      if (acc.imdbId && acc.tmdbId) break;
+    }
+    return acc;
+  }
+
+  function parseTmdbHtml(html) {
+    const src = String(html || '');
+    let name = '';
+    const og = src.match(/property=["']og:title["'][^>]*content=["']([^"']+)["']/i) || src.match(/content=["']([^"']+)["'][^>]*property=["']og:title["']/i);
+    if (og) name = og[1];
+    if (!name) {
+      const t = src.match(/<title>([^<]+)<\/title>/i);
+      if (t) name = t[1];
+    }
+    name = String(name || '')
+      .replace(/\s*[—–|-]\s*The Movie Database.*$/i, '')
+      .replace(/\s*\|\s*TMDB.*$/i, '')
+      .trim();
+    const year = (name.match(/\(((?:19|20)\d{2})\)/) || [])[1] || '';
+    name = name.replace(/\s*\((?:19|20)\d{2}\)\s*$/, '').trim();
+    const imdb = (src.match(/imdb\.com\/title\/(tt\d{6,10})/i) || [])[1] || '';
+    return { name: name, year: year, imdbId: imdb };
   }
 
   /**
@@ -1682,13 +1870,26 @@
     }
     if (!best) best = clean(coll.slug ? coll.slug.replace(/-/g, ' ') : (doc && doc.title) || '', { source: 'fallback' });
 
+    const href =
+      (doc.defaultView && doc.defaultView.location && doc.defaultView.location.href) ||
+      (doc.location && doc.location.href) ||
+      doc.URL ||
+      '';
+    let fromUrl = idsFromDoc(doc);
+    if (!fromUrl.tmdbId && !fromUrl.imdbId) fromUrl = idsFromUrl(coll.slug ? 'https://x/' + coll.slug : '');
+    if (fromUrl.tmdbId) best.urlTmdbId = fromUrl.tmdbId;
+    if (fromUrl.imdbId && !best.imdbId) best.imdbId = fromUrl.imdbId;
+    if (fromUrl.kind && (best.kind === 'unknown' || !best.title)) best.kind = fromUrl.kind;
+    if (fromUrl.tmdbId && !best.title) best.tmdbId = fromUrl.tmdbId;
+    if (href) best.url = best.url || href;
+
     if (coll.info && Object.keys(coll.info).length) {
       best.year = best.year || coll.info.year || null;
       best.season = best.season || (coll.info.season ? String(coll.info.season).padStart(2, '0') : null);
       best.episode = best.episode || (coll.info.episode ? String(coll.info.episode).padStart(2, '0') : null);
       best.poster = coll.info.poster || coll.slug || '';
-      best.imdbId = coll.info.imdbId || '';
-      best.kind = coll.info.kind !== 'unknown' ? coll.info.kind : best.kind;
+      best.imdbId = coll.info.imdbId || best.imdbId || '';
+      best.kind = coll.info.kind && coll.info.kind !== 'unknown' ? coll.info.kind : best.kind;
       const fromLinks = (coll.links.join(' ').match(/tt\d{6,10}/i) || [])[0];
       if (!best.imdbId && fromLinks) best.imdbId = fromLinks;
       const tmdb = (coll.links.join(' ').match(/themoviedb\.org\/(?:movie|tv)\/(\d+)/i) || [])[1];
@@ -1696,6 +1897,147 @@
     }
     best.mediaFromMeta = coll.media;
     return best;
+  }
+
+  async function hydrateTmdb(id, kind, fetchImpl) {
+    const num = String(id || '').replace(/\D/g, '');
+    if (!num || !fetchImpl) return {};
+    const first = kind === 'episode' || kind === 'tv' || kind === 'series' ? 'tv' : 'movie';
+    const paths = first === 'tv' ? ['tv', 'movie'] : ['movie', 'tv'];
+    for (let i = 0; i < paths.length; i++) {
+      const path = paths[i];
+      try {
+        const res = await fetchImpl('https://www.themoviedb.org/' + path + '/' + num, { headers: { Accept: 'text/html' } });
+        if (!res || !res.ok) continue;
+        const html = typeof res.text === 'function' ? await res.text() : '';
+        const parsed = parseTmdbHtml(html);
+        if (!parsed.name) continue;
+        return { tmdbId: num, name: parsed.name, year: parsed.year, imdbId: parsed.imdbId, kind: path === 'tv' ? 'episode' : 'movie' };
+      } catch (_) {}
+    }
+    return {};
+  }
+
+  /**
+   * Resolve IMDb/TMDB ids from a cleaned title when the page has none.
+   * Catalog ids in the page URL (67movies /watch/movie/10389) are verified
+   * against the TMDB page name. Uses IMDb's public suggestion endpoint (no key). Fail-soft.
+   */
+  async function lookupIds(want, opts) {
+    const o = opts || {};
+    const fetchImpl = o.fetchImpl || (SR.util && SR.util.fetchImpl ? SR.util.fetchImpl.bind(SR.util) : null) || (typeof fetch === 'function' ? fetch : null);
+    if (!fetchImpl) return {};
+    const urlTmdb = String((want && (want.urlTmdbId || want.tmdbId)) || '').replace(/\D/g, '');
+    let hydrated = {};
+    if (urlTmdb) hydrated = await hydrateTmdb(urlTmdb, want && want.kind, fetchImpl);
+    const title = String((want && want.title) || hydrated.name || '').trim();
+    const out = {};
+    if (urlTmdb) {
+      const pageTitle = String((want && want.title) || '').trim();
+      const keepId = !pageTitle || (hydrated.name && namesMatch(pageTitle, hydrated.name));
+      if (keepId) {
+        out.tmdbId = urlTmdb;
+        if (hydrated.name) out.name = hydrated.name;
+        if (hydrated.year) out.year = hydrated.year;
+        if (hydrated.imdbId) out.imdbId = hydrated.imdbId;
+        if (hydrated.kind) out.kind = hydrated.kind;
+      }
+    }
+    if (!title || title.length < 2) return out;
+    const slug = title
+      .toLowerCase()
+      .normalize('NFKD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_|_$/g, '')
+      .slice(0, 48);
+    if (!slug) return out;
+    const url = 'https://v2.sg.media-imdb.com/suggestion/' + slug[0] + '/' + encodeURIComponent(slug) + '.json';
+    const wantYear = want.year ? String(want.year) : '';
+    const wantEp = !!(want.season || want.episode);
+    const qn = (s) =>
+      String(s || '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, ' ')
+        .trim();
+    const q = qn(title);
+    const scoreName = (nameRaw, yearRaw, kindRaw) => {
+      const name = qn(nameRaw);
+      if (!name) return -1e9;
+      let sc = 0;
+      if (name === q) sc += 80;
+      else if (name.indexOf(q) >= 0 || q.indexOf(name) >= 0) sc += 50;
+      else {
+        const tokens = q.split(' ').filter((t) => t.length > 2);
+        const hit = tokens.filter((t) => name.indexOf(t) >= 0).length;
+        sc += tokens.length ? Math.round((hit / tokens.length) * 40) : 0;
+      }
+      if (wantYear && String(yearRaw || '') === wantYear) sc += 25;
+      else if (wantYear && yearRaw && Math.abs(Number(yearRaw) - Number(wantYear)) > 1) sc -= 20;
+      const kind = String(kindRaw || '').toLowerCase();
+      if (wantEp && /tv|series|episode/.test(kind)) sc += 12;
+      if (!wantEp && /movie|feature|video/.test(kind)) sc += 8;
+      return sc;
+    };
+    const readJson = async (res) => {
+      if (!res || !res.ok) return null;
+      const text = typeof res.text === 'function' ? await res.text() : '';
+      return SR.util && SR.util.safeJSON ? SR.util.safeJSON(text, null) : JSON.parse(text || '{}');
+    };
+    try {
+      const json = await readJson(await fetchImpl(url, { headers: { Accept: 'application/json' } }));
+      const rows = (json && json.d) || [];
+      let best = null;
+      let bestScore = -1e9;
+      for (const r of rows) {
+        const id = String(r.id || '');
+        if (!/^tt\d{6,10}$/i.test(id)) continue;
+        const kind = String(r.qid || r.q || '').toLowerCase();
+        if (/game|podcast/.test(kind)) continue;
+        const sc = scoreName(r.l || r.s || '', r.y, kind);
+        if (sc > bestScore) {
+          bestScore = sc;
+          best = r;
+        }
+      }
+      if (best && bestScore >= 28) {
+        return Object.assign({}, out, {
+          imdbId: String(best.id),
+          year: (best.y ? String(best.y) : '') || out.year || '',
+          name: best.l || out.name || title,
+          kind: /tv|series|episode/.test(String(best.qid || '')) ? 'episode' : out.kind || 'movie',
+          tmdbId: out.tmdbId || '',
+        });
+      }
+    } catch (_) {}
+    try {
+      const kind = wantEp ? 'series' : 'movie';
+      const cUrl =
+        'https://v3-cinemeta.strem.io/catalog/' + kind + '/top/search=' + encodeURIComponent(title) + '.json';
+      const json = await readJson(await fetchImpl(cUrl, { headers: { Accept: 'application/json' } }));
+      const rows = (json && json.metas) || [];
+      let best = null;
+      let bestScore = -1e9;
+      for (const r of rows) {
+        const id = String(r.imdb_id || r.imdbId || '');
+        if (!/^tt\d{6,10}$/i.test(id)) continue;
+        const sc = scoreName(r.name || r.title || '', r.year || r.releaseInfo, r.type);
+        if (sc > bestScore) {
+          bestScore = sc;
+          best = r;
+        }
+      }
+      if (!best || bestScore < 28) return out;
+      return Object.assign({}, out, {
+        imdbId: String(best.imdb_id || best.imdbId),
+        tmdbId: out.tmdbId || (best.id && /^\d+$/.test(String(best.id)) ? String(best.id) : ''),
+        year: (best.year ? String(best.year) : '') || out.year || '',
+        name: best.name || out.name || title,
+        kind: /series|tv/.test(String(best.type || '')) ? 'episode' : out.kind || 'movie',
+      });
+    } catch (_) {
+      return out;
+    }
   }
 
   /** Build a search-friendly query for subtitle providers. */
@@ -1716,6 +2058,11 @@
     clean,
     collect,
     resolve,
+    lookupIds,
+    idsFromUrl,
+    idsFromDoc,
+    namesMatch,
+    hydrateTmdb,
     normalize,
     searchQuery,
     episodeLabel,
@@ -1963,6 +2310,31 @@
     return false;
   };
 
+  subs.matchesLang = function (item, code) {
+    const c = String(code || '').toLowerCase();
+    if (!c || c === 'all') return true;
+    if (c === 'id' || c === 'ind') return subs.isIndonesian(item);
+    const lang = String(item.langCode || item.lang || item.language || '').toLowerCase();
+    const name = String(item.langName || item.languageName || '').toLowerCase();
+    return lang === c || lang.indexOf(c) === 0 || (name && name.indexOf(c) === 0);
+  };
+
+  subs.filterByLang = function (list, settings) {
+    const lang = (settings && settings.subtitleLang) || 'id';
+    if (lang === 'all') return list;
+    const primary = list.filter((x) => subs.matchesLang(x, lang));
+    const extra = lang === 'id' ? [] : list.filter((x) => subs.isIndonesian(x));
+    const seen = new Set();
+    const out = [];
+    for (const it of primary.concat(extra)) {
+      const k = (it.provider || '') + '|' + (it.id || '') + '|' + (it.fileUrl || it.filename || '');
+      if (seen.has(k)) continue;
+      seen.add(k);
+      out.push(it);
+    }
+    return out.length ? out : list;
+  };
+
   subs.score = function (item, want) {
     const w = want || {};
     let s = 0;
@@ -1994,13 +2366,24 @@
     if (item.verified) s += 6;
     if (item.downloads) s += Math.min(15, Math.log10(item.downloads + 1) * 6);
     if (item.aiTranslated) s -= 12;
-    if (subs.isIndonesian(item)) s += 25;
+    const pref = String(w.lang || 'id').toLowerCase();
+    if (pref && pref !== 'all') {
+      if (subs.matchesLang(item, pref)) s += 28;
+      else if (subs.isIndonesian(item)) s += 18;
+    } else if (subs.isIndonesian(item)) s += 22;
     return s;
   };
 
   subs.filterIndonesian = function (list, strict) {
-    const kept = list.filter((x) => subs.isIndonesian(x));
-    return kept.length || strict ? kept : list;
+    return subs.filterByLang(list, { subtitleLang: strict ? 'id' : 'all' });
+  };
+
+  /** Wyzie `language=` query: always include Indonesian unless the user asked for all. */
+  subs.wyzieLanguageParam = function (settings) {
+    const lang = (settings && settings.subtitleLang) || 'id';
+    if (lang === 'all') return '';
+    if (lang === 'id') return 'id';
+    return 'id,' + lang;
   };
 
   /* ---------------------------------------------------------------- *
@@ -2029,8 +2412,8 @@
         params.set('season', String(want.season));
         params.set('episode', String(want.episode));
       }
-      const lang = settings.subtitleLang && settings.subtitleLang !== 'all' ? settings.subtitleLang : 'id';
-      params.set('language', lang);
+      const lang = subs.wyzieLanguageParam(settings);
+      if (lang) params.set('language', lang);
       params.set('format', 'srt');
       params.set('encoding', 'utf-8');
       params.set('source', 'all');
@@ -2076,7 +2459,7 @@
       if (key && url.indexOf('key=') < 0) {
         url += (url.indexOf('?') >= 0 ? '&' : '?') + 'key=' + encodeURIComponent(key);
       }
-      return await subs.loadSubtitleFile(url, { fetchImpl: f, want: 'id' });
+      return await subs.loadSubtitleFile(url, { fetchImpl: f, want: item.langCode || 'id' });
     },
   };
 
@@ -2261,7 +2644,11 @@
               fileUrl: /^https?:/.test(String(r.subtitle_link || '')) ? r.subtitle_link : base + r.subtitle_link,
               raw: r,
             }))
-            .filter((x) => subs.isIndonesian(x) || !settings.autoSubtitle);
+            .filter((x) => {
+              const lang = (settings && settings.subtitleLang) || 'id';
+              if (lang === 'all' || !settings.autoSubtitle) return true;
+              return subs.matchesLang(x, lang) || subs.isIndonesian(x);
+            });
           return { ok: true, items };
         } catch (e) {
           lastErr.push(base + ': ' + e.message);
@@ -2329,10 +2716,10 @@
     });
 
     const scored = deduped
-      .map((it) => Object.assign(it, { score: subs.score(it, want) }))
+      .map((it) => Object.assign(it, { score: subs.score(it, Object.assign({}, want, { lang: (settings && settings.subtitleLang) || 'id' })) }))
       .sort((a, b) => b.score - a.score);
 
-    const filtered = subs.filterIndonesian(scored, (settings.subtitleLang || 'id') !== 'all');
+    const filtered = subs.filterByLang(scored, settings);
     const list = (filtered.length ? filtered : scored).slice(0, o.limit || 25);
     list.forEach((it, i) => (it.rank = i + 1));
     return { results: list, providerInfo, errors };
@@ -2345,7 +2732,7 @@
     if (!provider) throw new Error('unknown provider ' + item.provider);
     const fetchImpl = o.fetchImpl || (util.fetchImpl ? util.fetchImpl.bind(util) : root.fetch);
     let text;
-    if (item.fileUrl) text = await subs.loadSubtitleFile(item.fileUrl, { fetchImpl, want: 'id' });
+    if (item.fileUrl) text = await subs.loadSubtitleFile(item.fileUrl, { fetchImpl, want: item.langCode || 'id' });
     else text = await provider.fetchFile(item, settings, { fetchImpl });
     if (!subs.looksLikeSubtitle(text)) throw new Error('file is not a subtitle track');
     return subs.srtToVtt(text);
@@ -2372,6 +2759,17 @@
       'panel.empty': 'No video found yet',
       'panel.emptyHint': 'Play the video, Stream Radar watches network, DOM, MSE, Service Worker and player internals at once.',
       'panel.detecting': 'Watching...',
+      'panel.untitled': 'Untitled stream',
+      'panel.subs.idle': 'Waiting',
+      'layer.wait': 'Watching',
+      'layer.waitDom': 'Scanning',
+      'layer.waitMse': 'Buffer',
+      'layer.waitSw': 'Cache',
+      'layer.waitHeu': 'Probe',
+      'layer.live': 'Live',
+      'layer.idle': 'Idle',
+      'layer.off': 'Off',
+      'layer.paused': 'Paused',
       'panel.paused': 'Auto-detect paused',
       'panel.ads': '{n} ad requests hidden',
       'panel.toggleAds': 'Toggle ad and tracker requests',
@@ -2382,7 +2780,7 @@
       'panel.settings': 'Settings',
       'panel.openPanel': 'Open big panel',
       'panel.items': '{n} streams',
-      'panel.subs.title': 'Indonesian subtitles',
+      'panel.subs.title': 'Subtitles',
       'panel.subs.searching': 'Searching subtitles...',
       'panel.subs.found': 'Subtitle found',
       'panel.subs.none': 'No subtitle found',
@@ -2439,8 +2837,8 @@
       'watchparty.reloadTab': 'Reload tab',
       'toast.found': '{n} media detected on this page',
       'toast.newmedia': 'New {type} stream detected',
-      'toast.subs': 'Indonesian subtitle found: {name}',
-      'toast.subsNone': 'No Indonesian subtitle found for {title}',
+      'toast.subs': 'Subtitle found: {name}',
+      'toast.subsNone': 'No subtitle found for {title}',
       'toast.copied': 'URL copied to clipboard',
       'toast.error': 'Error: {msg}',
       'toast.watchparty': 'Opening WatchParty...',
@@ -2510,7 +2908,7 @@
       'panel.series': 'Series',
       'panel.layers': '{n} of 5 layers active',
       'panel.none': 'none reported yet',
-      'panel.subs.hint': 'Add a SubDL or OpenSubtitles key in Settings to fetch Indonesian subtitles.',
+      'panel.subs.hint': 'Add a Wyzie, SubDL or OpenSubtitles key in Settings. Wyzie uses the IMDb/TMDB id of the current title.',
       'action.use': 'Use',
       'action.pick': 'Pick',
       'action.downloadPlaylist': 'Save playlist',
@@ -2561,13 +2959,13 @@
       'options.recordCap': 'Recording cap (MB)',
       'options.subsLead': 'Wyzie, SubDL and OpenSubtitles need a free key; YIFY works without one. Keys stay in your browser.',
       'options.providers': 'Providers',
-      'options.wyzieNote': '(Indonesian, needs IMDb/TMDB id)',
+      'options.wyzieNote': '(needs IMDb/TMDB id of the current title)',
       'options.yifyNote': '(no key, often offline)',
       'options.wyzieHint': 'Free key at store.wyzie.io/redeem. Paste it below; never commit or share it.',
       'options.subdlHint': 'subdl.com then Account then API. Paste the key below.',
       'options.osHint': 'api.opensubtitles.com, Developers, Create App.',
       'options.langFilter': 'Language filter',
-      'options.langIdOnly': 'Indonesian only',
+      'options.langIdOnly': 'Indonesian (priority)',
       'options.langEn': 'English',
       'options.testSearch': 'Test the search',
       'options.fTitle': 'Title',
@@ -2603,6 +3001,17 @@
       'panel.empty': 'Belum ada video terdeteksi',
       'panel.emptyHint': 'Putar videonya, Stream Radar memantau jaringan, DOM, MSE, Service Worker dan internal player secara bersamaan.',
       'panel.detecting': 'Mendeteksi...',
+      'panel.untitled': 'Stream tanpa judul',
+      'panel.subs.idle': 'Menunggu',
+      'layer.wait': 'Memantau',
+      'layer.waitDom': 'Memindai',
+      'layer.waitMse': 'Buffer',
+      'layer.waitSw': 'Cache',
+      'layer.waitHeu': 'Probe',
+      'layer.live': 'Aktif',
+      'layer.idle': 'Siaga',
+      'layer.off': 'Mati',
+      'layer.paused': 'Jeda',
       'panel.paused': 'Deteksi otomatis dijeda',
       'panel.ads': '{n} request iklan disembunyikan',
       'panel.toggleAds': 'Tampilkan atau sembunyikan request iklan dan tracker',
@@ -2613,7 +3022,7 @@
       'panel.settings': 'Pengaturan',
       'panel.openPanel': 'Buka panel besar',
       'panel.items': '{n} stream',
-      'panel.subs.title': 'Subtitle Indonesia',
+      'panel.subs.title': 'Subtitle',
       'panel.subs.searching': 'Mencari subtitle...',
       'panel.subs.found': 'Subtitle ditemukan',
       'panel.subs.none': 'Subtitle tidak ditemukan',
@@ -2670,8 +3079,8 @@
       'watchparty.reloadTab': 'Muat ulang tab',
       'toast.found': '{n} media terdeteksi di halaman ini',
       'toast.newmedia': 'Stream {type} baru terdeteksi',
-      'toast.subs': 'Subtitle Indonesia ditemukan: {name}',
-      'toast.subsNone': 'Subtitle Indonesia tidak ditemukan untuk {title}',
+      'toast.subs': 'Subtitle ditemukan: {name}',
+      'toast.subsNone': 'Subtitle tidak ditemukan untuk {title}',
       'toast.copied': 'URL disalin ke clipboard',
       'toast.error': 'Error: {msg}',
       'toast.watchparty': 'Membuka WatchParty...',
@@ -2792,13 +3201,13 @@
       'options.recordCap': 'Batas rekam (MB)',
       'options.subsLead': 'Wyzie, SubDL dan OpenSubtitles butuh kunci gratis; YIFY tanpa kunci. Kunci hanya tersimpan di browsermu.',
       'options.providers': 'Penyedia',
-      'options.wyzieNote': '(Indonesia, butuh id IMDb/TMDB)',
+      'options.wyzieNote': '(butuh id IMDb/TMDB judul yang sedang diputar)',
       'options.yifyNote': '(tanpa kunci, sering mati)',
       'options.wyzieHint': 'Kunci gratis di store.wyzie.io/redeem. Tempel di bawah; jangan di-commit atau dibagikan.',
       'options.subdlHint': 'subdl.com lalu Account lalu API. Tempel kuncinya di bawah.',
       'options.osHint': 'api.opensubtitles.com, Developers, Create App.',
       'options.langFilter': 'Filter bahasa',
-      'options.langIdOnly': 'Hanya Indonesia',
+      'options.langIdOnly': 'Indonesia (prioritas)',
       'options.langEn': 'Inggris',
       'options.testSearch': 'Uji pencarian',
       'options.fTitle': 'Judul',
@@ -3592,6 +4001,7 @@
   const PLAY_PREFIX = 'srad:play:';
   const HISTORY_KEY = 'srad:history';
   const playTabs = new Map();
+  const partyTabs = new Map();
   const t = (k, v) => SR.i18n.t(k, v);
 
   let settings = Object.assign({}, SR.defaults);
@@ -3906,7 +4316,7 @@
       if (e && !e.isAd) count++;
     }
     try {
-      api.action.setBadgeBackgroundColor({ color: count ? '#6d5efc' : '#94a3b8' });
+      api.action.setBadgeBackgroundColor({ color: count ? '#3d5248' : '#8a847a' });
       api.action.setBadgeText({ tabId: tabId, text: count ? (count > 99 ? '99+' : String(count)) : '' });
       api.action.setTitle({ tabId: tabId, title: count ? t('fab.label', { n: count }) : 'Stream Radar: ' + t('panel.empty') });
     } catch (_) {}
@@ -4069,7 +4479,7 @@
     const st = getTab(tabId);
     if (!st || !st.title) return;
     if (!force && !settings.autoSubtitle) return;
-    if (!st.title.title && !st.title.imdbId) return;
+    if (!st.title.title && !st.title.imdbId && !st.title.tmdbId && !st.title.urlTmdbId) return;
     if (!force && st.sub && (st.sub.status === 'searching' || (st.sub.status === 'found' && Date.now() - st.sub.at < 600000))) return;
     const prev = subTimers.get(tabId);
     if (prev) prev.cancel();
@@ -4088,18 +4498,47 @@
       season: st.title.season || null,
       episode: st.title.episode || null,
       imdbId: st.title.imdbId || null,
-      tmdbId: st.title.tmdbId || null,
+      tmdbId: st.title.tmdbId || st.title.urlTmdbId || null,
+      urlTmdbId: st.title.urlTmdbId || st.title.tmdbId || null,
+      kind: st.title.kind || 'unknown',
     };
-    st.sub = { status: 'searching', items: st.sub.items || [], query: want.title, at: Date.now() };
+    const needLookup = !want.imdbId || !want.title || (want.urlTmdbId && !st.title.tmdbId);
+    if (needLookup && SR.title && SR.title.lookupIds) {
+      try {
+        const ids = await SR.title.lookupIds(want, {});
+        if (ids && (ids.imdbId || ids.tmdbId || ids.name)) {
+          if (ids.imdbId && !want.imdbId) {
+            want.imdbId = ids.imdbId;
+            st.title.imdbId = ids.imdbId;
+          }
+          if (ids.tmdbId) {
+            want.tmdbId = ids.tmdbId;
+            st.title.tmdbId = ids.tmdbId;
+          }
+          if (ids.year && !st.title.year) {
+            want.year = ids.year;
+            st.title.year = ids.year;
+          }
+          if (ids.name && !st.title.title) {
+            want.title = ids.name;
+            want.show = ids.name;
+            st.title.title = ids.name;
+            st.title.isJunk = false;
+          }
+          if (ids.kind && (st.title.kind === 'unknown' || !st.title.title)) st.title.kind = ids.kind;
+        }
+      } catch (_) {}
+    }
+    st.sub = { status: 'searching', items: st.sub.items || [], query: want.title, year: want.year, imdbId: want.imdbId || '', tmdbId: want.tmdbId || '', at: Date.now() };
     broadcast(tabId, 'sub');
     try {
       const res = await SR.subs.search(want, settings, {});
-      st.sub = { status: res.results.length ? 'found' : 'none', items: res.results.slice(0, 12), providers: res.providerInfo, errors: res.errors, query: want.title, at: Date.now() };
+      st.sub = { status: res.results.length ? 'found' : 'none', items: res.results.slice(0, 12), providers: res.providerInfo, errors: res.errors, query: want.title, year: want.year, imdbId: want.imdbId || '', tmdbId: want.tmdbId || '', at: Date.now() };
       if (res.results.length) {
         const best = res.results[0];
         try {
           const vtt = await SR.subs.resolve(best, settings, {});
-          st.pendingSub = { vtt: vtt, name: best.filename || best.name, provider: best.provider };
+          st.pendingSub = { vtt: vtt, name: best.filename || best.name, provider: best.provider, lang: best.langCode || '' };
           st.sub.chosen = { index: 0, name: best.name };
           toastTo(tabId, t('toast.subs', { name: shorten(best.name || best.filename) }), 'ok', { id: 'sub-attach', label: t('panel.subs.attach') });
         } catch (e) {
@@ -4115,7 +4554,7 @@
         toastTo(tabId, t('toast.subsNone', { title: want.title || '?' }), 'warn');
       }
     } catch (e) {
-      st.sub = { status: 'error', items: st.sub.items || [], error: String((e && e.message) || e), query: want.title, at: Date.now() };
+      st.sub = { status: 'error', items: st.sub.items || [], error: String((e && e.message) || e), query: want.title, imdbId: want.imdbId || '', tmdbId: want.tmdbId || '', at: Date.now() };
       toastTo(tabId, t('toast.error', { msg: String((e && e.message) || e) }), 'err');
     }
     for (const e of st.store.byId.values()) if (e.sub && e.sub.status === 'searching') e.sub = { status: st.sub.status, name: (st.sub.items[0] || {}).name };
@@ -4130,9 +4569,27 @@
   /* ================================================================== *
    * WatchParty (PART 3)
    * ================================================================== */
-  // /create?video= auto-creates the room server-side and redirects into it.
+  // /create?video= auto-creates the room. Token URLs are multi-KB and 414 the
+  // query; there is no /watchNow route. Long URLs POST /createRoom then /watch{name}.
   function watchPartyCreateUrl(mediaUrl) {
-    return 'https://www.watchparty.me/create?video=' + encodeURIComponent(mediaUrl);
+    const encoded = encodeURIComponent(mediaUrl || '');
+    if (encoded.length > 1600) return 'https://www.watchparty.me/';
+    return 'https://www.watchparty.me/create?video=' + encoded;
+  }
+
+  async function createWatchPartyRoom(mediaUrl) {
+    try {
+      const res = await util.fetchImpl('https://www.watchparty.me/createRoom', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ video: String(mediaUrl || '').slice(0, 20000) }),
+      });
+      const data = await res.json();
+      if (data && data.name) return 'https://www.watchparty.me/watch' + data.name;
+    } catch (e) {
+      log('createRoom', String((e && e.message) || e));
+    }
+    return '';
   }
 
   // WatchParty's direct-URL mode only plays a file it can fetch as media
@@ -4158,19 +4615,64 @@
     return scored.length ? { url: scored[0].u, item: scored[0].it } : { url: null, item: first || null };
   }
 
+  function pickIndoItem(items) {
+    return (items || []).find((x) => SR.subs && SR.subs.isIndonesian(x)) || null;
+  }
+
+  async function ensurePartySubtitle(st) {
+    if (!st) return null;
+    if (!st.pendingSub && st.title && (st.title.title || st.title.imdbId || st.title.tmdbId || st.title.urlTmdbId)) {
+      try {
+        await runSubSearch(st.tabId);
+      } catch (_) {}
+    }
+    const items = (st.sub && st.sub.items) || [];
+    const indo = pickIndoItem(items);
+    if (indo) {
+      const already =
+        st.pendingSub &&
+        (st.pendingSub.lang === 'id' ||
+          (SR.subs &&
+            SR.subs.isIndonesian({
+              langCode: st.pendingSub.lang,
+              name: st.pendingSub.name,
+              filename: st.pendingSub.name,
+            })));
+      if (already) return { vtt: st.pendingSub.vtt, name: st.pendingSub.name, lang: 'id' };
+      try {
+        const vtt = await SR.subs.resolve(indo, settings, {});
+        return { vtt: vtt, name: indo.filename || indo.name, lang: 'id' };
+      } catch (_) {}
+    }
+    return st.pendingSub ? { vtt: st.pendingSub.vtt, name: st.pendingSub.name, lang: st.pendingSub.lang || '' } : null;
+  }
+
   async function launchWatchParty(st, itemId) {
-    const picked = pickPlayable(st, itemId);
-    const media = picked.item;
-    const url = picked.url;
-    if (!url) {
-      // No direct-playable stream found. A resolver/API link (or blob/segments)
-      // cannot be used by WatchParty direct mode; VBrowser can open the page.
+    const clicked = itemId ? st.store.byId.get(itemId) : null;
+    let picked = pickPlayable(st, itemId);
+    let media = picked.item || clicked;
+    let url = picked.url || (clicked && util.localPlayable(clicked.url, clicked.category) ? clicked.url : null);
+    if (!url && media && media.url && util.localPlayable(media.url, media.category)) url = media.url;
+    // Unwrap JSON resolvers BEFORE adding a .m3u8 hint — the hint would skip unwrap.
+    if (url && media && !/\.(m3u8|mpd|mp4|webm|mkv|m4v|mov)(\?|#|$)/i.test(url) && !util.isHlsProxy(url) && util.localPlayable(url, media.category)) {
+      const resolved = await resolvePlaySource(st, media, url);
+      if (resolved && resolved.url) {
+        url = resolved.url;
+        media = Object.assign({}, media, { url: url, category: resolved.category || media.category });
+      }
+    }
+    if (url) url = await preferWatchPartyUrl(st, media, url);
+    // Never fall through to Play / in-page overlay — Watch Party must open a room.
+    if (!url || !util.watchPartyPlayable(url, (media && media.category) || '')) {
       return { ok: false, reason: t('watchparty.needDirect'), hint: 'vbrowser' };
     }
     const ti = st.title || {};
     const roomName = String(
       ti.title ? ti.title + (ti.year ? ' (' + ti.year + ')' : '') + (ti.episode ? ' S' + (ti.season || '01') + 'E' + ti.episode : '') : ti.raw || util.domain(st.url) || 'Stream Radar room'
     ).slice(0, 90);
+    const referer = pageReferer(st, media);
+    const origin = originOf(referer) || util.origin(url);
+    const partySub = await ensurePartySubtitle(st);
     const payload = {
       mediaUrl: url,
       roomName: roomName,
@@ -4178,18 +4680,32 @@
       category: media.category,
       quality: media.quality || '',
       title: st.title || null,
-      subtitle: st.pendingSub ? { vtt: st.pendingSub.vtt, name: st.pendingSub.name } : null,
+      subtitle: partySub,
       autoJoin: settings.watchpartyAutoJoin !== false,
+      referer: referer,
+      origin: origin,
       createdAt: Date.now(),
     };
-    // WatchParty's /create?video=<url> route auto-creates a room and loads the
-    // video (it POSTs /createRoom then redirects to /watch<room>), exactly like
-    // the "Watch Party" button on rivestream etc. That is strictly better than
-    // /watchNow?url= which only pre-fills a form, so we open /create and keep the
-    // payload for the on-site adapter (user name + subtitle attach).
-    const target = watchPartyCreateUrl(url);
-    const tab = await api.tabs.create({ url: target, active: true }).catch(async () => await api.tabs.create({ url: target }));
-    if (tab && tab.id > 0) await api.storage.local.set({ [PARTY_PREFIX + tab.id]: payload });
+    const target = (encodeURIComponent(url).length > 1600 ? await createWatchPartyRoom(url) : '') || watchPartyCreateUrl(url);
+    // Park on watchparty.me, install Referer+CORS for this tab, THEN navigate to
+    // /create?video= — otherwise HLS.js races the first playlist fetch and spins.
+    const parking = 'https://www.watchparty.me/';
+    const tab = await api.tabs.create({ url: parking, active: true }).catch(async () => await api.tabs.create({ url: parking }));
+    if (tab && tab.id > 0) {
+      await api.storage.local.set({ [PARTY_PREFIX + tab.id]: payload });
+      await installPartyNetRules(tab.id, referer, origin, url);
+      if (target && target !== parking) {
+        try {
+          await api.tabs.update(tab.id, { url: target });
+        } catch (_) {
+          try {
+            await api.tabs.create({ url: target, active: true });
+          } catch (e) {
+            log('party navigate', String((e && e.message) || e));
+          }
+        }
+      }
+    }
     return { ok: true, tabId: tab && tab.id, payload: payload };
   }
 
@@ -4268,7 +4784,7 @@
       pageUrl: st.url || '',
       referer: referer,
       origin: origin,
-      subtitle: st.pendingSub ? { vtt: st.pendingSub.vtt, name: st.pendingSub.name } : null,
+      subtitle: st.pendingSub ? { vtt: st.pendingSub.vtt, name: st.pendingSub.name, lang: st.pendingSub.lang || '' } : null,
       theme: settings.theme || 'dark',
       lang: settings.lang && settings.lang !== 'auto' ? settings.lang : SR.i18n.get(),
       createdAt: Date.now(),
@@ -4343,12 +4859,83 @@
     const dnr = api.declarativeNetRequest;
     if (!dnr || !dnr.updateSessionRules) return;
     const ids = [8899];
-    if (tabId != null && tabId > 0) ids.push(9100 + (Number(tabId) % 800));
+    if (tabId != null && tabId > 0) {
+      const n = Number(tabId) % 800;
+      ids.push(9100 + n, 9200 + n, 9300 + n, 9400 + n, 9500 + n);
+    }
     try {
       await dnr.updateSessionRules({ removeRuleIds: ids });
     } catch (_) {}
   }
 
+  /** WatchParty.me fetches the CDN as watchparty.me — attach page Referer (IDM) and unlock CORS. */
+  function partyCdnDomains(mediaUrl) {
+    const host = util.host(mediaUrl || '');
+    const domain = util.domain(mediaUrl || '');
+    const out = [];
+    const push = (h) => {
+      if (!h || out.indexOf(h) >= 0) return;
+      if (!/^[a-z0-9.-]+$/i.test(h)) return;
+      out.push(h);
+    };
+    push(host);
+    push(domain);
+    return out;
+  }
+
+  async function installPartyNetRules(tabId, referer, origin, mediaUrl) {
+    const dnr = api.declarativeNetRequest;
+    if (!dnr || !dnr.updateSessionRules || tabId == null || tabId <= 0) return false;
+    const types = ['media', 'xmlhttprequest', 'other', 'image', 'object'];
+    const n = Number(tabId) % 800;
+    const reqId = 9200 + n;
+    const corsId = 9300 + n;
+    const removeRuleIds = [reqId, corsId, 9400 + n, 9500 + n];
+    const requestHeaders = [];
+    if (referer) requestHeaders.push({ header: 'Referer', operation: 'set', value: referer });
+    if (origin) requestHeaders.push({ header: 'Origin', operation: 'set', value: origin });
+    const responseHeaders = [
+      { header: 'Access-Control-Allow-Origin', operation: 'set', value: '*' },
+      { header: 'Access-Control-Allow-Headers', operation: 'set', value: '*' },
+      { header: 'Access-Control-Allow-Methods', operation: 'set', value: 'GET, HEAD, OPTIONS' },
+      { header: 'Cross-Origin-Resource-Policy', operation: 'set', value: 'cross-origin' },
+    ];
+    const domains = partyCdnDomains(mediaUrl);
+    const hostCond = { tabIds: [tabId], resourceTypes: types };
+    if (domains.length) hostCond.requestDomains = domains;
+    const addRules = [{ id: corsId, priority: 4, action: { type: 'modifyHeaders', responseHeaders: responseHeaders }, condition: hostCond }];
+    if (requestHeaders.length) {
+      addRules.push({ id: reqId, priority: 4, action: { type: 'modifyHeaders', requestHeaders: requestHeaders }, condition: hostCond });
+    }
+    const rec = { referer: referer, origin: origin, mediaUrl: mediaUrl };
+    try {
+      await dnr.updateSessionRules({ removeRuleIds: removeRuleIds, addRules: addRules });
+      partyTabs.set(tabId, rec);
+      try {
+        await api.storage.local.set({ ['srad:partynet:' + tabId]: rec });
+      } catch (_) {}
+      return true;
+    } catch (e) {
+      log('party dnr failed', String((e && e.message) || e));
+      try {
+        // CORS only — never rewrite Origin/Referer on watchparty.me's own XHR.
+        const loose = { tabIds: [tabId], resourceTypes: types };
+        if (domains.length) loose.requestDomains = domains;
+        await dnr.updateSessionRules({
+          removeRuleIds: removeRuleIds,
+          addRules: [{ id: corsId, priority: 4, action: { type: 'modifyHeaders', responseHeaders: responseHeaders }, condition: loose }],
+        });
+        partyTabs.set(tabId, rec);
+        try {
+          await api.storage.local.set({ ['srad:partynet:' + tabId]: rec });
+        } catch (_) {}
+        return true;
+      } catch (e2) {
+        log('party dnr fallback failed', String((e2 && e2.message) || e2));
+        return false;
+      }
+    }
+  }
   function categoryFromUrl(url, fallback) {
     if (/\.m3u8(\?|#|$)/i.test(url) || /\.m3u(\?|#|$)/i.test(url)) return 'hls';
     if (/\.mpd(\?|#|$)/i.test(url)) return 'dash';
@@ -4428,6 +5015,466 @@
     return fallback;
   }
 
+  /**
+   * Runs in the PAGE world. IDM plays because it reuses the tab request
+   * (cookies + Referer of the iframe that loaded the stream). We do the same:
+   * mount HLS.js in that frame. Do not fetch-probe (CORS/CSP hang). Serialized
+   * into scripting.executeScript — do not close over background state.
+   */
+  function inPagePlayFunc(session) {
+    try {
+      var url = session && session.url;
+      if (!url) return { played: false, reason: 'nourl' };
+      var here = '';
+      try {
+        here = String(location.hostname || '').toLowerCase();
+      } catch (_) {}
+      var want = String((session && session.host) || '').toLowerCase();
+      try {
+        if (!want) want = new URL(url).hostname.toLowerCase();
+      } catch (_) {}
+      var sameOrigin = false;
+      try {
+        sameOrigin = new URL(url, location.href).origin === location.origin;
+      } catch (_) {}
+      function tail(h) {
+        var p = String(h || '').split('.');
+        return p.length <= 2 ? h : p.slice(-2).join('.');
+      }
+      var related =
+        sameOrigin ||
+        (here &&
+          want &&
+          (here === want || here.endsWith('.' + want) || want.endsWith('.' + here) || tail(here) === tail(want)));
+      if (!session.force && !related) return { played: false, reason: 'host', host: here };
+      if (window.__sradPlaying) return { played: true, host: here, dup: 1 };
+
+      function codecsOf(level) {
+        return String((level && (level.videoCodec || level.codec || (level.attrs && level.attrs.CODECS))) || '').toLowerCase();
+      }
+      function isHevc(c) {
+        return /hvc1|hev1|hevc|dvh1|dvhe|av01/.test(c || '');
+      }
+      function pickAvcLevel(hls) {
+        var levels = (hls && hls.levels) || [];
+        var best = -1;
+        var bestScore = -1;
+        for (var i = 0; i < levels.length; i++) {
+          var c = codecsOf(levels[i]);
+          if (isHevc(c)) continue;
+          var h = Number(levels[i].height || 0);
+          if (h > 1080) continue;
+          var score = (h || 1) + (/avc/.test(c) ? 200 : 0);
+          if (score > bestScore) {
+            bestScore = score;
+            best = i;
+          }
+        }
+        if (best >= 0) return best;
+        for (var j = 0; j < levels.length; j++) {
+          if (isHevc(codecsOf(levels[j]))) continue;
+          var h2 = Number(levels[j].height || 0);
+          if (h2 >= bestScore) {
+            bestScore = h2;
+            best = j;
+          }
+        }
+        return best;
+      }
+      function mount(playUrl) {
+        var doc = document;
+        var old = doc.getElementById('srad-inpage');
+        if (old) old.remove();
+        var wrap = doc.createElement('div');
+        wrap.id = 'srad-inpage';
+        wrap.setAttribute('style', 'position:fixed;inset:0;z-index:2147483647;background:#000;display:flex;flex-direction:column;');
+        var bar = doc.createElement('div');
+        bar.setAttribute('style', 'display:flex;justify-content:flex-end;padding:8px 12px;background:#111;flex:0 0 auto;');
+        var close = doc.createElement('button');
+        close.textContent = 'Close';
+        close.setAttribute('style', 'color:#fff;background:#333;border:0;padding:6px 12px;cursor:pointer;border-radius:4px');
+        close.onclick = function () {
+          try {
+            if (window.__sradInpageHls) window.__sradInpageHls.destroy();
+          } catch (_) {}
+          wrap.remove();
+          window.__sradPlaying = 0;
+        };
+        bar.appendChild(close);
+        wrap.appendChild(bar);
+        (doc.body || doc.documentElement).appendChild(wrap);
+
+        var live = null;
+        try {
+          var vids = doc.querySelectorAll('video');
+          for (var vi = 0; vi < vids.length; vi++) {
+            var cand = vids[vi];
+            if (cand && cand.id !== 'srad-inpage-video' && cand.videoWidth > 16 && cand.readyState >= 2) {
+              live = cand;
+              break;
+            }
+          }
+        } catch (_) {}
+        if (live) {
+          live.setAttribute('controls', '');
+          live.setAttribute('playsinline', '');
+          live.setAttribute('style', 'flex:1;width:100%;height:100%;min-height:0;object-fit:contain;background:#000');
+          wrap.appendChild(live);
+          try {
+            live.muted = false;
+            live.play();
+          } catch (_) {}
+          return;
+        }
+
+        var video = doc.createElement('video');
+        video.id = 'srad-inpage-video';
+        video.setAttribute('controls', '');
+        video.setAttribute('autoplay', '');
+        video.setAttribute('playsinline', '');
+        video.setAttribute('style', 'flex:1;width:100%;height:100%;min-height:0;object-fit:contain;background:#000');
+        wrap.appendChild(video);
+        var queue = [playUrl].concat(session.alts || []).filter(function (u, i, a) {
+          return u && a.indexOf(u) === i;
+        });
+        function attach(u, rest) {
+          var H = window.Hls;
+          if (H && H.isSupported && H.isSupported()) {
+            try {
+              if (window.__sradInpageHls) window.__sradInpageHls.destroy();
+            } catch (_) {}
+            var hls = new H({ enableWorker: false, capLevelToPlayerSize: true, startLevel: -1 });
+            window.__sradInpageHls = hls;
+            try { video.muted = false; } catch (_) {}
+            hls.loadSource(u);
+            hls.attachMedia(video);
+            var ev = H.Events && H.Events.MANIFEST_PARSED ? H.Events.MANIFEST_PARSED : 'hlsManifestParsed';
+            hls.on(ev, function () {
+              var idx = pickAvcLevel(hls);
+              if (idx >= 0) {
+                try {
+                  hls.currentLevel = idx;
+                  hls.loadLevel = idx;
+                  hls.nextLevel = idx;
+                } catch (_) {}
+              }
+              try {
+                video.play();
+              } catch (_) {}
+            });
+            var errEv = H.Events && H.Events.ERROR ? H.Events.ERROR : 'hlsError';
+            hls.on(errEv, function (_e, data) {
+              if (data && data.fatal && rest && rest.length) attach(rest[0], rest.slice(1));
+            });
+            setTimeout(function () {
+              if (video.videoWidth < 16 && video.currentTime > 0.2 && rest && rest.length) attach(rest[0], rest.slice(1));
+            }, 2500);
+            return;
+          }
+          video.src = u;
+          video.play().catch(function () {
+            if (rest && rest.length) attach(rest[0], rest.slice(1));
+          });
+        }
+        attach(queue[0], queue.slice(1));
+      }
+      function extract(text) {
+        if (!text) return '';
+        if (/#EXTM3U/.test(String(text).slice(0, 64))) return url;
+        if (/<MPD[\s>]/i.test(String(text).slice(0, 400))) return url;
+        try {
+          var j = JSON.parse(text);
+          return j.file || j.src || j.url || (j.source && (j.source.file || j.source.src)) || '';
+        } catch (_) {}
+        var m = String(text).match(/https?:\/\/[^\s"'<>\\)]{8,800}?\.(?:m3u8|mpd|mp4)(?:\?[^\s"'<>\\)]{0,400})?/i);
+        return m ? m[0] : '';
+      }
+      function needsUnwrap(u) {
+        try {
+          var path = new URL(u).pathname;
+          return /\/api\/?$/i.test(path) && !/\.m3u8/i.test(u);
+        } catch (_) {
+          return false;
+        }
+      }
+      if (related && needsUnwrap(url) && typeof fetch === 'function') {
+        window.__sradPlaying = 1;
+        return fetch(url, { credentials: 'include' })
+          .then(function (r) {
+            return r.text();
+          })
+          .then(function (text) {
+            mount(extract(text) || url);
+            return { played: true, host: here, via: 'api' };
+          })
+          .catch(function () {
+            mount(url);
+            return { played: true, host: here, via: 'api-fail' };
+          });
+      }
+      window.__sradPlaying = 1;
+      mount(url);
+      return { played: true, host: here, via: session.force ? 'force' : 'related' };
+    } catch (e) {
+      return { played: false, reason: String((e && e.message) || e) };
+    }
+  }
+
+  function playlistHasAudio(text) {
+    const s = String(text || '');
+    if (!/#EXTM3U/.test(s)) return false;
+    if (/TYPE=AUDIO|#EXT-X-MEDIA:/i.test(s)) return true;
+    if (/mp4a|ac-3|ec-3|opus|fLaC|\baac\b/i.test(s)) return true;
+    return false;
+  }
+
+  function hlsMasterAlts(st, url) {
+    const out = [];
+    const push = (u) => {
+      if (u && out.indexOf(u) < 0) out.push(u);
+    };
+    try {
+      const u = new URL(url);
+      const dir = u.origin + u.pathname.replace(/\/v\d+\.m3u8$/i, '').replace(/\/$/, '');
+      const q = u.search || '';
+      if (st && st.store) {
+        for (const it of st.store.byId.values()) {
+          if (!it || !it.url || it.isAd) continue;
+          if (it.url.indexOf(dir) !== 0) continue;
+          if (/(master|index|playlist)\.m3u8/i.test(it.url)) push(it.url);
+        }
+      }
+      if (/\/v\d+\.m3u8$/i.test(u.pathname) || (/\/mpd\//i.test(u.pathname) && !/\.(m3u8|mpd)$/i.test(u.pathname))) {
+        push(dir + '/index.m3u8' + q);
+        push(dir + '/master.m3u8' + q);
+        push(dir + '/playlist.m3u8' + q);
+      }
+    } catch (_) {}
+    return out;
+  }
+
+  async function fetchPlaylistText(url, referer, origin) {
+    try {
+      const headers = {};
+      if (referer) headers.Referer = referer;
+      if (origin) headers.Origin = origin;
+      return await util.fetchText(url, { timeoutMs: 5000, maxBytes: 200000, headers: headers, credentials: 'include' });
+    } catch (_) {
+      return '';
+    }
+  }
+
+  // WatchParty's isHls() is `src.includes('.m3u8')`. Token HLS (/mpd/, /api/playlist)
+  // without that substring is treated as a raw <video src> and never loads.
+  // Use a fragment — browsers do not send `#…` to the CDN. A query hint
+  // (`srad=playlist.m3u8`) was forwarded to a2.shows.st/api?d= and the playlist
+  // never played (spinner + red X) while Play (no hint) worked.
+  function ensureWpHlsUrl(url, category) {
+    if (!url) return url;
+    let clean = url;
+    try {
+      const u = new URL(url);
+      if (u.searchParams.has('srad')) {
+        u.searchParams.delete('srad');
+        clean = u.href;
+      }
+    } catch (_) {}
+    if (/\.m3u8/i.test(clean)) return clean;
+    let path = '';
+    try {
+      path = new URL(clean).pathname || '';
+    } catch (_) {
+      return clean;
+    }
+    if (/\.(mp4|webm|mpd|mkv|m4v|mov)(\?|#|$)/i.test(clean)) return clean;
+    const hlsish = category === 'hls' || /\/mpd\//i.test(path) || /\/playlist\//i.test(path) || /mpegurl/i.test(category);
+    if (!hlsish) return clean;
+    if (clean.indexOf('#') >= 0) return clean;
+    return clean + '#playlist.m3u8';
+  }
+
+  function pickAudioVariant(parsed) {
+    const vs = (parsed && parsed.variants) || [];
+    let best = '';
+    let score = -1;
+    for (let i = 0; i < vs.length; i++) {
+      const v = vs[i];
+      if (!v || !v.uri) continue;
+      const c = String(v.codecs || (parsed && parsed.codecs) || '');
+      if (/hvc1|hev1|hevc|dvh1|dvhe|av01/i.test(c)) continue;
+      const h = Number(v.height || 0);
+      if (h > 1080) continue;
+      const audio = /mp4a|ac-3|ec-3|opus|fLaC|\baac\b/i.test(c);
+      const sc = (audio ? 800 : 0) + Math.min(h || 1, 1080);
+      if (sc > score) {
+        score = sc;
+        best = v.uri;
+      }
+    }
+    return best;
+  }
+
+  // v0.m3u8 on token CDNs is often video-only. Prefer a master that has AUDIO.
+  async function preferAudioMaster(st, media, url) {
+    if (!url) return url;
+    const referer = pageReferer(st, media);
+    const origin = originOf(referer) || util.origin(url);
+    const body = await fetchPlaylistText(url, referer, origin);
+    if (body && SR.manifest && SR.manifest.parseM3u8) {
+      const parsed = SR.manifest.parseM3u8(body, url);
+      if (parsed && parsed.kind === 'master') {
+        if (playlistHasAudio(body) || pickAudioVariant(parsed)) return url;
+      }
+    }
+    if (playlistHasAudio(body) || /mp4a/i.test(body || '')) return url;
+    const alts = hlsMasterAlts(st, url);
+    for (let i = 0; i < alts.length; i++) {
+      const text = await fetchPlaylistText(alts[i], referer, origin);
+      if (!text) continue;
+      if (SR.manifest && SR.manifest.parseM3u8) {
+        const parsed = SR.manifest.parseM3u8(text, alts[i]);
+        if (parsed && parsed.kind === 'master' && (playlistHasAudio(text) || pickAudioVariant(parsed))) return alts[i];
+      }
+      if (playlistHasAudio(text) || /#EXT-X-STREAM-INF/i.test(text)) return alts[i];
+    }
+    return url;
+  }
+
+  async function preferWatchPartyUrl(st, media, url) {
+    return ensureWpHlsUrl(await preferAudioMaster(st, media, url), (media && media.category) || '');
+  }
+
+  function preferPlayUrl(st, media, url) {
+    if (!url) return url;
+    try {
+      const u = new URL(url);
+      const hot = /v3\.m3u8|2160|4k/i.test(url + ' ' + ((media && media.quality) || ''));
+      if (/\.(m3u8|mpd)(\?|#|$)/i.test(u.pathname) && !hot) return url;
+      if (!/\/mpd\//i.test(u.pathname) || !st || !st.store) return url;
+      const prefix = (u.origin + u.pathname.replace(/\/v\d+\.m3u8$/i, '').replace(/\/$/, ''));
+      let v0 = '';
+      let mild = '';
+      for (const it of st.store.byId.values()) {
+        if (!it || !it.url || it.isAd) continue;
+        if (it.url.indexOf(prefix) !== 0) continue;
+        if (!/\.m3u8(\?|#|$)/i.test(it.url)) continue;
+        if (/v0\.m3u8/i.test(it.url)) v0 = it.url;
+        else if (!/v3\.m3u8/i.test(it.url) && !/4k|2160/i.test(String(it.quality || ''))) mild = it.url;
+      }
+      if (v0) return v0;
+      if (mild) return mild;
+    } catch (_) {}
+    return url;
+  }
+
+  function playAlts(url) {
+    const out = [];
+    try {
+      const u = new URL(url);
+      if (/\/mpd\//i.test(u.pathname) && !/\.(m3u8|mpd)(\?|#|$)/i.test(u.pathname)) {
+        out.push(u.origin + u.pathname.replace(/\/$/, '') + '/v0.m3u8');
+        out.push(u.origin + u.pathname.replace(/\/$/, '') + '/v3.m3u8');
+      }
+    } catch (_) {}
+    return out;
+  }
+
+  async function tryInPagePlay(tabId, media, session) {
+    if (tabId == null) return false;
+    const payload = {
+      url: session && session.url,
+      host: (session && session.host) || util.host((media && media.url) || '') || util.host((session && session.url) || ''),
+      hlsLib: (session && session.hlsLib) || '',
+      alts: (session && session.alts) || playAlts((session && session.url) || ''),
+      force: false,
+    };
+    if (api.scripting && typeof api.scripting.executeScript === 'function') {
+      const injectHls = async (target) => {
+        try {
+          const probe = await api.scripting.executeScript({
+            target: target,
+            world: 'MAIN',
+            func: function () {
+              return !!(window.Hls && window.Hls.isSupported && window.Hls.isSupported());
+            },
+          });
+          if ((probe || []).some((r) => r && r.result)) return;
+          await api.scripting.executeScript({ target: target, world: 'MAIN', files: ['vendor/hls.light.min.js'] });
+        } catch (e) {
+          log('hls inject', String((e && e.message) || e));
+        }
+      };
+      const run = async (target, force) => {
+        await injectHls(target);
+        const args = Object.assign({}, payload, { force: !!force });
+        const results = await api.scripting.executeScript({
+          target: target,
+          world: 'MAIN',
+          func: inPagePlayFunc,
+          args: [args],
+        });
+        return (results || []).some((r) => r && r.result && r.result.played);
+      };
+      const frameIds = [];
+      const pushFid = (id) => {
+        if (id == null || frameIds.indexOf(id) >= 0) return;
+        frameIds.push(id);
+      };
+      pushFid(media && media.flags && media.flags.frameId);
+      const docUrl = (media && media.flags && (media.flags.documentUrl || media.flags.originUrl || media.flags.initiator)) || (media && media.frameUrl) || '';
+      const docHost = util.host(docUrl);
+      (stFrames(tabId) || []).forEach((f) => {
+        if (!f || f.frameId == null) return;
+        if (docUrl && f.url && String(f.url).split('#')[0] === String(docUrl).split('#')[0]) pushFid(f.frameId);
+        else if (docHost && util.host(f.url) === docHost) pushFid(f.frameId);
+      });
+      for (let i = 0; i < frameIds.length; i++) {
+        try {
+          if (await run({ tabId: tabId, frameIds: [frameIds[i]] }, true)) return true;
+        } catch (e) {
+          log('inpage frame', String((e && e.message) || e));
+        }
+      }
+      try {
+        if (await run({ tabId: tabId, allFrames: true }, false)) return true;
+      } catch (e) {
+        log('inpage executeScript', String((e && e.message) || e));
+      }
+    }
+    const want = payload.host;
+    const ids = [];
+    const pushId = (id, front) => {
+      if (id == null || ids.indexOf(id) >= 0) return;
+      if (front) ids.unshift(id);
+      else ids.push(id);
+    };
+    if (media && media.flags && media.flags.frameId != null) pushId(media.flags.frameId, true);
+    (stFrames(tabId) || []).forEach((f) => {
+      if (!f || f.frameId == null) return;
+      const host = util.host(f.url || '');
+      const related = want && host && (host === want || host.endsWith('.' + want) || want.endsWith('.' + host));
+      pushId(f.frameId, related);
+    });
+    async function ping(frameId) {
+      try {
+        const msg = { type: 'play-in-page', session: session };
+        const res = frameId != null ? await api.tabs.sendMessage(tabId, msg, { frameId: frameId }) : await api.tabs.sendMessage(tabId, msg);
+        return !!(res && res.played);
+      } catch (_) {
+        return false;
+      }
+    }
+    for (let i = 0; i < ids.length; i++) {
+      if (await ping(ids[i])) return true;
+    }
+    return false;
+  }
+
+  function stFrames(tabId) {
+    const st = tabs.get(tabId);
+    return (st && st.frames) || [];
+  }
+
   async function launchPlayer(st, itemId, urlOverride) {
     const clicked = itemId ? st.store.byId.get(itemId) : null;
     const picked = pickPlayable(st, itemId);
@@ -4435,16 +5482,41 @@
     let url = urlOverride || (clicked && util.localPlayable(clicked.url, clicked.category) ? clicked.url : null) || picked.url;
     if (!url) return { ok: false, reason: t('player.needDirect') };
     if (media && media.drm) return { ok: false, reason: t('player.drm') };
+
+    const origUrl = await preferAudioMaster(st, media, url);
+    url = origUrl;
+    const sid = util.uuid();
+    const inSession = buildPlaySession(st, media, origUrl);
+    inSession.host = (media && media.host) || util.host((media && media.url) || origUrl) || inSession.host;
+    inSession.alts = playAlts(origUrl);
+    try {
+      inSession.hlsLib = api.runtime.getURL('vendor/hls.light.min.js');
+    } catch (_) {}
+    const inPage = await tryInPagePlay(st.tabId, media, inSession);
+    if (inPage) {
+      toastTo(st.tabId, t('toast.player'), 'ok');
+      return { ok: true, inpage: true, session: inSession };
+    }
+
     const previewRef = pageReferer(st, media);
     await installRefererRule(null, previewRef, originOf(previewRef) || util.origin(url), url);
     const resolved = await resolvePlaySource(st, media, url);
-    url = resolved.url || url;
+    url = await preferAudioMaster(st, media, resolved.url || url);
+    if (!st.pendingSub) {
+      try {
+        await ensurePartySubtitle(st);
+      } catch (_) {}
+    }
     const mediaForSession = Object.assign({}, media || {}, { url: url, category: resolved.category || (media && media.category) || '' });
-    const sid = util.uuid();
     const session = buildPlaySession(st, mediaForSession, url);
     if (resolved.referer) session.referer = resolved.referer;
     if (resolved.origin) session.origin = resolved.origin;
     if (resolved.referers && resolved.referers.length) session.referers = resolved.referers;
+    session.host = (media && media.host) || util.host((media && media.url) || '') || session.host;
+    try {
+      session.hlsLib = api.runtime.getURL('vendor/hls.light.min.js');
+    } catch (_) {}
+
     await api.storage.local.set({ [PLAY_PREFIX + sid]: session });
     const target = api.runtime.getURL('player/player.html?sid=' + encodeURIComponent(sid));
     const tab = await api.tabs.create({ url: target, active: true });
@@ -4455,14 +5527,12 @@
     return { ok: true, tabId: tab && tab.id, sid: sid, session: session };
   }
 
-  async function playerFetch(sid, url, responseType, range) {
-    if (!sid || !url || !/^https?:/i.test(url)) return { ok: false, reason: 'bad url', status: 0 };
-    const stored = await api.storage.local.get(PLAY_PREFIX + sid);
-    const session = stored[PLAY_PREFIX + sid];
-    if (!session) return { ok: false, reason: 'session expired', status: 0 };
+  async function refererFetch(url, referer, origin, responseType, range) {
+    if (!url || !/^https?:/i.test(url)) return { ok: false, reason: 'bad url', status: 0 };
+    url = String(url).split('#')[0];
     const headers = {};
-    if (session.referer) headers.Referer = session.referer;
-    if (session.origin) headers.Origin = session.origin;
+    if (referer) headers.Referer = referer;
+    if (origin) headers.Origin = origin;
     if (range && range.start != null && range.end != null) headers.Range = 'bytes=' + range.start + '-' + range.end;
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), responseType === 'arraybuffer' ? 25000 : 15000);
@@ -4483,6 +5553,27 @@
     } finally {
       clearTimeout(timer);
     }
+  }
+
+  async function playerFetch(sid, url, responseType, range) {
+    if (!sid) return { ok: false, reason: 'session expired', status: 0 };
+    const stored = await api.storage.local.get(PLAY_PREFIX + sid);
+    const session = stored[PLAY_PREFIX + sid];
+    if (!session) return { ok: false, reason: 'session expired', status: 0 };
+    return refererFetch(url, session.referer, session.origin, responseType, range);
+  }
+
+  async function partyFetch(tabId, url, responseType, range) {
+    let rec = tabId != null ? partyTabs.get(tabId) : null;
+    if (!rec && tabId != null) {
+      try {
+        const stored = await api.storage.local.get('srad:partynet:' + tabId);
+        rec = stored['srad:partynet:' + tabId] || null;
+        if (rec) partyTabs.set(tabId, rec);
+      } catch (_) {}
+    }
+    if (!rec) return { ok: false, reason: 'no party session', status: 0 };
+    return refererFetch(url, rec.referer, rec.origin, responseType, range);
   }
 
   /* ================================================================== *
@@ -4536,7 +5627,10 @@
         if (!res.ok) toastTo(tabId, res.reason || t('panel.empty'), 'warn');
         return res;
       }
+      case 'subs':
       case 'subs-search':
+        // The panel/popup rows send 'subs'; the dedicated retry buttons send
+        // 'subs-search'. Both mean "search subtitles for the current title".
         scheduleSubSearch(tabId, true);
         return { ok: true };
       case 'sub-attach': {
@@ -4714,7 +5808,7 @@
             if (!st) return { ok: false };
             const p = msg.payload || {};
             const hooks = p.hooks || [];
-            const rec = { url: msg.href || sender.url || '', top: !!p.isTop, version: p.version, hooks: hooks };
+            const rec = { url: msg.href || sender.url || '', top: !!p.isTop, version: p.version, hooks: hooks, frameId: sender.frameId };
             if (!st.frames.some((f) => f.url === rec.url)) st.frames.push(rec);
             if (hooks.indexOf('fetch') >= 0) st.store.layers.network = true;
             if (hooks.indexOf('mse') >= 0) st.store.layers.mse = true;
@@ -4768,7 +5862,9 @@
             const stored = await api.storage.local.get(key);
             const payload = stored[key];
             if (payload && Date.now() - (payload.createdAt || 0) < 6 * 60 * 1000) {
-              await api.storage.local.remove(key);
+              await installPartyNetRules(tabId, payload.referer, payload.origin, payload.mediaUrl);
+              const href = (sender && (sender.url || (sender.tab && sender.tab.url))) || '';
+              if (/watchparty\.me\/watch\//i.test(href)) await api.storage.local.remove(key);
               return { ok: true, payload: payload };
             }
             return { ok: false };
@@ -4795,6 +5891,9 @@
           }
           case 'player-fetch': {
             return await playerFetch(msg.sid, msg.url, msg.responseType, msg.range);
+          }
+          case 'party-fetch': {
+            return await partyFetch(tabId, msg.url, msg.responseType, msg.range);
           }
           case 'party-status':
             toastTo(msg.tabId != null ? msg.tabId : tabId, msg.text, msg.kind || 'info');
@@ -4876,12 +5975,20 @@
         if (sid) {
           playTabs.delete(id);
           api.storage.local.remove(PLAY_PREFIX + sid);
-          dropRefererRule(id);
         }
+        if (sid || partyTabs.has(id)) dropRefererRule(id);
+        partyTabs.delete(id);
+        try {
+          api.storage.local.remove('srad:partynet:' + id);
+        } catch (_) {}
       });
     }
     if (api.tabs.onUpdated) {
       api.tabs.onUpdated.addListener((id, change) => {
+        if (partyTabs.has(id) && (change.status === 'complete' || change.url)) {
+          const p = partyTabs.get(id);
+          installPartyNetRules(id, p.referer, p.origin, p.mediaUrl);
+        }
         const st = tabs.get(id);
         if (!st) return;
         if (change.status === 'loading' && change.url && util.host(change.url) !== util.host(st.url)) {
@@ -4920,10 +6027,12 @@
         const st = await restore(tab.id);
         if (!st) return;
         const url = info.srcUrl || info.linkUrl || '';
-        if (info.menuItemId === 'sr-watchparty') {
+        if (info.menuItemId === 'sr-play') {
           const best = st.store.best() || {};
-          if (url) await api.storage.local.set({ [PARTY_PREFIX + (await api.tabs.create({ url: watchPartyCreateUrl(url) })).id]: { mediaUrl: url, roomName: (st.title && st.title.title) || 'Stream Radar room', autoJoin: true, createdAt: Date.now() } });
-          else await launchWatchParty(st, best.id);
+          await launchPlayer(st, best.id, url || undefined);
+        } else if (info.menuItemId === 'sr-watchparty') {
+          const best = st.store.best() || {};
+          await launchWatchParty(st, best.id);
         } else if (info.menuItemId === 'sr-copy' && url) {
           api.tabs.sendMessage(tab.id, { type: 'copy-clipboard', text: url }).catch(() => {});
         } else if (info.menuItemId === 'sr-download' && url) {

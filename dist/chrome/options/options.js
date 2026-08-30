@@ -186,6 +186,8 @@
       year: $('#testYear').value.trim() || null,
       season: $('#testSeason').value.trim() || null,
       episode: $('#testEpisode').value.trim() || null,
+      imdbId: ($('#testImdb') && $('#testImdb').value.trim().indexOf('tt') === 0 ? $('#testImdb').value.trim() : null) || null,
+      tmdbId: ($('#testImdb') && /^\d+$/.test($('#testImdb').value.trim()) ? $('#testImdb').value.trim() : null) || null,
     };
     try {
       const res = await SR.subs.search(want, settings, {});

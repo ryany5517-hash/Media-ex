@@ -221,6 +221,29 @@ test('F4c 67movies URL movie id hydrates The Eye and is enough for subtitles', a
   h.dom.window.close();
 });
 
+test('F4d action "subs" (what the panel/popup row buttons send) is treated as subs-search', async () => {
+  const h = await boot({ settings: { autoSubtitle: false } });
+  const res = await h.hub.sendFromContent({ type: 'action', payload: { name: 'subs', tabId: 1 } });
+  assert.equal(res.ok, true, 'worker accepted the subs action: ' + JSON.stringify(res));
+  assert.ok(await until(h, () => (stateOf(h).sub || {}).status === 'found'), 'search ran from raw subs action: ' + JSON.stringify(stateOf(h).sub));
+  h.dom.window.close();
+});
+
+test('F4e clicking the panel Subs button (retry) triggers a subtitle search', async () => {
+  const h = await boot({ settings: { autoSubtitle: false } });
+  const win = h.dom.window;
+  const shadow = win.document.getElementById('stream-radar-host').shadowRoot;
+  const tab = shadow.querySelector('[data-act="tab"][data-tab="subs"]');
+  assert.ok(tab, 'subs tab rendered');
+  tab.dispatchEvent(new win.MouseEvent('click', { bubbles: true }));
+  await h.wait(60);
+  const retry = shadow.querySelector('[data-act="subs"][data-primary="1"]');
+  assert.ok(retry, 'subs pane retry button rendered');
+  retry.dispatchEvent(new win.MouseEvent('click', { bubbles: true }));
+  assert.ok(await until(h, () => (stateOf(h).sub || {}).status === 'found'), 'clicking the retry button searched: ' + JSON.stringify(stateOf(h).sub));
+  h.dom.window.close();
+});
+
 /* ------------------------------------------------------------------ *
  * F5 · auto Indonesian subtitle: search → download zip → SRT→VTT → attach
  * ------------------------------------------------------------------ */

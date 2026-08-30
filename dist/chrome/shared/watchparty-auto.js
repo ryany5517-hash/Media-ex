@@ -61,9 +61,9 @@
     return (laid.length ? laid : all).map((el) => ({ el, label: labelOf(el) }));
   }
 
-  function setValue(el, value) {
+  function setValue(el, value, force) {
     if (!el || value == null || value === '') return false;
-    if (el.value && el.value.trim()) return false;
+    if (!force && el.value && el.value.trim()) return false;
     try {
       const proto = el.tagName === 'TEXTAREA' ? root.HTMLTextAreaElement : root.HTMLInputElement;
       const desc = Object.getOwnPropertyDescriptor(proto.prototype, 'value');
@@ -168,7 +168,7 @@
             }
             const track = doc.createElement('track');
             track.kind = 'subtitles';
-            track.srclang = 'id';
+            track.srclang = (p.subtitle && p.subtitle.lang) || 'id';
             track.label = (name || 'Indonesian') + ' (Stream Radar)';
             track.default = true;
             track.setAttribute('data-srad', '1');
@@ -191,7 +191,7 @@
         host.style.cssText = 'position:fixed;right:14px;bottom:14px;z-index:2147483000;font-family:system-ui,sans-serif';
         const shadow = host.attachShadow({ mode: 'closed' });
         shadow.innerHTML =
-          '<style>:host{all:initial}.wrap{display:flex;align-items:center;gap:6px;padding:6px 8px;border-radius:14px;background:rgba(20,23,38,.86);backdrop-filter:blur(10px);color:#e9edf7}button{font:600 12px system-ui;padding:8px 11px;border-radius:9px;border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.08);color:#fff;cursor:pointer;min-height:36px}button:hover{border-color:#8b7cff}span{font:700 11px system-ui;opacity:.7}</style>' +
+          '<style>:host{all:initial}.wrap{display:flex;align-items:center;gap:6px;padding:6px 8px;border-radius:14px;background:rgba(6,16,22,.88);backdrop-filter:blur(10px);color:#e6f4f6}button{font:600 12px system-ui;padding:8px 11px;border-radius:9px;border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.08);color:#fff;cursor:pointer;min-height:36px}button:hover{border-color:#5eead4}span{font:700 11px system-ui;opacity:.7}</style>' +
           '<div class="wrap"><span>STREAM RADAR</span><button data-a="subs">' + t('panel.subs.attach') + '</button><button data-a="copy">' + t('action.copy') + '</button><button data-a="dl">' + t('panel.subs.download') + '</button></div>';
         doc.body.appendChild(host);
         state.chip = host;
@@ -220,11 +220,42 @@
         });
       }
 
+      async function publishRoomSubtitle(vtt) {
+        if (state.published || !vtt || !root.fetch) return;
+        try {
+          const res = await root.fetch('/subtitle', { method: 'POST', body: vtt, headers: { 'Content-Type': 'text/plain' } });
+          const json = await res.json();
+          if (!json || !json.hash) return;
+          const url = (root.location && root.location.origin ? root.location.origin : '') + '/subtitle/' + json.hash;
+          const f = fields(doc);
+          const subField = f.find((x) => /subtitle/i.test(x.label));
+          if (subField) setValue(subField.el, url, true);
+          state.published = true;
+        } catch (_) {}
+      }
+
+      function unmuteOnce() {
+        if (state.unmuted) return;
+        const list = doc.querySelectorAll('video, audio');
+        if (!list.length) return;
+        for (const el of list) {
+          try {
+            el.muted = false;
+            if (!el.volume) el.volume = 1;
+          } catch (_) {}
+        }
+        state.unmuted = true;
+      }
+
       function tick() {
         try {
           tryForm();
           chip();
-          if (!state.attached && p.subtitle && p.subtitle.vtt && doc.querySelector('video')) attachTracks(p.subtitle.vtt, p.subtitle.name, false);
+          unmuteOnce();
+          if (!state.attached && p.subtitle && p.subtitle.vtt && doc.querySelector('video')) {
+            attachTracks(p.subtitle.vtt, p.subtitle.name, false);
+            publishRoomSubtitle(p.subtitle.vtt);
+          }
         } catch (_) {}
       }
 

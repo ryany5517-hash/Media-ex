@@ -568,11 +568,11 @@ try {
         }
       } catch (_) {}
     }
-    st.sub = { status: 'searching', items: st.sub.items || [], query: want.title, year: want.year, imdbId: want.imdbId, at: Date.now() };
+    st.sub = { status: 'searching', items: st.sub.items || [], query: want.title, year: want.year, imdbId: want.imdbId || '', tmdbId: want.tmdbId || '', at: Date.now() };
     broadcast(tabId, 'sub');
     try {
       const res = await SR.subs.search(want, settings, {});
-      st.sub = { status: res.results.length ? 'found' : 'none', items: res.results.slice(0, 12), providers: res.providerInfo, errors: res.errors, query: want.title, year: want.year, imdbId: want.imdbId, at: Date.now() };
+      st.sub = { status: res.results.length ? 'found' : 'none', items: res.results.slice(0, 12), providers: res.providerInfo, errors: res.errors, query: want.title, year: want.year, imdbId: want.imdbId || '', tmdbId: want.tmdbId || '', at: Date.now() };
       if (res.results.length) {
         const best = res.results[0];
         try {
@@ -593,7 +593,7 @@ try {
         toastTo(tabId, t('toast.subsNone', { title: want.title || '?' }), 'warn');
       }
     } catch (e) {
-      st.sub = { status: 'error', items: st.sub.items || [], error: String((e && e.message) || e), query: want.title, at: Date.now() };
+      st.sub = { status: 'error', items: st.sub.items || [], error: String((e && e.message) || e), query: want.title, imdbId: want.imdbId || '', tmdbId: want.tmdbId || '', at: Date.now() };
       toastTo(tabId, t('toast.error', { msg: String((e && e.message) || e) }), 'err');
     }
     for (const e of st.store.byId.values()) if (e.sub && e.sub.status === 'searching') e.sub = { status: st.sub.status, name: (st.sub.items[0] || {}).name };
@@ -1666,7 +1666,10 @@ try {
         if (!res.ok) toastTo(tabId, res.reason || t('panel.empty'), 'warn');
         return res;
       }
+      case 'subs':
       case 'subs-search':
+        // The panel/popup rows send 'subs'; the dedicated retry buttons send
+        // 'subs-search'. Both mean "search subtitles for the current title".
         scheduleSubSearch(tabId, true);
         return { ok: true };
       case 'sub-attach': {

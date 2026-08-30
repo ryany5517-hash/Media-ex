@@ -310,6 +310,12 @@
         scanner && scanner.scan('manual');
         scanner && scanner.readTitle(true);
         return void send('action', { name: 'rescan' });
+      case 'subs':
+        // Panel row / subtitles-tab retry button. Re-read the title first so a
+        // click right after page load (or after an SPA swap) searches with a
+        // fresh title + any IMDb/TMDB id the URL carries, then ask the worker.
+        scanner && scanner.readTitle(true);
+        return void send('action', { name: 'subs-search' });
       case 'set-setting': {
         settings = Object.assign({}, settings, { [payload.key]: payload.value });
         if (payload.key === 'fabPos') ui && ui.setFabPos(payload.value);
@@ -463,6 +469,31 @@
         case 'ping':
           respond({ ok: true, pageAlive: pageAlive, isTop: isTop, version: SR.VERSION, hooks: pageAlive ? 'MAIN' : 'fallback' });
           return true;
+        case 'play-in-page': {
+          const session = msg.session || {};
+          const here = util.host(root.location.href);
+          const relatedHost = function (a, b) {
+            a = String(a || '').toLowerCase();
+            b = String(b || '').toLowerCase();
+            if (!a || !b) return false;
+            if (a === b) return true;
+            if (a.endsWith('.' + b) || b.endsWith('.' + a)) return true;
+            const tail = (h) => {
+              const p = h.split('.');
+              return p.length <= 2 ? h : p.slice(-2).join('.');
+            };
+            return tail(a) === tail(b);
+          };
+          const wants = [session.host, util.host(session.url)].filter(Boolean);
+          const related = wants.some((w) => relatedHost(here, w));
+          if (!related) {
+            respond({ ok: false, played: false, reason: 'frame' });
+            return true;
+          }
+          postCmd('play-in-page', session);
+          respond({ ok: true, played: true, host: here });
+          return true;
+        }
       }
     });
   }

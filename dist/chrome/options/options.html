@@ -9,7 +9,7 @@
   </head>
   <body data-theme="dark">
     <aside class="side">
-      <div class="logo"><span class="ico"></span><b data-i18n="app.name">Stream Radar</b><small>v1.1.4</small></div>
+      <div class="logo"><span class="ico"></span><b data-i18n="app.name">Stream Radar</b><small>v1.1.22</small></div>
       <nav id="tabs" aria-label="Settings sections">
         <button data-tab="general" class="on" data-i18n="options.tabGeneral">General</button>
         <button data-tab="layers" data-i18n="options.tabDetection">Detection layers</button>
@@ -98,7 +98,21 @@
           <label class="field"><span>OpenSubtitles API key<div class="hint" data-i18n="options.osHint">api.opensubtitles.com, Developers, Create App.</div></span><input type="text" data-key="osApiKey" placeholder="ApiKey" autocomplete="off" spellcheck="false" /></label>
           <label class="field"><span>OpenSubtitles User-Agent</span><input type="text" data-key="osUserAgent" spellcheck="false" /></label>
           <label class="field"><span data-i18n="options.langFilter">Language filter</span>
-            <select data-key="subtitleLang"><option value="id" data-i18n="options.langIdOnly">Indonesian only</option><option value="en" data-i18n="options.langEn">English</option><option value="all" data-i18n="common.all">All languages</option></select>
+            <select data-key="subtitleLang">
+              <option value="id" data-i18n="options.langIdOnly">Indonesian (priority)</option>
+              <option value="en" data-i18n="options.langEn">English</option>
+              <option value="es">Español</option>
+              <option value="pt">Português</option>
+              <option value="zh">中文</option>
+              <option value="ja">日本語</option>
+              <option value="ko">한국어</option>
+              <option value="ar">العربية</option>
+              <option value="fr">Français</option>
+              <option value="de">Deutsch</option>
+              <option value="th">ไทย</option>
+              <option value="vi">Tiếng Việt</option>
+              <option value="all" data-i18n="common.all">All languages</option>
+            </select>
           </label>
         </div>
 
@@ -109,6 +123,7 @@
             <label class="field"><span data-i18n="options.fYear">Year</span><input type="text" id="testYear" placeholder="2024" /></label>
             <label class="field"><span data-i18n="options.fSeason">Season</span><input type="text" id="testSeason" placeholder="01" /></label>
             <label class="field"><span data-i18n="options.fEpisode">Episode</span><input type="text" id="testEpisode" placeholder="03" /></label>
+            <label class="field"><span>IMDb / TMDB</span><input type="text" id="testImdb" placeholder="tt15239678" /></label>
           </div>
           <button class="primary" id="testBtn" data-i18n="panel.subs.retry">Search now</button>
           <pre id="testOut" aria-live="polite">-</pre>

@@ -270,11 +270,22 @@
         return '<span class="srad-chip"' + (kind ? ' data-kind="' + kind + '"' : '') + '>' + (icon ? ico(icon) : '') + esc(text) + '</span>';
       }
 
+      let bodySig = null;
       function renderBody() {
         if (!bodyEl) return;
         if (api.tab === 'subs') return renderSubs();
         if (api.tab === 'info') return renderInfo();
         const items = visible();
+        // Keep the row DOM alive while nothing about the list changed (title /
+        // subtitle re-scans broadcast new state constantly). Rebuilding the list
+        // mid-click detaches the button the user is pressing. The signature
+        // covers the tab, the set of rows and their live chips.
+        const sig =
+          api.tab +
+          '|' +
+          items.map((it) => [it.id, it.category, it.confidence, it.quality, (it.sub && it.sub.status) || ''].join(':')).join('~');
+        if (bodySig === sig && bodyEl.querySelector('[data-el="list"]')) return;
+        bodySig = sig;
         const before = captureRects();
         if (!items.length) {
           bodyEl.innerHTML =
@@ -403,7 +414,7 @@
           '<div class="srad-sub-card">' +
           '<div class="srad-sub-head">' + ico('captions') + '<span>' + esc(t('panel.subs.title')) + '</span>' +
           '<span class="srad-state" data-s="' + esc(sub.status) + '">' + (sub.status === 'searching' ? ico('loader') : '') + esc(st[sub.status] || sub.status) + '</span></div>' +
-          (sub.query || sub.imdbId ? '<div class="srad-url" style="margin-top:6px">' + esc(sub.query || '') + (sub.year ? ' (' + esc(String(sub.year)) + ')' : '') + (sub.imdbId ? ' ' + esc(sub.imdbId) : '') + '</div>' : '') +
+          (sub.query || sub.imdbId || sub.tmdbId ? '<div class="srad-url" style="margin-top:6px">' + esc(sub.query || '') + (sub.year ? ' (' + esc(String(sub.year)) + ')' : '') + (sub.imdbId ? ' <b>' + esc(sub.imdbId) + '</b>' : '') + (sub.tmdbId ? ' <b>tmdb ' + esc(String(sub.tmdbId)) + '</b>' : '') + '</div>' : '') +
           '<div class="srad-providers">' +
           Object.keys(providers)
             .map((k) => '<span class="srad-pv" data-s="' + esc(providers[k].status || '') + '" title="' + esc(providers[k].reason || '') + '">' + esc(providers[k].label || k) + ' ' + (providers[k].count != null ? providers[k].count : '') + '</span>')
@@ -612,7 +623,10 @@
           if (panelEl) animate(panelEl, { opacity: [0, 1], transform: ['translateY(-4px)', 'none'] }, { duration: 0.2 });
           return;
         }
-        if (!id && ['copy', 'download', 'watchparty', 'play', 'subs', 'ffmpeg', 'record', 'open'].indexOf(act) >= 0) return;
+        // Item-scoped actions need a row id. 'subs' is exempt: the subtitles
+        // pane's retry button has no row and must still trigger a page-level
+        // search (row-level subs buttons carry their own id).
+        if (!id && ['copy', 'download', 'watchparty', 'play', 'ffmpeg', 'record', 'open'].indexOf(act) >= 0) return;
         if (act === 'copy') {
           btn.setAttribute('data-done', '1');
           const original = btn.innerHTML;

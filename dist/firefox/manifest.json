@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Stream Radar : Media Detector & Player",
-  "version": "1.1.4",
-  "description": "7-layer video stream detector (HLS/DASH/MP4/blob) plus a local player that fetches with the page Referer (the way IDM does), Indonesian subtitles, and WatchParty rooms. No server, no tracking.",
+  "version": "1.1.22",
+  "description": "7-layer video stream detector (HLS/DASH/MP4/blob) plus a local player that fetches with the page Referer (the way IDM does), subtitles, and WatchParty rooms. No server, no tracking.",
   "author": "Stream Radar",
   "homepage_url": "https://github.com/ryany5517-hash/Media-ex",
   "icons": {
@@ -32,6 +32,7 @@
     "storage",
     "unlimitedStorage",
     "tabs",
+    "scripting",
     "webRequest",
     "declarativeNetRequest",
     "downloads",
@@ -92,6 +93,7 @@
         "shared/title-cleaner.js",
         "shared/i18n.js",
         "shared/watchparty-auto.js",
+        "vendor/hls.light.min.js",
         "watchparty/watchparty.js"
       ],
       "run_at": "document_end",
