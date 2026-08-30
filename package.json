@@ -23,7 +23,7 @@
     "qa": "node tools/design-qa.mjs --strict",
     "contrast": "node tools/contrast.mjs",
     "sync:theme": "node tools/sync-theme.mjs",
-  "update": "node -e \"require('child_process').execSync('git stash -u',{stdio:'inherit'});require('child_process').execSync('git pull origin kerjalanjut',{stdio:'inherit'});\" && node tools/build.mjs",
+  "update": "node -e \"require('child_process').execSync('git stash -u',{stdio:'inherit'});require('child_process').execSync('git pull origin arena/01a0534f-media-ex',{stdio:'inherit'});\" && node tools/build.mjs",
     "test:demo": "node --test --test-force-exit tools/test/demo.test.mjs",
     "test:unit": "node --test --test-force-exit tools/test/core.test.mjs tools/test/design.test.mjs",
     "test:e2e": "node --test --test-force-exit --test-concurrency=1 tools/test/integration.test.mjs tools/test/features.test.mjs tools/test/demo.test.mjs",
