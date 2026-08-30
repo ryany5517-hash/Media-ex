@@ -40,6 +40,7 @@ try {
   const PLAY_PREFIX = 'srad:play:';
   const HISTORY_KEY = 'srad:history';
   const playTabs = new Map();
+  const partyTabs = new Map();
   const t = (k, v) => SR.i18n.t(k, v);
 
   let settings = Object.assign({}, SR.defaults);
@@ -580,8 +581,9 @@ try {
    * ================================================================== */
   // /create?video= auto-creates the room server-side and redirects into it.
   function watchPartyCreateUrl(mediaUrl) {
-    return 'https://www.watchparty.me/create?video=' + encodeURIComponent(mediaUrl);
-  }
+    const encoded = encodeURIComponent(mediaUrl || '');
+    if (encoded.length > 1600) return 'https://www.watchparty.me/watchNow';
+    return 'https://www.watchparty.me/create?video=' + encoded;  }
 
   // WatchParty's direct-URL mode only plays a file it can fetch as media
   // (.m3u8/.mpd/.mp4/.webm/...). A resolver/API link such as
@@ -610,17 +612,16 @@ try {
     const clicked = itemId ? st.store.byId.get(itemId) : null;
     let picked = pickPlayable(st, itemId);
     let media = picked.item || clicked;
-    let url = picked.url;
-    if (!url && media && media.url && util.localPlayable(media.url, media.category)) {
-      const resolved = await resolvePlaySource(st, media, media.url);
+    let url = picked.url || (clicked && util.localPlayable(clicked.url, clicked.category) ? clicked.url : null);
+    if (url) url = preferPlayUrl(st, media, url);
+    if (url && media && media.url && !/\.(m3u8|mpd|mp4|webm)(\?|#|$)/i.test(url) && util.localPlayable(url, media.category)) {
+      const resolved = await resolvePlaySource(st, media, url);
       if (resolved && resolved.url && util.watchPartyPlayable(resolved.url, resolved.category)) {
-        url = resolved.url;
+        url = preferPlayUrl(st, media, resolved.url);
         media = Object.assign({}, media, { url: url, category: resolved.category || media.category });
       }
     }
-    if (!url) {
-      // WatchParty cannot fetch resolver/API links (JSON/HTML). Play in the
-      // matching iframe instead — that is the IDM path.
+    if (!url || !util.watchPartyPlayable(url, (media && media.category) || '')) {
       const play = await launchPlayer(st, itemId);
       if (play && play.ok) return play;
       return { ok: false, reason: t('watchparty.needDirect'), hint: 'vbrowser' };
@@ -629,6 +630,8 @@ try {
     const roomName = String(
       ti.title ? ti.title + (ti.year ? ' (' + ti.year + ')' : '') + (ti.episode ? ' S' + (ti.season || '01') + 'E' + ti.episode : '') : ti.raw || util.domain(st.url) || 'Stream Radar room'
     ).slice(0, 90);
+    const referer = pageReferer(st, media);
+    const origin = originOf(referer) || util.origin(url);
     const payload = {
       mediaUrl: url,
       roomName: roomName,
@@ -638,16 +641,16 @@ try {
       title: st.title || null,
       subtitle: st.pendingSub ? { vtt: st.pendingSub.vtt, name: st.pendingSub.name } : null,
       autoJoin: settings.watchpartyAutoJoin !== false,
+      referer: referer,
+      origin: origin,
       createdAt: Date.now(),
     };
-    // WatchParty's /create?video=<url> route auto-creates a room and loads the
-    // video (it POSTs /createRoom then redirects to /watch<room>), exactly like
-    // the "Watch Party" button on rivestream etc. That is strictly better than
-    // /watchNow?url= which only pre-fills a form, so we open /create and keep the
-    // payload for the on-site adapter (user name + subtitle attach).
     const target = watchPartyCreateUrl(url);
     const tab = await api.tabs.create({ url: target, active: true }).catch(async () => await api.tabs.create({ url: target }));
-    if (tab && tab.id > 0) await api.storage.local.set({ [PARTY_PREFIX + tab.id]: payload });
+    if (tab && tab.id > 0) {
+      await api.storage.local.set({ [PARTY_PREFIX + tab.id]: payload });
+      await installPartyNetRules(tab.id, referer, origin, url);
+    }
     return { ok: true, tabId: tab && tab.id, payload: payload };
   }
 
@@ -801,12 +804,72 @@ try {
     const dnr = api.declarativeNetRequest;
     if (!dnr || !dnr.updateSessionRules) return;
     const ids = [8899];
-    if (tabId != null && tabId > 0) ids.push(9100 + (Number(tabId) % 800));
-    try {
+    if (tabId != null && tabId > 0) {
+      const n = Number(tabId) % 800;
+      ids.push(9100 + n, 9200 + n, 9300 + n);
+    }    try {
       await dnr.updateSessionRules({ removeRuleIds: ids });
     } catch (_) {}
   }
 
+  /** WatchParty.me fetches the CDN as watchparty.me — attach page Referer (IDM) and unlock CORS. */
+  async function installPartyNetRules(tabId, referer, origin, mediaUrl) {
+    const dnr = api.declarativeNetRequest;
+    if (!dnr || !dnr.updateSessionRules || tabId == null || tabId <= 0) return false;
+    const host = util.host(mediaUrl || '');
+    const types = ['media', 'xmlhttprequest', 'other', 'image'];
+    const n = Number(tabId) % 800;
+    const reqId = 9200 + n;
+    const corsId = 9300 + n;
+    const requestHeaders = [];
+    if (referer) requestHeaders.push({ header: 'Referer', operation: 'set', value: referer });
+    if (origin) requestHeaders.push({ header: 'Origin', operation: 'set', value: origin });
+    const responseHeaders = [
+      { header: 'Access-Control-Allow-Origin', operation: 'set', value: '*' },
+      { header: 'Access-Control-Allow-Headers', operation: 'set', value: '*' },
+      { header: 'Access-Control-Allow-Methods', operation: 'set', value: 'GET, HEAD, OPTIONS' },
+    ];
+    const cond = { tabIds: [tabId], resourceTypes: types };
+    if (host) cond.urlFilter = '||' + host;
+    const addRules = [
+      {
+        id: corsId,
+        priority: 4,
+        action: { type: 'modifyHeaders', responseHeaders: responseHeaders },
+        condition: cond,
+      },
+    ];
+    if (requestHeaders.length) {
+      addRules.push({
+        id: reqId,
+        priority: 4,
+        action: { type: 'modifyHeaders', requestHeaders: requestHeaders },
+        condition: cond,
+      });
+    }
+    try {
+      await dnr.updateSessionRules({ removeRuleIds: [reqId, corsId], addRules: addRules });
+      partyTabs.set(tabId, { referer: referer, origin: origin, mediaUrl: mediaUrl });
+      return true;
+    } catch (e) {
+      log('party dnr failed', String((e && e.message) || e));
+      try {
+        const loose = { tabIds: [tabId], resourceTypes: types };
+        await dnr.updateSessionRules({
+          removeRuleIds: [reqId, corsId],
+          addRules: [
+            { id: corsId, priority: 4, action: { type: 'modifyHeaders', responseHeaders: responseHeaders }, condition: loose },
+            ...(requestHeaders.length ? [{ id: reqId, priority: 4, action: { type: 'modifyHeaders', requestHeaders: requestHeaders }, condition: loose }] : []),
+          ],
+        });
+        partyTabs.set(tabId, { referer: referer, origin: origin, mediaUrl: mediaUrl });
+        return true;
+      } catch (e2) {
+        log('party dnr fallback failed', String((e2 && e2.message) || e2));
+        return false;
+      }
+    }
+  }
   function categoryFromUrl(url, fallback) {
     if (/\.m3u8(\?|#|$)/i.test(url) || /\.m3u(\?|#|$)/i.test(url)) return 'hls';
     if (/\.mpd(\?|#|$)/i.test(url)) return 'dash';
@@ -1581,6 +1644,7 @@ try {
             const stored = await api.storage.local.get(key);
             const payload = stored[key];
             if (payload && Date.now() - (payload.createdAt || 0) < 6 * 60 * 1000) {
+              await installPartyNetRules(tabId, payload.referer, payload.origin, payload.mediaUrl);
               await api.storage.local.remove(key);
               return { ok: true, payload: payload };
             }
@@ -1689,12 +1753,17 @@ try {
         if (sid) {
           playTabs.delete(id);
           api.storage.local.remove(PLAY_PREFIX + sid);
-          dropRefererRule(id);
         }
+        if (sid || partyTabs.has(id)) dropRefererRule(id);
+        partyTabs.delete(id);
       });
     }
     if (api.tabs.onUpdated) {
       api.tabs.onUpdated.addListener((id, change) => {
+        if (partyTabs.has(id) && (change.status === 'complete' || change.url)) {
+          const p = partyTabs.get(id);
+          installPartyNetRules(id, p.referer, p.origin, p.mediaUrl);
+        }
         const st = tabs.get(id);
         if (!st) return;
         if (change.status === 'loading' && change.url && util.host(change.url) !== util.host(st.url)) {
