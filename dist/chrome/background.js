@@ -4702,7 +4702,7 @@
         const best = res.results[0];
         try {
           const vtt = await SR.subs.resolve(best, settings, {});
-          st.pendingSub = { vtt: vtt, name: best.filename || best.name, provider: best.provider, lang: best.langCode || '' };
+          st.pendingSub = { vtt: vtt, name: best.filename || best.name, provider: best.provider, lang: best.langCode || '', fileUrl: best.fileUrl || best.pageUrl || '' };
           // NOTE: no st.sub.chosen here - "attached" must only appear after an
           // explicit Use/Pick, never as a side effect of the search itself.
           toastTo(tabId, t('toast.subs', { name: shorten(best.name || best.filename) }), 'ok', { id: 'sub-attach', label: t('panel.subs.attach') });
@@ -4803,13 +4803,22 @@
               name: st.pendingSub.name,
               filename: st.pendingSub.name,
             })));
-      if (already) return { vtt: st.pendingSub.vtt, name: st.pendingSub.name, lang: 'id' };
+      if (already) return { vtt: st.pendingSub.vtt, name: st.pendingSub.name, lang: 'id', fileUrl: st.pendingSub.fileUrl || '' };
       try {
         const vtt = await SR.subs.resolve(indo, settings, {});
-        return { vtt: vtt, name: indo.filename || indo.name, lang: 'id' };
-      } catch (_) {}
+        return { vtt: vtt, name: indo.filename || indo.name, lang: 'id', fileUrl: indo.fileUrl || indo.pageUrl || '' };
+      } catch (e) {
+        // transient network hiccup: retry once before giving up on the room
+        if (/fetch|network|load failed|timeout/i.test(String((e && e.message) || e))) {
+          try {
+            await new Promise((r) => setTimeout(r, 500));
+            const vtt = await SR.subs.resolve(indo, settings, {});
+            return { vtt: vtt, name: indo.filename || indo.name, lang: 'id', fileUrl: indo.fileUrl || indo.pageUrl || '' };
+          } catch (_) {}
+        }
+      }
     }
-    return st.pendingSub ? { vtt: st.pendingSub.vtt, name: st.pendingSub.name, lang: st.pendingSub.lang || '' } : null;
+    return st.pendingSub ? { vtt: st.pendingSub.vtt, name: st.pendingSub.name, lang: st.pendingSub.lang || '', fileUrl: st.pendingSub.fileUrl || '' } : null;
   }
 
   async function launchWatchParty(st, itemId) {
@@ -5864,7 +5873,7 @@
             return { ok: false, reason: reason };
           }
         }
-        st.pendingSub = { vtt: vtt, name: it.filename || it.name, provider: it.provider, langCode: it.langCode || 'id' };
+        st.pendingSub = { vtt: vtt, name: it.filename || it.name, provider: it.provider, langCode: it.langCode || 'id', fileUrl: it.fileUrl || it.pageUrl || '' };
         st.sub.chosen = { index: idx, name: it.name };
         // One click = done: attach straight to the page player (blob URL, no
         // local download). The toast keeps a Download action for people who

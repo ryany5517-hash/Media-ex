@@ -4373,17 +4373,31 @@
         });
       }
 
+      function findSubtitleField(doc) {
+        const f = fields(doc);
+        return f.find((x) => /subtitle/i.test(x.label)) || f.find((x) => /caption|srt|vtt|teks/i.test(x.label)) || null;
+      }
+
       async function publishRoomSubtitle(vtt) {
         if (state.published || !vtt || !root.fetch) return;
+        // Never hammer the endpoint: one attempt every ~5 s while the room
+        // loads, so a late-appearing Subtitle URL field still gets filled.
+        const now = Date.now();
+        if (state.publishTriedAt && now - state.publishTriedAt < 5000) return;
+        state.publishTriedAt = now;
         try {
           const res = await root.fetch('/subtitle', { method: 'POST', body: vtt, headers: { 'Content-Type': 'text/plain' } });
           const json = await res.json();
           if (!json || !json.hash) return;
           const url = (root.location && root.location.origin ? root.location.origin : '') + '/subtitle/' + json.hash;
-          const f = fields(doc);
-          const subField = f.find((x) => /subtitle/i.test(x.label));
-          if (subField) setValue(subField.el, url, true);
-          state.published = true;
+          const subField = findSubtitleField(doc);
+          if (subField) {
+            setValue(subField.el, url, true);
+            // only claim success when the field was actually found & filled,
+            // otherwise keep retrying on the next tick
+            state.published = true;
+            state.subtitleUrl = url;
+          }
         } catch (_) {}
       }
 
@@ -4405,9 +4419,12 @@
           tryForm();
           chip();
           unmuteOnce();
+          // Subtitle URL for the room form: publish + fill independent of the
+          // <video> appearing (the form exists before the player does).
+          if (p.subtitle && p.subtitle.vtt) publishRoomSubtitle(p.subtitle.vtt);
+          // Direct track backup once the room player actually exists.
           if (!state.attached && p.subtitle && p.subtitle.vtt && doc.querySelector('video')) {
             attachTracks(p.subtitle.vtt, p.subtitle.name, false);
-            publishRoomSubtitle(p.subtitle.vtt);
           }
         } catch (_) {}
       }
