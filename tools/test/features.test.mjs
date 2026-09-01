@@ -1206,3 +1206,124 @@ test('F11 player in an iframe gets the subtitle track (streaming-site embed patt
   assert.equal(track.getAttribute('srclang'), 'id', 'language applied');
   h.dom.window.close();
 });
+
+/* ------------------------------------------------------------------ *
+ * F12 · THE user's complaint: search with NO API key configured.
+ *       Before this fix the user got a generic "Subtitle tidak
+ *       ditemukan" with no reason and no way forward. Now: an
+ *       actionable toast + needKey flag + a Settings button in the
+ *       panel, and the reason is stored in sub.error.
+ * ------------------------------------------------------------------ */
+test('F12 no-API-key search is never silent: explains why + offers Settings', async () => {
+  // Wyzie enabled but NO key set; every other provider disabled: this is the
+  // out-of-the-box state where the search has nothing to query with.
+  const h = await boot({ settings: { autoSubtitle: false, providers: { wyzie: true, subdl: false, opensubtitles: false, yify: false } } });
+  await h.hub.sendFromContent({ type: 'action', payload: { name: 'subs-search', tabId: 1 } });
+  // Search completes as 'none' (not stuck), with the reason attached.
+  assert.ok(await until(h, () => (stateOf(h).sub || {}).status === 'none', 12000), 'search settles as none: ' + JSON.stringify(stateOf(h).sub));
+  const sub = stateOf(h).sub || {};
+  assert.equal(sub.needKey, true, 'needKey flagged so the UI can guide the user');
+  assert.ok(/key/i.test(sub.error || ''), 'error carries the real reason: ' + sub.error);
+  // A warn toast reached the page with the actionable text.
+  await settle(h, 150);
+  const shadow = h.dom.window.document.getElementById('stream-radar-host').shadowRoot;
+  const warns = shadow ? [...shadow.querySelectorAll('.srad-toast')].filter((el) => el.getAttribute('data-kind') === 'warn') : [];
+  assert.ok(warns.length >= 1, 'a warn toast explained the problem: ' + (warns.map((el) => el.textContent).join(' | ')));
+  assert.ok(warns.some((el) => /key/i.test(el.textContent)), 'toast mentions the API key');
+  // The panel empty state offers a Settings button that fires the options action.
+  const tab = shadow.querySelector('[data-act="tab"][data-tab="subs"]');
+  if (tab) tab.dispatchEvent(new h.dom.window.MouseEvent('click', { bubbles: true }));
+  await settle(h, 120);
+  const btn = shadow.querySelector('.srad-note [data-act="options"]');
+  assert.ok(btn, 'Settings button is rendered in the empty state');
+  assert.match(btn.textContent, /Pengaturan|Settings/i, 'button label is actionable');
+  // And the sub-state renders the reason, not just "none".
+  assert.ok(shadow.querySelector('.srad-note span'), 'empty state shows a reason line');
+  h.dom.window.close();
+});
+
+test('F12b with a real key the search finds results (no false needKey)', async () => {
+  const net = makeNetStub({
+    'subdl.com/api/v1/subtitles?': {
+      body: JSON.stringify({
+        results: [
+          { attributes: { id: 4242, name: 'The Eye', filename: 'The.Eye.2002.id.srt', lang: { code: 'id', name: 'Indonesian' }, format: 'srt', year: '2002', downloadCount: 1500, verified: true } },
+        ],
+      }),
+      type: 'application/json',
+    },
+  });
+  const h = await boot({ net, settings: { autoSubtitle: false, subdlApiKey: 'real-key', providers: { subdl: true, opensubtitles: false, yify: false } } });
+  await h.hub.sendFromContent({ type: 'action', payload: { name: 'subs-search', tabId: 1 } });
+  assert.ok(await until(h, () => (stateOf(h).sub || {}).status === 'found', 12000), 'found: ' + JSON.stringify(stateOf(h).sub));
+  const sub = stateOf(h).sub || {};
+  assert.equal(sub.needKey, undefined, 'no needKey when the search worked');
+  assert.ok((sub.items || []).length >= 1, 'results present');
+  h.dom.window.close();
+});
+
+/* ------------------------------------------------------------------ *
+ * F13 · THE real-world failure: 67movies with the vidlove iframe player.
+ *       The video is a blob: URL (no id in it), the title scan produced a
+ *       junk SEO title with NO catalog id (SPA/canonical gap). The search
+ *       must recover the tmdb id from the PAGE url (/watch/movie/10389)
+ *       and still find subtitles via Wyzie (proven live: id=10389 returns
+ *       Indonesian subs for The Eye).
+ * ------------------------------------------------------------------ */
+test('F13 blob iframe player + junk title: search recovers id from the PAGE url and finds subs', async () => {
+  const html = `<!doctype html><html lang="id"><head><meta charset="utf-8">
+<title>67movies.net — Watch Movies &amp; TV Shows in HD Online</title>
+</head><body><p>Finding the best source</p></body></html>`;
+  const net = makeNetStub({
+    'sub.wyzie.io/search?': {
+      body: JSON.stringify([
+        {
+          id: '1956192374',
+          url: 'https://dl.opensubtitles.org/en/download/subencoding-utf8/src-api/vrf-x/file/1956192374',
+          format: 'srt',
+          encoding: 'UTF-8',
+          display: 'Indonesian',
+          language: 'id',
+          media: 'The Eye',
+          release: 'The Eye (2002) DVDRip',
+          fileName: 'The Eye (2002) DVDRip.srt',
+          downloadCount: 135,
+          ai: false,
+        },
+      ]),
+      type: 'application/json',
+    },
+  });
+  const h = await boot({
+    html,
+    url: 'https://67movies.nl/watch/movie/10389',
+    net,
+    settings: { autoSubtitle: false, wyzieApiKey: 'wyzie-test', subtitleLang: 'id', providers: { wyzie: true, subdl: true, opensubtitles: false, yify: false } },
+  });
+
+  // Simulate the exact real-world state BEFORE the fix:
+  // (a) title scan produced a junk title with NO catalog id (no canonical on
+  //     the page, so resolve() could not recover /watch/movie/10389);
+  // (b) the iframe player's entry is a blob: URL with no id in it.
+  await h.hub.sendFromContent({ type: 'title', payload: { title: '67movies.net — Watch Movies & TV Shows in HD Online', isJunk: true, url: 'https://67movies.nl/watch/movie/10389', host: '67movies.nl' } });
+  await h.hub.sendFromContent({
+    type: 'media',
+    payload: { url: 'blob:https://player.vidlove.cc/4b28c588-d8d7-4b2e-a523-ed9cdae6d593', via: 'mse-src', size: 1000000, bytes: 1000000 },
+  });
+  await settle(h, 150);
+  const before = stateOf(h);
+  assert.equal((before.title || {}).tmdbId, undefined, 'fixture: title has NO id');
+  assert.equal((before.title || {}).urlTmdbId, undefined, 'fixture: title has NO url id');
+  assert.ok((before.items || []).some((i) => String(i.url).indexOf('blob:') === 0), 'fixture: blob stream entry present');
+
+  await h.hub.sendFromContent({ type: 'action', payload: { name: 'subs-search', tabId: 1 } });
+  assert.ok(await until(h, () => (stateOf(h).sub || {}).status === 'found', 15000), 'search found subs via page-url id recovery: ' + JSON.stringify(stateOf(h).sub));
+  const sub = stateOf(h).sub || {};
+  assert.equal(sub.tmdbId, '10389', 'search used the tmdb id recovered from the page url');
+  assert.ok((sub.items || []).length >= 1, 'results present: ' + JSON.stringify((sub.items || []).map((i) => i.name)));
+  // The Wyzie request carried the recovered id.
+  const wyzieCall = net.calls.find(([u]) => String(u).includes('sub.wyzie.io/search'));
+  assert.ok(wyzieCall, 'Wyzie was queried');
+  assert.ok(String(wyzieCall[0]).includes('id=10389'), 'Wyzie got id=10389: ' + String(wyzieCall[0]).slice(0, 120));
+  h.dom.window.close();
+});

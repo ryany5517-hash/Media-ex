@@ -195,7 +195,14 @@
     let pvHtml = Object.keys(pv)
       .map((k) => `<span class="pv" data-s="${esc(pv[k].status)}" title="${esc(pv[k].reason || '')}">${esc(pv[k].label || k)}: ${esc(pv[k].count != null ? pv[k].count : pv[k].status)}</span>`)
       .join('');
-    if (sub.error) pvHtml += `<span class="pv" data-s="err" title="${esc(sub.error)}">${esc(sub.error)}</span>`;
+    const keyBtn = document.getElementById('subsKeyBtn');
+    if (sub.needKey) {
+      pvHtml += `<span class="pv" data-s="skipped" title="${esc(t('panel.subs.skipped'))}">${esc(t('panel.subs.skipped'))}</span>`;
+      if (keyBtn) keyBtn.style.display = '';
+    } else {
+      if (keyBtn) keyBtn.style.display = 'none';
+      if (sub.error) pvHtml += `<span class="pv" data-s="err" title="${esc(sub.error)}">${esc(sub.error)}</span>`;
+    }
     $('#subsProviders').innerHTML = pvHtml;
     // Stability guard: the popup refreshes every 4s; rebuilding the list when
     // nothing changed would detach the row button mid-click.

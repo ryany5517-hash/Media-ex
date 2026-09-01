@@ -413,6 +413,7 @@
           sub.tmdbId,
           api.state && api.state.subHasFile ? 'f' : '',
           sub.resolveError || '',
+          sub.needKey ? 'k' : '',
           sub.chosen ? 'c' + sub.chosen.index : '',
           itemsKey,
         ].join('~');
@@ -452,7 +453,15 @@
           '</div>' +
           (rows
             ? '<div class="srad-sub-list">' + rows + '</div>'
-            : '<div class="srad-note">' + ico('info') + '<span>' + esc(sub.error || t('panel.subs.hint')) + '</span></div>') +
+            : '<div class="srad-note">' +
+              ico(sub.needKey ? 'settings' : 'info') +
+              '<span>' +
+              esc(sub.needKey ? t('panel.subs.skipped') : sub.error || t('panel.subs.hint')) +
+              '</span>' +
+              (sub.needKey
+                ? '<button class="srad-btn" data-act="options" data-primary="1" style="margin-left:auto">' + esc(t('panel.subs.openSettings')) + '</button>'
+                : '') +
+              '</div>') +
           (api.state && api.state.subHasFile
             ? '<div class="srad-sub-ready" data-ready="1">' + ico('check') + '<span>' + esc(sub.chosen && sub.chosen.name ? t('panel.subs.active') + ': ' + sub.chosen.name : t('panel.subs.ready')) + '</span></div>'
             : '') +

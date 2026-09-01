@@ -2884,6 +2884,7 @@
       'panel.subs.networkFail': 'Could not fetch the subtitle file (network). Check your connection/ad blocker, then try again.',
       'panel.subs.active': 'Active',
       'panel.subs.retry': 'Search again',
+      'panel.subs.openSettings': 'Open Settings',
       'action.play': 'Play',
       'action.watchparty': 'Watch Party',
       'action.copyAll': 'Copy every detected stream URL',
@@ -3143,6 +3144,7 @@
       'panel.subs.networkFail': 'Gagal mengambil file subtitle (jaringan). Cek koneksi/ublock, lalu coba lagi.',
       'panel.subs.active': 'Dipakai',
       'panel.subs.retry': 'Cari lagi',
+      'panel.subs.openSettings': 'Buka Pengaturan',
       'action.play': 'Putar',
       'action.watchparty': 'Nonton Bareng',
       'action.copyAll': 'Salin semua URL stream terdeteksi',
@@ -4650,15 +4652,19 @@
     const st = getTab(tabId);
     if (!st) return;
     let title = st.title || {};
-    // Page title junk/empty but a stream was detected: many CDNs bake the
-    // TMDB/IMDb id into the path (/hls/10389/master.m3u8, /dash/1396/manifest.mpd).
-    // Recover it so the search can still run by id (Wyzie) and the title can be
-    // hydrated from TMDB even when the page itself is a generic SEO shell.
-    if ((!title.title || title.isJunk) && !title.imdbId && !title.tmdbId && !title.urlTmdbId) {
+    // The catalog id usually lives in the PAGE url (/watch/movie/10389). The
+    // stream url is NOT enough: on streaming sites the player is an iframe and
+    // the entry is a blob: URL with no id (blob:https://player.vidlove.cc/...).
+    // Recover from page url first, then stream url, so the search can always
+    // run by id (Wyzie) even when the title scan failed (SPA, missing
+    // canonical) and the video lives in an iframe.
+    if (!title.imdbId && !title.tmdbId && !title.urlTmdbId) {
       const best = st.store.best();
-      if (best && best.url && SR.title && SR.title.idsFromUrl) {
+      const candidates = [st.url, best && best.url];
+      for (const u of candidates) {
+        if (!u || !SR.title || !SR.title.idsFromUrl) continue;
         try {
-          const ids = SR.title.idsFromUrl(best.url);
+          const ids = SR.title.idsFromUrl(u);
           if (ids && (ids.tmdbId || ids.imdbId)) {
             title = Object.assign({}, title, {
               urlTmdbId: ids.tmdbId || null,
@@ -4666,6 +4672,7 @@
               kind: ids.kind || title.kind || 'movie',
             });
             st.title = title;
+            break;
           }
         } catch (_) {}
       }
@@ -4743,7 +4750,27 @@
           } catch (_) {}
         }
       } else {
-        toastTo(tabId, t('toast.subsNone', { title: want.title || '?' }), 'warn');
+        // Zero results - NEVER silent. Explain exactly why and what to do:
+        // the most common cause is a missing provider API key (all providers
+        // skipped), then provider errors, then a genuinely empty catalog.
+        const prov = res.providerInfo || {};
+        const all = Object.keys(prov).map((k) => prov[k]).filter(Boolean);
+        const skipped = all.filter((p) => p.status === 'skipped');
+        const errored = all.filter((p) => p.status === 'error');
+        const needKey = skipped.length > 0 && (skipped.some((p) => /key/i.test(p.reason || '')) || skipped.length === all.length);
+        const reason = skipped
+          .map((p) => (p.label || '') + ': ' + (p.reason || 'skipped'))
+          .concat(errored.map((p) => (p.label || '') + ': ' + (p.reason || 'error')))
+          .join('; ');
+        st.sub.error = reason || (errored.length ? res.errors.join('; ') : '');
+        st.sub.needKey = needKey;
+        if (needKey) {
+          toastTo(tabId, t('panel.subs.skipped'), 'warn', { id: 'options', label: t('panel.subs.openSettings') });
+        } else if (errored.length) {
+          toastTo(tabId, t('panel.subs.error') + ': ' + shorten(reason, 160), 'err');
+        } else {
+          toastTo(tabId, t('toast.subsNone', { title: want.title || '?' }), 'warn');
+        }
       }
     } catch (e) {
       st.sub = { status: 'error', items: st.sub.items || [], error: String((e && e.message) || e), query: want.title, imdbId: want.imdbId || '', tmdbId: want.tmdbId || '', at: Date.now() };
