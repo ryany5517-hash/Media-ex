@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stream Radar - Uji Otomatis Subtitle</title>
+<style>
+  body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; max-width: 720px; margin: 24px auto; padding: 0 16px; background: #0f1216; color: #e8edf2; line-height: 1.5; }
+  h1 { font-size: 20px; margin: 0 0 6px; }
+  .sub { color: #8fa0b3; font-size: 13px; margin-bottom: 18px; }
+  video { width: 100%; max-width: 640px; background: #000; border-radius: 8px; margin: 12px 0; }
+  .note { background: #1a2129; border: 1px solid #2c3a49; border-radius: 8px; padding: 12px 14px; font-size: 13px; margin: 12px 0; }
+  .note b { color: #7fb3ff; }
+  #srad-selftest { margin-top: 16px; }
+  /* .srad-st-* styles are injected by the extension (content/ui-styles.js) */
+  code { background: #1c242e; padding: 1px 6px; border-radius: 4px; font-size: 12px; }
+</style>
+</head>
+<body>
+  <h1>Stream Radar - Uji Otomatis Subtitle</h1>
+  <div class="sub">Halaman ini menguji alur subtitle asli extension: cari -> pilih -> attach native ke player, lalu auto re-attach saat player dibuat ulang dan setelah reload halaman.</div>
+
+  <div class="note">
+    <b>Cara pakai:</b> jalankan <code>npm run demo</code> di folder repo, buka
+    <code>http://localhost:8088/docs/selftest.html?srad-selftest=1</code> di browser yang extension-nya
+    sudah di-reload. Tes berjalan otomatis dan laporan muncul di bawah. Laporan juga tampil lagi
+    (fase reload) setelah halaman dimuat ulang sendiri.
+  </div>
+
+  <video id="player" controls></video>
+
+  <div id="srad-selftest">
+    <div class="srad-st-row"><span class="srad-st-tag" style="color:#8fa0b3">...</span><span>Menunggu Stream Radar menjalankan tes (pastikan extension aktif lalu refresh halaman ini).</span></div>
+  </div>
+</body>
+</html>

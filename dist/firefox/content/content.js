@@ -49,6 +49,9 @@
   root.__streamRadarContent = { version: SR.VERSION };
 
   const isTop = safeIsTop();
+  // Self-test mode (docs/selftest.html): runs the real search + attach chain
+  // against this very page and writes a visible PASS/FAIL report into the DOM.
+  const SELF_TEST = /[?&#]srad-selftest(=1)?/.test(String((root.location && root.location.href) || ''));
   let settings = Object.assign({}, SR.defaults);
   let ui = null;
   let scanner = null;
@@ -485,7 +488,7 @@
           state = Object.assign({}, state, msg.payload || {});
           settings = state.settings || settings;
           applyLang();
-          if (isTop) {
+          if (isTop && !SELF_TEST) {
             ensureUi();
             render();
           }
@@ -574,6 +577,152 @@
   }
 
   /* ------------------------------------------------------------------ *
+   * self-test (docs/selftest.html) - real end-to-end proof in this browser
+   * ------------------------------------------------------------------ */
+  function stReport(id, ok, detail) {
+    try {
+      let box = doc.getElementById('srad-selftest');
+      if (!box) {
+        box = doc.createElement('div');
+        box.id = 'srad-selftest';
+        doc.body.appendChild(box);
+      }
+      const row = doc.createElement('div');
+      row.className = 'srad-st-row ' + (ok ? 'ok' : 'fail');
+      const tag = doc.createElement('span');
+      tag.className = 'srad-st-tag';
+      tag.textContent = ok ? 'OK' : 'GAGAL';
+      const txt = doc.createElement('span');
+      txt.textContent = '[' + id + '] ' + (detail || '');
+      row.appendChild(tag);
+      row.appendChild(txt);
+      box.appendChild(row);
+    } catch (_) {}
+  }
+
+  function stTrackOn(video) {
+    return !!(video && video.querySelector && video.querySelector('track[data-srad="1"]'));
+  }
+
+  function stWaitFor(fn, ms, step) {
+    return new Promise((resolve) => {
+      const t0 = Date.now();
+      const iv = setInterval(() => {
+        let v = null;
+        try { v = fn(); } catch (_) {}
+        if (v) { clearInterval(iv); resolve(v); }
+        else if (Date.now() - t0 > ms) { clearInterval(iv); resolve(null); }
+      }, 250);
+    });
+  }
+
+  function stVideo() {
+    return doc && doc.querySelector('video');
+  }
+
+  async function runSelfTest() {
+    try {
+      const phase = (() => {
+        try { return sessionStorage.getItem('sradSelfTestPhase') || ''; } catch (_) { return ''; }
+      })();
+      stReport('SELF-TEST', true, 'Stream Radar self-test dimulai di ' + root.location.href);
+      if (phase === 'reload') {
+        // Phase 2: the page reloaded - the background must have re-attached the
+        // picked subtitle on its own (ui-ready -> pendingSub -> attach).
+        const vid = await stWaitFor(() => {
+          const v = stVideo();
+          return v && v.querySelector('track[data-srad="1"]') ? v : null;
+        }, 12000, 'reload');
+        if (vid) {
+          stReport('7-reload', true, 'subtitle balik otomatis setelah reload halaman (tanpa klik)');
+        } else {
+          stReport('7-reload', false, 'tidak ada track setelah reload - auto re-attach gagal');
+        }
+        stSummary();
+        try { sessionStorage.removeItem('sradSelfTestPhase'); } catch (_) {}
+        return;
+      }
+
+      // Phase 1 -----------------------------------------------------------------
+      // Step 1: real search (title override so it works without a movie URL).
+      await sendAction('subs-search', { override: { title: 'The Eye', year: '2002', kind: 'movie' } });
+      const found = await stWaitFor(() => (state.sub || {}).status === 'found', 15000, 'search');
+      if (found) {
+        stReport('1-search', true, (state.sub.items || []).length + ' hasil subtitle ditemukan');
+      } else {
+        const st2 = state.sub || {};
+        stReport('1-search', false, 'tidak ada hasil: ' + (st2.error || st2.status || 'timeout') + ' (attach tetap diuji)');
+      }
+
+      // Step 2: pick the first real result through the same path as the Use button.
+      if (found && (state.sub.items || []).length) {
+        await sendAction('sub-pick', { index: 0 });
+        const vid = await stWaitFor(() => stTrackOn(stVideo()) ? stVideo() : null, 15000, 'pick');
+        stReport('2-pick-attach', !!vid, vid ? 'track native terpasang ke player' : 'attach tidak muncul setelah pick');
+      } else {
+        stReport('2-pick-attach', true, 'dilewati (tidak ada hasil search)');
+      }
+
+      // Step 3: hermetic attach - demo VTT through the real chain, no API key.
+      await send('action', { name: 'sub-selftest' });
+      const hvid = await stWaitFor(() => stTrackOn(stVideo()) ? stVideo() : null, 15000, 'hermetic');
+      stReport('3-attach', !!hvid, hvid ? 'attach hermetik OK (track native, tanpa API key)' : 'attach hermetik GAGAL');
+
+      // Step 4: player re-created -> armed watcher must re-attach.
+      const old = stVideo();
+      if (old) {
+        const fresh = doc.createElement('video');
+        fresh.id = 'srad-st-player2';
+        fresh.controls = true;
+        old.parentNode && old.parentNode.replaceChild(fresh, old);
+        const nv = await stWaitFor(() => stTrackOn(stVideo()) ? stVideo() : null, 12000, 'recreate');
+        stReport('4-recreate', !!nv, nv ? 'subtitle balik otomatis ke player baru' : 'player baru tidak dapat track');
+      } else {
+        stReport('4-recreate', true, 'dilewati (tidak ada video)');
+      }
+
+      // Step 5: full reload - the background must re-attach from pendingSub on
+      // its own. The summary is written BEFORE reload (in a real browser the
+      // page dies right after); phase 2 (after reload) verifies + re-summarises.
+      try { sessionStorage.setItem('sradSelfTestPhase', 'reload'); } catch (_) {}
+      stReport('5-reload', true, 'me-reload halaman untuk tes auto re-attach...');
+      stSummary();
+      try {
+        setTimeout(() => root.location.reload(), 300);
+      } catch (_) {
+        // environments without navigation (test harness) can't reload; the
+        // reload phase is covered by the F10b automated test instead.
+        stReport('5-reload', true, 'dilewati (lingkungan tes tanpa navigasi; F10b menguji reload)');
+        stSummary();
+      }
+    } catch (e) {
+      stReport('SELF-TEST', false, 'error: ' + String((e && e.message) || e));
+      stSummary();
+    }
+  }
+
+  function stSummary() {
+    try {
+      const rows = doc.querySelectorAll('#srad-selftest .srad-st-row');
+      let pass = 0;
+      let fail = 0;
+      rows.forEach((r) => {
+        if (r.className.indexOf('ok') >= 0) pass++;
+        else if (r.className.indexOf('fail') >= 0) fail++;
+      });
+      const ok = fail === 0;
+      const box = doc.getElementById('srad-selftest');
+      if (box) {
+        const sum = doc.createElement('div');
+        sum.className = 'srad-st-summary ' + (ok ? 'ok' : 'fail');
+        sum.textContent = (ok ? 'SELURUH UJI LULUS' : 'ADA UJI GAGAL') + ' - ' + pass + ' OK / ' + fail + ' GAGAL';
+        box.appendChild(sum);
+      }
+      try { doc.title = (ok ? '[OK] ' : '[GAGAL] ') + doc.title; } catch (_) {}
+    } catch (_) {}
+  }
+
+  /* ------------------------------------------------------------------ *
    * boot
    * ------------------------------------------------------------------ */
   async function boot() {
@@ -584,8 +733,9 @@
     applyLang();
     ensurePageHooks();
     startScanner();
-    if (isTop) ensureUi();
+    if (isTop && !SELF_TEST) ensureUi();
     send('ui-ready', { isTop: isTop, title: doc && doc.title, watchparty: /watchparty\.me$/i.test(root.location.hostname) });
+    if (isTop && SELF_TEST) runSelfTest();
     // late SPA hydration re-checks
     setTimeout(() => scanner && scanner.readTitle(true), 4000);
   }

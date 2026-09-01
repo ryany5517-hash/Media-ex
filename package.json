@@ -5,7 +5,7 @@
   "description": "Stream Radar \u2014 ultra media streaming detector + WatchParty + auto Indonesian subtitles, for Chrome & Firefox (Manifest V3). Not published to any store: load it unpacked.",
   "type": "module",
   "scripts": {
-    "test": "node --test --test-force-exit --test-concurrency=1 tools/test/action-audit.test.mjs tools/test/core.test.mjs tools/test/demo.test.mjs tools/test/design.test.mjs tools/test/features.test.mjs tools/test/i18n.test.mjs tools/test/integration.test.mjs tools/test/modules.test.mjs tools/test/order.test.mjs tools/test/player.test.mjs tools/test/popup.test.mjs tools/test/theme.test.mjs tools/test/publish.test.mjs tools/test/theme-cycle.test.mjs tools/test/ui.test.mjs tools/test/updater.test.mjs tools/test/userscript.test.mjs tools/test/watchparty-room.test.mjs",
+    "test": "node --test --test-force-exit --test-concurrency=1 tools/test/action-audit.test.mjs tools/test/selftest.test.mjs tools/test/core.test.mjs tools/test/demo.test.mjs tools/test/design.test.mjs tools/test/features.test.mjs tools/test/i18n.test.mjs tools/test/integration.test.mjs tools/test/modules.test.mjs tools/test/order.test.mjs tools/test/player.test.mjs tools/test/popup.test.mjs tools/test/theme.test.mjs tools/test/publish.test.mjs tools/test/theme-cycle.test.mjs tools/test/ui.test.mjs tools/test/updater.test.mjs tools/test/userscript.test.mjs tools/test/watchparty-room.test.mjs",
     "test:core": "node --test tools/test/core.test.mjs",
     "lint": "web-ext lint --source-dir dist/firefox --no-input --self-hosted",
     "build": "node tools/build.mjs",
@@ -23,7 +23,7 @@
     "qa": "node tools/design-qa.mjs --strict",
     "contrast": "node tools/contrast.mjs",
     "sync:theme": "node tools/sync-theme.mjs",
-  "update": "node -e \"require('child_process').execSync('git stash -u',{stdio:'inherit'});require('child_process').execSync('git pull origin arena/01a0534f-media-ex',{stdio:'inherit'});\" && node tools/build.mjs",
+    "update": "node -e \"require('child_process').execSync('git stash -u',{stdio:'inherit'});require('child_process').execSync('git pull origin arena/01a0534f-media-ex',{stdio:'inherit'});\" && node tools/build.mjs",
     "test:demo": "node --test --test-force-exit tools/test/demo.test.mjs",
     "test:unit": "node --test --test-force-exit tools/test/core.test.mjs tools/test/design.test.mjs",
     "test:e2e": "node --test --test-force-exit --test-concurrency=1 tools/test/integration.test.mjs tools/test/features.test.mjs tools/test/demo.test.mjs",
@@ -31,8 +31,10 @@
     "preview:render": "node tools/render-preview.mjs"
   },
   "devDependencies": {
+    "@sparticuz/chromium": "^149.0.0",
     "jsdom": "^26.0.0",
     "lucide-static": "^0.469.0",
+    "playwright-core": "^1.62.1",
     "web-ext": "^8.0.0"
   },
   "license": "MIT",

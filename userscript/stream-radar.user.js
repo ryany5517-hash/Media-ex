@@ -5375,6 +5375,17 @@
 @media (prefers-contrast: more) {
   .srad-root { --sr-line: currentColor; --sr-glass: ButtonFace; --sr-surface: Canvas; --sr-ink: CanvasText; }
 }
+
+/* self-test report (docs/selftest.html) - page-level diagnostics */
+.srad-st-row { display: flex; gap: 10px; align-items: baseline; padding: 7px 10px; border-radius: 6px; margin: 4px 0; font-size: 13px; background: rgba(127, 127, 127, 0.08); }
+.srad-st-row.ok { border-left: 3px solid #2ecc71; }
+.srad-st-row.fail { border-left: 3px solid #e74c3c; }
+.srad-st-tag { font-weight: 700; min-width: 62px; }
+.srad-st-row.ok .srad-st-tag { color: #2ecc71; }
+.srad-st-row.fail .srad-st-tag { color: #e74c3c; }
+.srad-st-summary { margin-top: 12px; padding: 12px 14px; border-radius: 8px; font-weight: 700; font-size: 15px; }
+.srad-st-summary.ok { background: rgba(46, 204, 113, 0.18); color: #1f9d5c; }
+.srad-st-summary.fail { background: rgba(231, 76, 60, 0.16); color: #c0392b; }
 `;
 })(typeof globalThis !== 'undefined' ? globalThis : window);
 

@@ -1800,9 +1800,29 @@ try {
           // script anymore (title detection dead). Re-inject it so the title can
           // be read; the search itself also recovers ids from stream URLs.
           await ensureContentAlive(tabId);
+          // The self-test page has no movie URL; allow a title override so the
+          // real search pipeline can still be exercised end-to-end.
+          if (msg.override) {
+            st.title = Object.assign({}, st.title, msg.override);
+          }
           const ok = scheduleSubSearch(tabId, true);
           return ok ? { ok: true } : { ok: false, reason: t('toast.subsNoStream') };
         }
+      case 'sub-selftest': {
+        // Hermetic attach proof for docs/selftest.html: a demo VTT goes through
+        // the REAL attach chain (attachPendingSub -> retry -> content <track>
+        // -> armed watcher -> ui-ready re-attach) without needing an API key.
+        st.pendingSub = {
+          vtt: 'WEBVTT\n\n00:00:00.000 --> 00:00:04.000\nStream Radar self-test subtitle\n\n00:00:04.000 --> 00:00:08.000\nNative track, in sync with the player',
+          name: 'Self-Test.srt',
+          provider: 'self-test',
+          langCode: 'id',
+          fileUrl: '',
+        };
+        const att = await attachPendingSub(st, tabId, 4);
+        broadcast(tabId, 'sub');
+        return { ok: !!(att && att.applied), applied: att && att.applied, reason: att ? undefined : t('panel.subs.noContent') };
+      }
       case 'sub-attach': {
         if (!st.pendingSub) await runSubSearch(tabId);
         if (!st.pendingSub) return { ok: false, reason: 'no subtitle available' };
