@@ -49,6 +49,7 @@ async function bootPopup({ state = STATE, fail = {} } = {}) {
   const win = dom.window;
   const sent = [];
   const copied = [];
+  const msgListeners = [];
   Object.defineProperty(win.navigator, 'clipboard', {
     configurable: true,
     value: { writeText: async (t) => { copied.push(String(t)); } },
@@ -67,7 +68,7 @@ async function bootPopup({ state = STATE, fail = {} } = {}) {
         if (msg && msg.type === 'get-live') return { ok: false };
         return { ok: false };
       },
-      onMessage: { addListener: () => {} },
+      onMessage: { addListener: (cb) => msgListeners.push(cb) },
       openOptionsPage: () => {},
     },
     tabs: {
@@ -79,7 +80,7 @@ async function bootPopup({ state = STATE, fail = {} } = {}) {
   for (const f of PRELUDE) win.eval(read(f));
   win.eval(read('src/popup/popup.js'));
   await new Promise((r) => setTimeout(r, 60)); // let the boot refresh() resolve
-  return { dom, win, sent, copied };
+  return { dom, win, sent, copied, msgListeners };
 }
 
 const actionsSent = (sent) => sent.filter((m) => m && m.type === 'action' && m.payload).map((m) => m.payload);
@@ -151,4 +152,27 @@ test('popup a failed action shows an error toast (nothing is silent)', async () 
   const toasts = [...win.document.querySelectorAll('#toasts .toast')];
   assert.ok(toasts.some((el) => /ditolak/.test(el.textContent)), 'failure reason reached the popup toast: ' + toasts.map((t) => t.textContent).join(' | '));
   dom.window.close();
+});
+
+test('popup subtitle rows stay STABLE across refreshes (no vanish on 4s poll)', async () => {
+  const { dom, win, msgListeners } = await bootPopup();
+  try {
+    const first = win.document.querySelector('#subsList .sub-item');
+    assert.ok(first, 'subtitle rows rendered');
+    // the popup's own 4s refresh() re-fetches get-state with the SAME sub
+    const list = win.document.querySelector('#subsList');
+    // simulate the periodic refresh re-render path by pushing state-global with identical sub
+    msgListeners.forEach((cb) => cb({ type: 'state-global', tabId: 1, payload: { sub: STATE.sub, settings: STATE.settings, items: STATE.items } }));
+    await new Promise((r) => setTimeout(r, 30));
+    assert.equal(win.document.querySelector('#subsList .sub-item'), first, 'same DOM node after identical broadcast - no rebuild, no vanish');
+    assert.equal(win.document.querySelectorAll('#subsList .sub-item').length, 3, 'all rows still present');
+    // a real change (chosen) still updates the row state
+    msgListeners.forEach((cb) => cb({ type: 'state-global', tabId: 1, payload: { sub: Object.assign({}, STATE.sub, { chosen: { index: 2 } }), settings: STATE.settings, items: STATE.items } }));
+    await new Promise((r) => setTimeout(r, 30));
+    const rows = win.document.querySelectorAll('#subsList .sub-item');
+    assert.equal(rows.length, 3, 'still three rows');
+    assert.equal(rows[2].getAttribute('data-picked'), '1', 'third row marked picked after chosen change');
+  } finally {
+    dom.window.close();
+  }
 });

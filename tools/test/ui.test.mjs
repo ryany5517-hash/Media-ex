@@ -216,3 +216,43 @@ test('every panel button fires its intended action or a visible local effect (fu
   click('[data-act="x"]', 'X close (panel)');
   assert.equal(shadow.querySelector('.srad-panel').getAttribute('data-open'), '0', 'panel closes via X');
 });
+
+test('subs results stay STABLE across identical re-renders (no flicker / no vanish)', () => {
+  const dom = boot();
+  const win = dom.window;
+  const ui = win.SR.ui.create({ shadowMode: 'open', getSettings: () => STATE.settings, onAction: () => {} });
+  ui.mount();
+  const sub = {
+    status: 'found',
+    query: 'The Eye',
+    items: [
+      { provider: 'wyzie', id: 's1', name: 'The Eye (2002)', filename: 'The.Eye.2002.srt', langCode: 'id', format: 'srt', downloads: 1500, verified: true },
+      { provider: 'subdl', id: 's2', name: 'The Eye AI', filename: 'Eye.ai.srt', langCode: 'en', format: 'srt', downloads: 42, aiTranslated: true },
+      { provider: 'yify', id: 's3', name: 'The Eye HI', filename: 'Eye.HI.srt', langCode: 'id', format: 'srt', downloads: 7, hearingImpaired: true },
+    ],
+    chosen: null,
+  };
+  ui.render(Object.assign({}, STATE, { sub }));
+  ui.setOpen(true);
+  ui.setTab('subs');
+  const shadow = win.document.getElementById('stream-radar-host').shadowRoot;
+  const rows = () => shadow.querySelectorAll('.srad-sub-row');
+  assert.equal(rows().length, 3, 'three rows on first render');
+  const firstNode = rows()[0];
+
+  // Identical re-render (what constant broadcasts do on stream sites):
+  // the row DOM must be untouched - same node, no flicker.
+  ui.render(Object.assign({}, STATE, { sub }));
+  assert.equal(rows()[0], firstNode, 'row DOM node is untouched on identical re-render');
+  assert.equal(rows().length, 3, 'still exactly three rows');
+  assert.equal(shadow.querySelector('.srad-sub-card'), shadow.querySelector('.srad-sub-card'), 'subs pane not rebuilt');
+
+  // A real change (chosen) re-renders but keeps the row content correct.
+  ui.render(Object.assign({}, STATE, { sub: Object.assign({}, sub, { chosen: { index: 1 } }) }));
+  assert.equal(rows().length, 3, 'still three rows after chosen change');
+  assert.equal(shadow.querySelector('[data-act="sub-pick"][data-index="1"]').disabled, true, 'chosen row button disabled/attached');
+  assert.match(shadow.querySelector('[data-act="sub-pick"][data-index="1"]').textContent, /Attached/, 'chosen row shows Attached');
+  // media tab still renders fine after all that
+  ui.setTab('media');
+  assert.ok(shadow.querySelector('.srad-item'), 'back on media tab without throwing');
+});

@@ -5559,7 +5559,7 @@
         if (!tabsEl) return;
         const sub = (api.state && api.state.sub) || {};
         const badge = sub.status === 'found' ? (sub.items || []).length : 0;
-        tabsEl.innerHTML = [
+        const html = [
           ['media', t('panel.tabMedia'), 'video', ((api.state && api.state.items) || []).length],
           ['subs', t('panel.tabSubs'), 'captions', badge],
           ['info', t('panel.tabInfo'), 'info', 0],
@@ -5571,6 +5571,7 @@
               '" data-act="tab" data-tab="' + id + '">' + ico(icon) + esc(label) + (count ? '<i>' + count + '</i>' : '') + '</button>'
           )
           .join('');
+        if (tabsEl.innerHTML !== html) tabsEl.innerHTML = html;
       }
 
       /* ================= render ================= */
@@ -5639,7 +5640,8 @@
         if (st.pagePaused) chips.push(chip('warn', 'eye', t('panel.paused')));
         const dyn = st.rulesVersion ? chip('', 'sparkles', t('update.pack') + ' ' + st.rulesVersion) : '';
         if (dyn) chips.push(dyn);
-        metaEl.innerHTML = chips.join('');
+        const html = chips.join('');
+        if (metaEl.innerHTML !== html) metaEl.innerHTML = html;
       }
       function chip(kind, icon, text) {
         return '<span class="srad-chip"' + (kind ? ' data-kind="' + kind + '"' : '') + '>' + (icon ? ico(icon) : '') + esc(text) + '</span>';
@@ -5774,8 +5776,28 @@
       }
 
       /* ================= subtitles pane ================= */
+      let subSig = null;
+      let subItemsKey = null;
       function renderSubs() {
         const sub = (api.state && api.state.sub) || { status: 'idle', items: [] };
+        const itemsKey = (sub.items || []).map((it) => it.provider + ':' + (it.id || it.filename || '') + ':' + it.langCode).join('|');
+        const sig = [
+          sub.status,
+          sub.query,
+          sub.imdbId,
+          sub.tmdbId,
+          api.state && api.state.subHasFile ? 'f' : '',
+          sub.resolveError || '',
+          sub.chosen ? 'c' + sub.chosen.index : '',
+          itemsKey,
+        ].join('~');
+        // Stability guard: stream sites broadcast state constantly; rebuilding +
+        // re-animating the list every time makes the results look like they
+        // vanish and reappear. Keep the DOM untouched while nothing changed.
+        if (subSig === sig && bodyEl.querySelector('.srad-sub-card')) return;
+        const freshRows = subItemsKey !== itemsKey;
+        subItemsKey = itemsKey;
+        subSig = sig;
         const st = {
           idle: t('action.subs'),
           searching: t('panel.subs.searching'),
@@ -5808,9 +5830,13 @@
           '<button class="srad-btn" data-act="sub-download"' + (api.state && api.state.subHasFile ? '' : ' disabled') + '>' + ico('file-down') + esc(t('panel.subs.download')) + '</button>' +
           '</div></div>';
         const subRows = [...bodyEl.querySelectorAll('.srad-sub-row')];
-        subRows.forEach((el, i) => {
-          animate(el, { opacity: [0, 1], transform: ['translateY(7px) scale(.97)', 'none'] }, { duration: 0.24, delay: i * 0.04 });
-        });
+        // Entrance animation ONLY for genuinely new rows; re-renders of the same
+        // rows (chosen state, provider status) must stay rock-stable.
+        if (freshRows) {
+          subRows.forEach((el, i) => {
+            animate(el, { opacity: [0, 1], transform: ['translateY(7px) scale(.97)', 'none'] }, { duration: 0.24, delay: i * 0.04 });
+          });
+        }
       }
 
       /** One informative subtitle result row: flag, language, format, badges, editor. */

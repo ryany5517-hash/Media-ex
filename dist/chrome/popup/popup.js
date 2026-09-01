@@ -178,6 +178,7 @@
     $('#metaChips').innerHTML = chips.join('');
   }
 
+  let subsListSig = null;
   function renderSubs() {
     const sub = state.sub || { status: 'idle', items: [] };
     const labels = {
@@ -196,18 +197,25 @@
       .join('');
     if (sub.error) pvHtml += `<span class="pv" data-s="err" title="${esc(sub.error)}">${esc(sub.error)}</span>`;
     $('#subsProviders').innerHTML = pvHtml;
-    $('#subsList').innerHTML = (sub.items || [])
-      .slice(0, 5)
-      .map((it, i) => {
-        const flag = SR.subs && SR.subs.flagOf ? SR.subs.flagOf(it.langCode || it.lang) : '';
-        const lang = SR.subs && SR.subs.langName ? SR.subs.langName(it.langCode || it.lang) : (it.langCode || it.lang || '').toUpperCase();
-        const dl = SR.subs && SR.subs.countLabel ? SR.subs.countLabel(it.downloads) : '';
-        const badges = [it.verified ? t('panel.subs.verified') : '', it.aiTranslated ? 'AI' : '', it.hearingImpaired ? 'HI' : ''].filter(Boolean).join(' ');
-        const meta = [lang, String(it.format || 'srt').toUpperCase(), dl ? dl + ' ' + t('panel.subs.downloads') : '', badges, it.uploader ? t('panel.subs.by') + ' ' + it.uploader : ''].filter(Boolean).join(' | ');
-        const picked = (sub.chosen && sub.chosen.index === i) || (i === 0 && sub.chosen) ? 1 : 0;
-        return `<div class="sub-item" data-picked="${picked}">${flag ? `<span class="sflag">${flag}</span>` : ''}<div class="smain"><b title="${esc(it.name || it.filename)}">${esc(it.name || it.filename)}</b><small>${esc(meta)}</small></div><button class="btn tiny" data-act="sub-pick" data-i="${i}">${i === 0 ? 'Use' : 'Pick'}</button></div>`;
-      })
-      .join('');
+    // Stability guard: the popup refreshes every 4s; rebuilding the list when
+    // nothing changed would detach the row button mid-click.
+    const itemsKey = (sub.items || []).slice(0, 5).map((it) => it.provider + ':' + (it.id || it.filename || '') + ':' + it.langCode).join('|');
+    const sig = sub.status + '~' + itemsKey + '~' + (sub.chosen ? 'c' + sub.chosen.index : '');
+    if (subsListSig !== sig) {
+      subsListSig = sig;
+      $('#subsList').innerHTML = (sub.items || [])
+        .slice(0, 5)
+        .map((it, i) => {
+          const flag = SR.subs && SR.subs.flagOf ? SR.subs.flagOf(it.langCode || it.lang) : '';
+          const lang = SR.subs && SR.subs.langName ? SR.subs.langName(it.langCode || it.lang) : (it.langCode || it.lang || '').toUpperCase();
+          const dl = SR.subs && SR.subs.countLabel ? SR.subs.countLabel(it.downloads) : '';
+          const badges = [it.verified ? t('panel.subs.verified') : '', it.aiTranslated ? 'AI' : '', it.hearingImpaired ? 'HI' : ''].filter(Boolean).join(' ');
+          const meta = [lang, String(it.format || 'srt').toUpperCase(), dl ? dl + ' ' + t('panel.subs.downloads') : '', badges, it.uploader ? t('panel.subs.by') + ' ' + it.uploader : ''].filter(Boolean).join(' | ');
+          const picked = (sub.chosen && sub.chosen.index === i) || (i === 0 && sub.chosen) ? 1 : 0;
+          return `<div class="sub-item" data-picked="${picked}">${flag ? `<span class="sflag">${flag}</span>` : ''}<div class="smain"><b title="${esc(it.name || it.filename)}">${esc(it.name || it.filename)}</b><small>${esc(meta)}</small></div><button class="btn tiny" data-act="sub-pick" data-i="${i}">${i === 0 ? 'Use' : 'Pick'}</button></div>`;
+        })
+        .join('');
+    }
     $('#subsSearch').textContent = t('panel.subs.retry');
     $('#subsAttach').textContent = t('panel.subs.attach');
     $('#subsDl').textContent = t('panel.subs.download');
