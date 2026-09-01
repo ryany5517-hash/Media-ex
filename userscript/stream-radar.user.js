@@ -4171,6 +4171,11 @@
  *   • optionally click Join
  *   • attach a WebVTT subtitle track to the room's <video>, re-applying it after
  *     React re-renders (WatchParty natively plays direct files and .m3u8 HLS)
+ *   • set the room subtitle: WatchParty (github.com/howardchung/watchparty)
+ *     exposes it as the SubtitleModal — the "Subtitle URL" input only exists
+ *     while that modal is open, so we click the Captions control, fill the
+ *     input (React onChange fires CMD:subtitle over socket.io), and report
+ *     honestly when the room's lock prevents editing.
  */
 (function (root) {
   'use strict';
@@ -4380,6 +4385,32 @@
         return f.find((x) => /subtitle/i.test(x.label)) || f.find((x) => /caption|srt|vtt|teks/i.test(x.label)) || null;
       }
 
+      /** WatchParty room page: the captions control opens the SubtitleModal. */
+      function openSubtitleModal(doc) {
+        try {
+          const btn = doc.querySelector('[title="Captions"]');
+          if (btn) {
+            btn.click();
+            return true;
+          }
+        } catch (_) {}
+        return false;
+      }
+
+      /** Fill the modal's "Subtitle URL" input. Returns true = filled,
+       *  'locked' = input exists but the room lock blocks it, null = modal
+       *  not open (yet). */
+      function fillSubtitleUrl(doc, url) {
+        try {
+          const input = doc.querySelector('input[placeholder="Subtitle URL"]');
+          if (!input) return null;
+          if (input.disabled || input.readOnly) return 'locked';
+          return setValue(input, url, true) ? true : false;
+        } catch (_) {
+          return null;
+        }
+      }
+
       async function publishRoomSubtitle(vtt) {
         if (state.published || !vtt || !root.fetch) return;
         // Never hammer the endpoint: one attempt every ~5 s while the room
@@ -4392,17 +4423,47 @@
           const json = await res.json();
           if (!json || !json.hash) return;
           const url = (root.location && root.location.origin ? root.location.origin : '') + '/subtitle/' + json.hash;
-          const subField = findSubtitleField(doc);
-          if (subField) {
-            setValue(subField.el, url, true);
-            // only claim success when the field was actually found & filled,
-            // otherwise keep retrying on the next tick
-            state.published = true;
-            state.subtitleUrl = url;
-            try {
-              status(t('panel.subs.active') + ': ' + url, 'ok');
-            } catch (_) {}
-          }
+          // WatchParty (github.com/howardchung/watchparty) renders the Subtitle
+          // URL input only inside the SubtitleModal - open it via the Captions
+          // control and fill it there. Filling fires React onChange, which the
+          // app turns into socket.io CMD:subtitle for the whole room.
+          const tryFill = () => {
+            if (state.published) return true;
+            const viaModal = fillSubtitleUrl(doc, url);
+            if (viaModal === true) {
+              state.published = true;
+              state.subtitleUrl = url;
+              try {
+                status(t('panel.subs.active') + ': ' + url, 'ok');
+              } catch (_) {}
+              return true;
+            }
+            if (viaModal === 'locked') {
+              if (!state.lockWarned) {
+                state.lockWarned = true;
+                status('Subtitle URL room terkunci: hanya pemegang lock room yang bisa set subtitle', 'warn');
+              }
+              return true;
+            }
+            // Direct-field fallback for sites that render the input directly.
+            const subField = findSubtitleField(doc);
+            if (subField) {
+              setValue(subField.el, url, true);
+              state.published = true;
+              state.subtitleUrl = url;
+              try {
+                status(t('panel.subs.active') + ': ' + url, 'ok');
+              } catch (_) {}
+              return true;
+            }
+            return false;
+          };
+          if (tryFill()) return;
+          // Modal not open yet (controls still mounting): open it now and retry
+          // shortly - React renders the modal asynchronously after the click.
+          openSubtitleModal(doc);
+          if (tryFill()) return;
+          setTimeout(tryFill, 700);
         } catch (_) {}
       }
 

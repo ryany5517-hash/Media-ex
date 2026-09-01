@@ -412,7 +412,10 @@
       try {
         // Swap semantics: re-picking replaces any previous Stream Radar track.
         video.querySelectorAll('track[data-srad="1"]').forEach((t) => t.remove());
-        const track = doc.createElement('track');
+        // create the track in the VIDEO's document: the video may live inside a
+        // same-origin iframe (walked by findVideos), and appending a track
+        // created in the top document to an iframe video would throw.
+        const track = (video.ownerDocument || doc).createElement('track');
         track.kind = 'subtitles';
         track.label = (p.name || 'Subtitle') + ' (Stream Radar)';
         track.srclang = lang;

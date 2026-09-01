@@ -5804,24 +5804,49 @@
 
   /** Attach the pending subtitle to the tab, retrying until a frame reports an
    * actual player (0 / 'queued' = no <video> yet) so a slow or re-created
-   * player still gets captions. Honest result at the end. */
+   * player still gets captions. Sends per FRAME (webNavigation.getAllFrames):
+   * streaming sites play inside iframes, and a plain tabs.sendMessage would
+   * race - the top frame (no <video>) often answers first with 0 and the real
+   * attach in the iframe gets ignored. Per-frame sends sum every frame's
+   * result, so the toast always reflects what actually happened. */
   async function attachPendingSub(st, tabId, tries) {
     if (!st.pendingSub) return { ok: false, reason: 'no subtitle available' };
     await ensureContentAlive(tabId);
-    const send = () =>
-      api.tabs
-        .sendMessage(tabId, { type: 'attach-subtitle', vtt: st.pendingSub.vtt, name: st.pendingSub.name, langCode: st.pendingSub.langCode || 'id' })
-        .catch(() => null);
-    let att = await send();
+    let frames = [{ frameId: 0 }];
+    if (api.webNavigation && api.webNavigation.getAllFrames) {
+      try {
+        const all = await api.webNavigation.getAllFrames({ tabId });
+        if (all && all.length) frames = all;
+      } catch (_) {}
+    }
+    const attempt = async () => {
+      let total = 0;
+      let queued = false;
+      let reached = false;
+      for (const fr of frames) {
+        try {
+          const r = await api.tabs.sendMessage(
+            tabId,
+            { type: 'attach-subtitle', vtt: st.pendingSub.vtt, name: st.pendingSub.name, langCode: st.pendingSub.langCode || 'id' },
+            { frameId: fr.frameId }
+          );
+          reached = true;
+          if (r && r.applied === 'queued') queued = true;
+          else if (r && typeof r.applied === 'number') total += r.applied;
+        } catch (_) {}
+      }
+      return { reached: reached, applied: queued && total === 0 ? 'queued' : total };
+    };
+    let res = await attempt();
     let n = 0;
     const max = tries || 6;
-    while ((!att || !att.applied || att.applied === 0 || att.applied === 'queued') && n < max) {
+    while ((!res.reached || !res.applied || res.applied === 0 || res.applied === 'queued') && n < max) {
       await new Promise((r) => setTimeout(r, 1500));
-      att = await send();
+      res = await attempt();
       n++;
     }
-    if (!att) return { ok: false, reason: t('panel.subs.noContent') };
-    return { ok: true, applied: att.applied };
+    if (!res.reached) return { ok: false, reason: t('panel.subs.noContent') };
+    return { ok: true, applied: res.applied };
   }
 
   async function handleAction(msg, sender) {

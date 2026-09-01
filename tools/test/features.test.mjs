@@ -1172,3 +1172,37 @@ test('F10b picked subtitle comes back automatically after a full page reload', a
   h.dom.window.close();
   h2.dom.window.close();
 });
+
+/* ------------------------------------------------------------------ *
+ * F11 · streaming-site pattern (67movies etc.): the <video> lives inside
+ *       an IFRAME. The attach must reach it: the content script walks
+ *       same-origin iframes and creates the track in the video's own
+ *       document. (Cross-origin embeds are covered by the allFrames:true
+ *       injection - each frame's content script attaches to its own video.)
+ * ------------------------------------------------------------------ */
+test('F11 player in an iframe gets the subtitle track (streaming-site embed pattern)', async () => {
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>67movies-style page</title></head>
+  <body>
+    <div id="server-tabs"><button>Vidlove</button><button>Cinezo</button></div>
+    <iframe id="player-embed"></iframe>
+  </body></html>`;
+  const h = await boot({ html, settings: { autoSubtitle: false } });
+  const doc = h.dom.window.document;
+  // jsdom gives same-origin iframes a real content document - put the player there.
+  const iframe = doc.getElementById('player-embed');
+  iframe.contentDocument.body.innerHTML = '<video id="v"></video>';
+  const videoInFrame = iframe.contentDocument.getElementById('v');
+  assert.ok(videoInFrame, 'fixture: video inside the iframe');
+
+  await h.hub.sendFromContent({ type: 'action', payload: { name: 'sub-selftest', tabId: 1 } });
+  const ok = await until(h, () => {
+    const v = iframe.contentDocument && iframe.contentDocument.getElementById('v');
+    return v && v.querySelector('track[data-srad="1"]');
+  }, 8000);
+  assert.ok(ok, 'track attached to the video INSIDE the iframe');
+  const track = iframe.contentDocument.querySelector('video track[data-srad="1"]');
+  assert.ok(track, 'track present in the iframe document');
+  assert.match(track.getAttribute('src') || '', /^(blob:|data:text\/vtt)/, 'native track with blob URL');
+  assert.equal(track.getAttribute('srclang'), 'id', 'language applied');
+  h.dom.window.close();
+});

@@ -26,7 +26,7 @@ const CONTENT_ACTIONS = new Set([
 // Handled inside background handleAction().
 const BACKGROUND_ACTIONS = new Set([
   'open', 'download', 'variant', 'play', 'watchparty', 'subs', 'subs-search',
-  'sub-attach', 'sub-download', 'sub-pick', 'sub-download-info', 'set-setting',
+  'sub-attach', 'sub-download', 'sub-pick', 'sub-selftest', 'sub-download-info', 'set-setting',
   'toggle-site', 'clear', 'rescan', 'options', 'open-options', 'check-updates',
   'update-check', 'search-subtitles-manual',
 ]);
@@ -76,4 +76,11 @@ test('re-injection targets ALL frames (player lives in an iframe)', () => {
   const main = bg.match(/api\.scripting\.executeScript\(\{ target: \{ tabId, allFrames: true, world: 'MAIN' \}, files: main \}\)/);
   assert.ok(iso, 'isolated-world re-injection uses allFrames:true');
   assert.ok(main, 'MAIN-world re-injection uses allFrames:true');
+});
+
+test('attach is sent PER FRAME so iframe players are never missed (webNavigation)', () => {
+  const bg = read('src/background.js');
+  assert.match(bg, /webNavigation\.getAllFrames\(\{ tabId \}\)/, 'attachPendingSub enumerates frames via webNavigation');
+  assert.ok(bg.includes('{ frameId: fr.frameId }'), 'attach-subtitle is sent with a per-frame frameId');
+  assert.match(read('src/manifest.json'), /"webNavigation"/, 'manifest grants webNavigation');
 });
