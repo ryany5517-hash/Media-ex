@@ -384,7 +384,7 @@
   /* ------------------------------------------------------------------ *
    * subtitle application on the current page
    * ------------------------------------------------------------------ */
-  function attachSubtitle(vttText, name) {
+  function attachSubtitle(vttText, name, langCode) {
     if (!doc || !vttText) return 0;
     let url = '';
     try {
@@ -392,15 +392,19 @@
     } catch (_) {
       return 0;
     }
+    const lang = String(langCode || 'id').slice(0, 2).toLowerCase();
     const apply = () => {
       let n = 0;
       for (const video of doc.querySelectorAll('video')) {
         try {
-          if (video.querySelector('track[data-srad="1"]')) continue;
+          // Swap semantics: re-picking a subtitle must REPLACE the previous
+          // Stream Radar track, otherwise the old language stays on screen
+          // while the toast claims the new one is attached.
+          video.querySelectorAll('track[data-srad="1"]').forEach((t) => t.remove());
           const track = doc.createElement('track');
           track.kind = 'subtitles';
-          track.label = (name || 'Indonesian') + ' (Stream Radar)';
-          track.srclang = 'id';
+          track.label = (name || 'Subtitle') + ' (Stream Radar)';
+          track.srclang = lang;
           track.default = true;
           track.setAttribute('data-srad', '1');
           track.src = url;
@@ -459,7 +463,7 @@
           toast(msg.text, msg.kind, msg.action);
           return;
         case 'attach-subtitle': {
-          const r = attachSubtitle(msg.vtt, msg.name);
+          const r = attachSubtitle(msg.vtt, msg.name, msg.langCode);
           respond({ ok: true, applied: r }); // raw: number of players or 'queued'
           return true;
         }

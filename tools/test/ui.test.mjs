@@ -194,7 +194,11 @@ test('every panel button fires its intended action or a visible local effect (fu
   click('[data-act="settings"]', 'Settings button'); // local: opens pop, no action
   assert.ok(!actions.some(([a]) => a === 'settings'), 'settings button stays local');
   click('[data-act="update-check"]', 'Update check'); routed('update-check', 'Update check');
-  click('[data-act="reset-fab"]', 'Reset FAB'); routed('reset-fab', 'Reset FAB');
+  // Reset FAB is a local job: it must NOT bounce an unknown action to the
+  // worker; it snaps the FAB back and persists fabPos:null.
+  click('[data-act="reset-fab"]', 'Reset FAB');
+  assert.ok(!actions.some(([a]) => a === 'reset-fab'), 'reset-fab never goes to the background');
+  assert.ok(actions.some(([a, p]) => a === 'set-setting' && p.key === 'fabPos' && p.value === null), 'fabPos null persisted via set-setting');
   click('[data-act="theme-system"]', 'Theme system'); routed('set-setting', 'Theme system');
   click('[data-act="lang-id"]', 'Lang ID'); routed('set-setting', 'Lang ID');
 

@@ -2240,6 +2240,8 @@
       'panel.subs.attached': 'Subtitle attached: {name}',
       'panel.subs.attachedQueued': 'Subtitle ready - attaches automatically when the player appears',
       'panel.subs.attachFail': 'Could not load subtitle: {reason}',
+      'panel.subs.noContent': 'Page is not responding - try reloading the page',
+      'panel.subs.noPlayer': 'No player element found on this page',
       'panel.subs.retry': 'Search again',
       'action.play': 'Play',
       'action.watchparty': 'Watch Party',
@@ -2390,6 +2392,7 @@
       'settings.fab': 'Floating button position',
       'settings.fabHint': 'Drag it anywhere. Position is remembered.',
       'settings.reset': 'Reset position',
+      'settings.resetDone': 'Panel position reset',
       'settings.openOptions': 'Full settings',
       'privacy.note': 'Detection stays on your device. Nothing is uploaded to us.',
       'options.tabGeneral': 'General',
@@ -2491,6 +2494,8 @@
       'panel.subs.attached': 'Subtitle terpasang: {name}',
       'panel.subs.attachedQueued': 'Subtitle siap - otomatis terpasang saat player muncul',
       'panel.subs.attachFail': 'Gagal memuat subtitle: {reason}',
+      'panel.subs.noContent': 'Halaman tidak merespons - coba muat ulang halamannya',
+      'panel.subs.noPlayer': 'Tidak ada elemen player di halaman ini',
       'panel.subs.retry': 'Cari lagi',
       'action.play': 'Putar',
       'action.watchparty': 'Nonton Bareng',
@@ -2641,6 +2646,7 @@
       'settings.fab': 'Posisi tombol mengambang',
       'settings.fabHint': 'Seret ke mana saja. Posisinya diingat.',
       'settings.reset': 'Reset posisi',
+      'settings.resetDone': 'Posisi panel direset',
       'settings.openOptions': 'Pengaturan lengkap',
       'privacy.note': 'Deteksi hanya terjadi di perangkatmu. Tidak ada yang diunggah ke kami.',
       'options.tabGeneral': 'Umum',
@@ -5956,6 +5962,13 @@
           btn.setAttribute('data-done', '1');
           fire('scan-now');
           setTimeout(() => btn.removeAttribute('data-done'), 900);
+          return;
+        }
+        if (act === 'reset-fab') {
+          // Local job: snap the FAB back to its default corner and persist it.
+          applyFabPos(null);
+          fire('set-setting', { key: 'fabPos', value: null });
+          toast(t('settings.resetDone'), 'ok');
           return;
         }
         if (act === 'update-check') {

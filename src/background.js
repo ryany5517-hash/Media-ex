@@ -1672,7 +1672,7 @@ try {
       await api.tabs.sendMessage(tabId, { type: 'ping' });
       return true;
     } catch (_) {}
-    const iso = ['shared/util.js', 'shared/rules.js', 'shared/title-cleaner.js', 'shared/i18n.js', 'shared/icons.js', 'shared/updater.js', 'shared/dom-scanner.js', 'vendor/motion.min.js', 'content/ui-styles.js', 'content/ui.js', 'content/content.js'];
+    const iso = ['shared/util.js', 'shared/rules.js', 'shared/title-cleaner.js', 'shared/i18n.js', 'shared/icons.js', 'shared/updater.js', 'shared/dom-scanner.js', 'vendor/motion.min.js', 'shared/subtitles.js', 'content/ui-styles.js', 'content/ui.js', 'content/content.js'];
     const main = ['shared/util.js', 'shared/rules.js', 'shared/title-cleaner.js', 'page/inject.js'];
     try {
       await api.scripting.executeScript({ target: { tabId }, files: iso });
@@ -1746,8 +1746,13 @@ try {
       case 'sub-attach': {
         if (!st.pendingSub) await runSubSearch(tabId);
         if (!st.pendingSub) return { ok: false, reason: 'no subtitle available' };
-        await api.tabs.sendMessage(tabId, { type: 'attach-subtitle', vtt: st.pendingSub.vtt, name: st.pendingSub.name }).catch(() => {});
-        return { ok: true };
+        await ensureContentAlive(tabId);
+        const att = await api.tabs
+          .sendMessage(tabId, { type: 'attach-subtitle', vtt: st.pendingSub.vtt, name: st.pendingSub.name, langCode: st.pendingSub.langCode || 'id' })
+          .catch(() => null);
+        if (!att) return { ok: false, reason: t('panel.subs.noContent') };
+        if (att.applied === 0) return { ok: false, reason: t('panel.subs.noPlayer') };
+        return { ok: true, attached: att.applied };
       }
       case 'sub-download': {
         if (!st.pendingSub) return { ok: false, reason: 'no subtitle loaded' };
@@ -1758,14 +1763,22 @@ try {
         if (!it) return { ok: false, reason: 'index out of range' };
         try {
           const vtt = await SR.subs.resolve(it, settings, {});
-          st.pendingSub = { vtt: vtt, name: it.filename || it.name, provider: it.provider };
+          st.pendingSub = { vtt: vtt, name: it.filename || it.name, provider: it.provider, langCode: it.langCode || 'id' };
           st.sub.chosen = { index: Number(msg.index || 0), name: it.name };
           // One click = done: attach straight to the page player (blob URL, no
           // local download). The toast keeps a Download action for people who
           // still want the file.
-          const att = await api.tabs
-            .sendMessage(tabId, { type: 'attach-subtitle', vtt: vtt, name: st.pendingSub.name })
+          let att = await api.tabs
+            .sendMessage(tabId, { type: 'attach-subtitle', vtt: vtt, name: st.pendingSub.name, langCode: st.pendingSub.langCode })
             .catch(() => null);
+          if (!att) {
+            // Content script dead (tab opened before the extension reloaded):
+            // re-inject it, then retry once before giving up honestly.
+            await ensureContentAlive(tabId);
+            att = await api.tabs
+              .sendMessage(tabId, { type: 'attach-subtitle', vtt: vtt, name: st.pendingSub.name, langCode: st.pendingSub.langCode })
+              .catch(() => null);
+          }
           const applied = att && att.applied;
           if (!att) {
             // Content script unreachable: be honest, offer the manual attach path.
@@ -1809,6 +1822,7 @@ try {
       case 'rescan':
         await api.tabs.sendMessage(tabId, { type: 'clear-seen' }).catch(() => {});
         return { ok: true };
+      case 'options':
       case 'open-options':
         if (api.runtime.openOptionsPage) api.runtime.openOptionsPage();
         else api.tabs.create({ url: api.runtime.getURL('options/options.html') });

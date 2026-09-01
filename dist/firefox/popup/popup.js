@@ -287,16 +287,19 @@
     }
     if (name === 'hist-copy') {
       const h = (state.history || [])[extra.index];
-      if (h) await navigator.clipboard.writeText(h.url).catch(() => {});
-      toast(t('toast.copied'), 'ok');
+      if (!h) return;
+      const ok = await navigator.clipboard.writeText(h.url).then(() => true).catch(() => false);
+      toast(ok ? t('toast.copied') : t('toast.error', { msg: 'clipboard' }), ok ? 'ok' : 'err');
       return;
     }
     if (name === 'toggle-site') {
-      await api.runtime.sendMessage({ type: 'action', payload }).catch(() => {});
+      const res = await api.runtime.sendMessage({ type: 'action', payload }).catch(() => null);
+      if (!res || res.ok === false) toast(t('toast.error', { msg: (res && res.reason) || 'worker' }), 'err');
       return refresh();
     }
     if (name === 'set-setting') {
-      await api.runtime.sendMessage({ type: 'action', payload: { name: 'set-setting', key: extra.key, value: extra.value, tabId: tabId } }).catch(() => {});
+      const res = await api.runtime.sendMessage({ type: 'action', payload: { name: 'set-setting', key: extra.key, value: extra.value, tabId: tabId } }).catch(() => null);
+      if (!res || res.ok === false) toast(t('toast.error', { msg: (res && res.reason) || 'worker' }), 'err');
       return refresh();
     }
     const res = await api.runtime.sendMessage({ type: 'action', payload }).catch((e) => ({ ok: false, reason: String(e && e.message) }));

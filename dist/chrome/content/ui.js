@@ -627,6 +627,13 @@
           setTimeout(() => btn.removeAttribute('data-done'), 900);
           return;
         }
+        if (act === 'reset-fab') {
+          // Local job: snap the FAB back to its default corner and persist it.
+          applyFabPos(null);
+          fire('set-setting', { key: 'fabPos', value: null });
+          toast(t('settings.resetDone'), 'ok');
+          return;
+        }
         if (act === 'update-check') {
           fire('update-check');
           return;

@@ -959,3 +959,42 @@ test('F7c clicking Download with nothing loaded tells you why (no silent buttons
   assert.ok(true, 'Download with nothing loaded explained why');
   h.dom.window.close();
 });
+
+test('F7d re-picking a subtitle SWAPS the track (old language never stays)', async () => {
+  const net = makeNetStub({
+    'subdl.com/api/v1/subtitles?': {
+      body: JSON.stringify({
+        results: [
+          { attributes: { id: 4242, name: 'Dune Part Two', filename: 'Dune.2024.id.srt', lang: { code: 'id', name: 'Indonesian' }, format: 'srt', year: '2024', downloadCount: 1500, verified: true } },
+          { attributes: { id: 4243, name: 'Dune Part Two EN', filename: 'Dune.2024.en.srt', lang: { code: 'en', name: 'English' }, format: 'srt', year: '2024', downloadCount: 42, verified: false } },
+        ],
+      }),
+      type: 'application/json',
+    },
+  });
+  const h = await boot({ net, settings: { autoSubtitle: false, subtitleLang: 'all' } });
+  await h.hub.sendFromContent({ type: 'action', payload: { name: 'subs-search', tabId: 1 } });
+  assert.ok(await until(h, () => ((stateOf(h).sub || {}).items || []).length >= 2, 8000), 'two subtitle rows found');
+  const items = (stateOf(h).sub || {}).items || [];
+  assert.equal(items[0].langCode, 'id', 'first result is Indonesian');
+  assert.equal(items[1].langCode, 'en', 'second result is English');
+
+  const video = h.dom.window.document.querySelector('video');
+  const res0 = await h.hub.sendFromContent({ type: 'action', payload: { name: 'sub-pick', index: 0, tabId: 1 } });
+  assert.equal(res0.ok, true, 'pick #0 ok: ' + JSON.stringify(res0));
+  await settle(h, 120);
+  let tracks = video.querySelectorAll('track[data-srad="1"]');
+  assert.equal(tracks.length, 1, 'exactly one srad track after first pick');
+  assert.equal(tracks[0].getAttribute('srclang'), 'id', 'first pick is Indonesian');
+  const firstSrc = tracks[0].getAttribute('src');
+
+  const res1 = await h.hub.sendFromContent({ type: 'action', payload: { name: 'sub-pick', index: 1, tabId: 1 } });
+  assert.equal(res1.ok, true, 'pick #1 ok: ' + JSON.stringify(res1));
+  await settle(h, 120);
+  tracks = video.querySelectorAll('track[data-srad="1"]');
+  assert.equal(tracks.length, 1, 'still exactly ONE track after re-pick - old one was swapped out');
+  assert.equal(tracks[0].getAttribute('srclang'), 'en', 'track now carries the picked English language');
+  assert.notEqual(tracks[0].getAttribute('src'), firstSrc, 'blob URL refreshed (old subtitle content gone)');
+  assert.equal((stateOf(h).sub.chosen || {}).index, 1, 'chosen moved to the second row');
+  h.dom.window.close();
+});
