@@ -69,3 +69,11 @@ test('background handleAction covers every content-forwarded name', () => {
     assert.ok(bgCases.has(n), `background must handle forwarded action "${n}"`);
   }
 });
+
+test('re-injection targets ALL frames (player lives in an iframe)', () => {
+  const bg = read('src/background.js');
+  const iso = bg.match(/api\.scripting\.executeScript\(\{ target: \{ tabId, allFrames: true \}, files: iso \}\)/);
+  const main = bg.match(/api\.scripting\.executeScript\(\{ target: \{ tabId, allFrames: true, world: 'MAIN' \}, files: main \}\)/);
+  assert.ok(iso, 'isolated-world re-injection uses allFrames:true');
+  assert.ok(main, 'MAIN-world re-injection uses allFrames:true');
+});

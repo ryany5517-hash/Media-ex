@@ -454,7 +454,7 @@
             ? '<div class="srad-sub-list">' + rows + '</div>'
             : '<div class="srad-note">' + ico('info') + '<span>' + esc(sub.error || t('panel.subs.hint')) + '</span></div>') +
           (api.state && api.state.subHasFile
-            ? '<div class="srad-sub-ready" data-ready="1">' + ico('check') + '<span>' + esc(t('panel.subs.ready')) + '</span></div>'
+            ? '<div class="srad-sub-ready" data-ready="1">' + ico('check') + '<span>' + esc(sub.chosen && sub.chosen.name ? t('panel.subs.active') + ': ' + sub.chosen.name : t('panel.subs.ready')) + '</span></div>'
             : '') +
           '<div class="srad-sub-actions">' +
           '<button class="srad-btn" data-act="subs" data-primary="1">' + ico('search') + esc(t('panel.subs.retry')) + '</button>' +
@@ -492,7 +492,9 @@
         // disabling its button - that is the 'blocked button' bug.)
         const picked = sub.chosen && sub.chosen.index === i ? 1 : 0;
         if (picked) bits.unshift('<span class="srad-sbadge" data-tone="q">' + ico('check') + esc(t('panel.subs.active')) + '</span>');
-        const btnLabel = picked ? t('action.attached') : (i === 0 ? t('action.use') : t('action.pick'));
+        // One action for every row (Use/Pick were identical actions - the two
+        // labels only confused). The picked row flips to "Attached".
+        const btnLabel = picked ? t('action.attached') : t('action.use');
         const btnIcon = picked ? ico('check') : '';
         return (
           '<div class="srad-sub-row" data-picked="' + picked + '">' +

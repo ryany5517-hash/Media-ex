@@ -1709,13 +1709,38 @@ try {
     } catch (_) {}
     const iso = ['shared/util.js', 'shared/rules.js', 'shared/title-cleaner.js', 'shared/i18n.js', 'shared/icons.js', 'shared/updater.js', 'shared/dom-scanner.js', 'vendor/motion.min.js', 'shared/subtitles.js', 'content/ui-styles.js', 'content/ui.js', 'content/content.js'];
     const main = ['shared/util.js', 'shared/rules.js', 'shared/title-cleaner.js', 'page/inject.js'];
+    // allFrames:true is REQUIRED - on streaming sites the <video> lives in an
+    // iframe, and without it the re-injection only lands in the top frame, so
+    // attach-subtitle never reaches the frame that owns the player.
     try {
-      await api.scripting.executeScript({ target: { tabId }, files: iso });
+      await api.scripting.executeScript({ target: { tabId, allFrames: true }, files: iso });
     } catch (_) {}
     try {
-      await api.scripting.executeScript({ target: { tabId }, files: main, world: 'MAIN' });
+      await api.scripting.executeScript({ target: { tabId, allFrames: true, world: 'MAIN' }, files: main });
     } catch (_) {}
     return true;
+  }
+
+  /** Attach the pending subtitle to the tab, retrying until a frame reports an
+   * actual player (0 / 'queued' = no <video> yet) so a slow or re-created
+   * player still gets captions. Honest result at the end. */
+  async function attachPendingSub(st, tabId, tries) {
+    if (!st.pendingSub) return { ok: false, reason: 'no subtitle available' };
+    await ensureContentAlive(tabId);
+    const send = () =>
+      api.tabs
+        .sendMessage(tabId, { type: 'attach-subtitle', vtt: st.pendingSub.vtt, name: st.pendingSub.name, langCode: st.pendingSub.langCode || 'id' })
+        .catch(() => null);
+    let att = await send();
+    let n = 0;
+    const max = tries || 6;
+    while ((!att || !att.applied || att.applied === 0 || att.applied === 'queued') && n < max) {
+      await new Promise((r) => setTimeout(r, 1500));
+      att = await send();
+      n++;
+    }
+    if (!att) return { ok: false, reason: t('panel.subs.noContent') };
+    return { ok: true, applied: att.applied };
   }
 
   async function handleAction(msg, sender) {
@@ -1781,13 +1806,10 @@ try {
       case 'sub-attach': {
         if (!st.pendingSub) await runSubSearch(tabId);
         if (!st.pendingSub) return { ok: false, reason: 'no subtitle available' };
-        await ensureContentAlive(tabId);
-        let att = await api.tabs
-          .sendMessage(tabId, { type: 'attach-subtitle', vtt: st.pendingSub.vtt, name: st.pendingSub.name, langCode: st.pendingSub.langCode || 'id' })
-          .catch(() => null);
+        const att = await attachPendingSub(st, tabId);
         if (!att) return { ok: false, reason: t('panel.subs.noContent') };
         if (att.applied === 0) return { ok: false, reason: t('panel.subs.noPlayer') };
-        toastTo(tabId, att.applied === 'queued' ? t('panel.subs.attachedQueued') : t('panel.subs.attached', { name: shorten(st.pendingSub.name || '', 30) }), 'ok', { id: 'sub-download', label: t('panel.subs.download') });
+        toastTo(tabId, t('panel.subs.attached', { name: shorten(st.pendingSub.name || '', 30) }), 'ok', { id: 'sub-download', label: t('panel.subs.download') });
         return { ok: true, attached: att.applied };
       }
       case 'sub-download': {
@@ -1821,30 +1843,20 @@ try {
         }
         st.pendingSub = { vtt: vtt, name: it.filename || it.name, provider: it.provider, langCode: it.langCode || 'id', fileUrl: it.fileUrl || it.pageUrl || '' };
         st.sub.chosen = { index: idx, name: it.name };
-        // One click = done: attach straight to the page player (blob URL, no
-        // local download). The toast keeps a Download action for people who
-        // still want the file.
-        let att = await api.tabs
-          .sendMessage(tabId, { type: 'attach-subtitle', vtt: vtt, name: st.pendingSub.name, langCode: st.pendingSub.langCode })
-          .catch(() => null);
-        if (!att) {
-          // Content script dead (tab opened before the extension reloaded):
-          // re-inject it, then retry once before giving up honestly.
-          await ensureContentAlive(tabId);
-          att = await api.tabs
-            .sendMessage(tabId, { type: 'attach-subtitle', vtt: vtt, name: st.pendingSub.name, langCode: st.pendingSub.langCode })
-            .catch(() => null);
-        }
+        // One click = done: attach straight to the page player (native <track>,
+        // no overlay, no local download). Retries until a frame reports a real
+        // player so a slow/re-created player still gets captions.
+        broadcast(tabId, 'sub'); // show the picked row immediately
+        const att = await attachPendingSub(st, tabId);
         const applied = att && att.applied;
         if (!att) {
-          // Content script unreachable: be honest, offer the manual attach path.
           toastTo(tabId, t('panel.subs.found') + ': ' + shorten(it.name || it.filename, 30), 'ok', { id: 'sub-attach', label: t('panel.subs.attach') });
         } else if (applied === 0) {
-          // Page is alive but has no <video> yet: subtitle is ready, it will
-          // attach on retry; offer download instead of claiming success.
-          toastTo(tabId, t('panel.subs.noPlayer'), 'warn', { id: 'sub-download', label: t('panel.subs.download') });
+          // Player never showed up: honest, and the armed watcher in the page
+          // will still attach it the moment a player appears.
+          toastTo(tabId, t('panel.subs.attachedQueued'), 'warn', { id: 'sub-download', label: t('panel.subs.download') });
         } else {
-          const done = applied === 'queued' ? t('panel.subs.attachedQueued') : t('panel.subs.attached', { name: shorten(it.name || it.filename, 30) });
+          const done = t('panel.subs.attached', { name: shorten(it.name || it.filename, 30) });
           toastTo(tabId, done, 'ok', { id: 'sub-download', label: t('panel.subs.download') });
         }
         broadcast(tabId, 'sub');

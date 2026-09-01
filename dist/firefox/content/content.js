@@ -405,7 +405,7 @@
     if (!p || !doc) return 0;
     const lang = String(p.langCode || 'id').slice(0, 2).toLowerCase();
     let n = 0;
-    for (const video of doc.querySelectorAll('video')) {
+    for (const video of findVideos()) {
       try {
         // Swap semantics: re-picking replaces any previous Stream Radar track.
         video.querySelectorAll('track[data-srad="1"]').forEach((t) => t.remove());
@@ -422,6 +422,31 @@
       } catch (_) {}
     }
     return n;
+  }
+
+  /** All <video> elements reachable from this frame: the document itself,
+   * open shadow roots (many players mount inside one), and same-origin
+   * iframes (the player is often in an embed frame). */
+  function findVideos() {
+    const out = [];
+    const seen = new Set();
+    const walk = (rootEl) => {
+      if (!rootEl || seen.has(rootEl)) return;
+      seen.add(rootEl);
+      try {
+        for (const v of rootEl.querySelectorAll('video')) out.push(v);
+        for (const el of rootEl.querySelectorAll('*')) {
+          if (el.shadowRoot) walk(el.shadowRoot);
+        }
+        for (const f of rootEl.querySelectorAll('iframe')) {
+          try {
+            if (f.contentDocument) walk(f.contentDocument);
+          } catch (_) {}
+        }
+      } catch (_) {}
+    };
+    walk(doc);
+    return out;
   }
 
   function forceShowing(video) {

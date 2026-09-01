@@ -244,6 +244,9 @@
             // otherwise keep retrying on the next tick
             state.published = true;
             state.subtitleUrl = url;
+            try {
+              status(t('panel.subs.active') + ': ' + url, 'ok');
+            } catch (_) {}
           }
         } catch (_) {}
       }

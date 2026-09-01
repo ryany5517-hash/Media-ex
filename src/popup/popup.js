@@ -216,7 +216,7 @@
           const meta = [lang, String(it.format || 'srt').toUpperCase(), dl ? dl + ' ' + t('panel.subs.downloads') : '', badges, it.uploader ? t('panel.subs.by') + ' ' + it.uploader : ''].filter(Boolean).join(' | ');
           // ONLY the actually-picked row shows as picked (no first-row hijack).
           const picked = sub.chosen && sub.chosen.index === k ? 1 : 0;
-          const btnLabel = picked ? t('action.attached') : (k === 0 ? t('action.use') : t('action.pick'));
+          const btnLabel = picked ? t('action.attached') : t('action.use');
           return `<div class="sub-item" data-picked="${picked}">${flag ? `<span class="sflag">${flag}</span>` : ''}<div class="smain"><b title="${esc(it.name || it.filename)}">${esc(it.name || it.filename)}</b><small>${esc(meta)}</small></div><button class="btn tiny" data-act="sub-pick" data-i="${k}"${picked ? ' disabled' : ''}>${picked ? ico('check') + ' ' : ''}${esc(btnLabel)}</button></div>`;
         })
         .join('');
