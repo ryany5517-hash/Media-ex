@@ -118,7 +118,17 @@
     const o = opts || {};
     const fetchImpl = o.fetchImpl || (util.fetchImpl ? util.fetchImpl.bind(util) : root.fetch);
     const headers = Object.assign({}, o.headers);
-    const res = await fetchImpl(url, { headers, redirect: 'follow', credentials: o.credentials || 'omit' });
+    // Hard cap so a stalled CDN never leaves the UI hanging with no feedback.
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), o.timeoutMs || 20000);
+    let res;
+    try {
+      res = await fetchImpl(url, { headers, redirect: 'follow', credentials: o.credentials || 'omit', signal: ctrl.signal });
+    } catch (e) {
+      clearTimeout(timer);
+      throw new Error(ctrl.signal.aborted ? 'timeout fetching subtitle file' : 'Failed to fetch subtitle file: ' + String((e && e.message) || e));
+    }
+    clearTimeout(timer);
     if (!res.ok) throw new Error('HTTP ' + res.status + ' on subtitle file');
     const ab = await res.arrayBuffer();
     const bytes = new Uint8Array(ab);

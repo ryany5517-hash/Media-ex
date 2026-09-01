@@ -424,10 +424,13 @@
           (rows
             ? '<div class="srad-sub-list">' + rows + '</div>'
             : '<div class="srad-note">' + ico('info') + '<span>' + esc(sub.error || t('panel.subs.hint')) + '</span></div>') +
+          (api.state && api.state.subHasFile
+            ? '<div class="srad-sub-ready" data-ready="1">' + ico('check') + '<span>' + esc(t('panel.subs.ready')) + '</span></div>'
+            : '') +
           '<div class="srad-sub-actions">' +
           '<button class="srad-btn" data-act="subs" data-primary="1">' + ico('search') + esc(t('panel.subs.retry')) + '</button>' +
-          '<button class="srad-btn" data-act="sub-attach">' + ico('captions') + esc(t('panel.subs.attach')) + '</button>' +
-          '<button class="srad-btn" data-act="sub-download">' + ico('file-down') + esc(t('panel.subs.download')) + '</button>' +
+          '<button class="srad-btn" data-act="sub-attach"' + (api.state && api.state.subHasFile ? '' : ' disabled') + '>' + ico('captions') + esc(t('panel.subs.attach')) + '</button>' +
+          '<button class="srad-btn" data-act="sub-download"' + (api.state && api.state.subHasFile ? '' : ' disabled') + '>' + ico('file-down') + esc(t('panel.subs.download')) + '</button>' +
           '</div></div>';
         const subRows = [...bodyEl.querySelectorAll('.srad-sub-row')];
         subRows.forEach((el, i) => {
@@ -452,6 +455,8 @@
         const by = it.uploader ? (SR.i18n ? t('panel.subs.by') : 'by') + ' ' + it.uploader : '';
         if (by) bits.push('<span class="srad-sup" title="' + esc(by) + '">' + esc(by) + '</span>');
         const picked = (sub.chosen && sub.chosen.index === i) || (i === 0 && sub.chosen) ? 1 : 0;
+        const btnLabel = picked ? t('action.attached') : (i === 0 ? t('action.use') : t('action.pick'));
+        const btnIcon = picked ? ico('check') : '';
         return (
           '<div class="srad-sub-row" data-picked="' + picked + '">' +
           (flag ? '<span class="srad-sflag" aria-hidden="true">' + flag + '</span>' : '') +
@@ -459,7 +464,7 @@
           '<b class="srad-sname" title="' + esc(name) + '">' + esc(name) + '</b>' +
           '<small class="srad-smeta">' + bits.join('<i class="srad-sdot" aria-hidden="true">|</i>') + '</small>' +
           '</span>' +
-          '<button class="srad-btn" data-act="sub-pick" data-index="' + i + '">' + esc(i === 0 ? t('action.use') : t('action.pick')) + '</button>' +
+          '<button class="srad-btn" data-act="sub-pick" data-index="' + i + '" data-done="' + picked + '"' + (picked ? ' disabled' : '') + '>' + btnIcon + esc(btnLabel) + '</button>' +
           '</div>'
         );
       }
@@ -646,6 +651,26 @@
           api.showAds = !api.showAds;
           fire('set-setting', { key: 'showAds', value: api.showAds });
           render();
+          return;
+        }
+        if (act === 'sub-pick') {
+          const idx = Number(btn.getAttribute('data-index') || 0);
+          if (btn.getAttribute('data-busy') === '1') return;
+          btn.setAttribute('data-busy', '1');
+          btn.setAttribute('disabled', '');
+          const orig = btn.innerHTML;
+          btn.innerHTML = ico('loader') + esc(t('panel.subs.attaching'));
+          // On success the worker broadcasts state and this DOM is replaced
+          // (row shows the attached check). On failure the error toast fires;
+          // restore the label shortly after so the button never looks dead.
+          fire('sub-pick', { id: id || null, index: idx, button: btn });
+          setTimeout(() => {
+            if (btn.isConnected && btn.getAttribute('data-busy') === '1') {
+              btn.removeAttribute('data-busy');
+              btn.removeAttribute('disabled');
+              btn.innerHTML = orig;
+            }
+          }, 3500);
           return;
         }
         if (act === 'subs') {

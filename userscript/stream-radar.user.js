@@ -2242,6 +2242,9 @@
       'panel.subs.attachFail': 'Could not load subtitle: {reason}',
       'panel.subs.noContent': 'Page is not responding - try reloading the page',
       'panel.subs.noPlayer': 'No player element found on this page',
+      'panel.subs.attaching': 'Attaching...',
+      'panel.subs.ready': 'Subtitle ready - click Attach to place it on the player',
+      'panel.subs.networkFail': 'Could not fetch the subtitle file (network). Check your connection/ad blocker, then try again.',
       'panel.subs.retry': 'Search again',
       'action.play': 'Play',
       'action.watchparty': 'Watch Party',
@@ -2370,6 +2373,7 @@
       'panel.subs.by': 'by',
       'panel.subs.downloads': 'downloads',
       'action.use': 'Use',
+      'action.attached': 'Attached',
       'action.pick': 'Pick',
       'action.downloadPlaylist': 'Save playlist',
       'label.ad': 'ad',
@@ -2496,6 +2500,9 @@
       'panel.subs.attachFail': 'Gagal memuat subtitle: {reason}',
       'panel.subs.noContent': 'Halaman tidak merespons - coba muat ulang halamannya',
       'panel.subs.noPlayer': 'Tidak ada elemen player di halaman ini',
+      'panel.subs.attaching': 'Memasang...',
+      'panel.subs.ready': 'Subtitle siap - klik Pasang untuk menempelkannya ke player',
+      'panel.subs.networkFail': 'Gagal mengambil file subtitle (jaringan). Cek koneksi/ublock, lalu coba lagi.',
       'panel.subs.retry': 'Cari lagi',
       'action.play': 'Putar',
       'action.watchparty': 'Nonton Bareng',
@@ -2624,6 +2631,7 @@
       'panel.subs.by': 'oleh',
       'panel.subs.downloads': 'download',
       'action.use': 'Pakai',
+      'action.attached': 'Terpasang',
       'action.pick': 'Ambil',
       'action.downloadPlaylist': 'Simpan playlist',
       'label.ad': 'iklan',
@@ -3550,7 +3558,17 @@
     const o = opts || {};
     const fetchImpl = o.fetchImpl || (util.fetchImpl ? util.fetchImpl.bind(util) : root.fetch);
     const headers = Object.assign({}, o.headers);
-    const res = await fetchImpl(url, { headers, redirect: 'follow', credentials: o.credentials || 'omit' });
+    // Hard cap so a stalled CDN never leaves the UI hanging with no feedback.
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), o.timeoutMs || 20000);
+    let res;
+    try {
+      res = await fetchImpl(url, { headers, redirect: 'follow', credentials: o.credentials || 'omit', signal: ctrl.signal });
+    } catch (e) {
+      clearTimeout(timer);
+      throw new Error(ctrl.signal.aborted ? 'timeout fetching subtitle file' : 'Failed to fetch subtitle file: ' + String((e && e.message) || e));
+    }
+    clearTimeout(timer);
     if (!res.ok) throw new Error('HTTP ' + res.status + ' on subtitle file');
     const ab = await res.arrayBuffer();
     const bytes = new Uint8Array(ab);
@@ -5253,6 +5271,9 @@
 .srad-sbadge[data-tone="ok"] { color: var(--sr-ok); background: var(--sr-ok-soft); }
 .srad-sbadge[data-tone="warn"] { color: var(--sr-warn); background: var(--sr-warn-soft); }
 .srad-sbadge[data-tone="q"] { color: var(--sr-accent); background: var(--sr-accent-soft); }
+.srad-sub-ready { display: flex; align-items: center; gap: 7px; margin-top: 9px; font-size: 11px; color: var(--sr-ok); background: var(--sr-ok-soft); border: 1px solid var(--sr-ok); padding: 5px 9px; border-radius: 8px; font-weight: 650; }
+.srad-sub-ready svg { width: 12px; height: 12px; }
+.srad-sub-actions .srad-btn:disabled { opacity: .45; cursor: not-allowed; }
 .srad-sub-actions { display: flex; gap: 6px; margin-top: 9px; flex-wrap: wrap; }
 
 /* ── settings sheet ─────────────────────────────────────── */
@@ -5761,10 +5782,13 @@
           (rows
             ? '<div class="srad-sub-list">' + rows + '</div>'
             : '<div class="srad-note">' + ico('info') + '<span>' + esc(sub.error || t('panel.subs.hint')) + '</span></div>') +
+          (api.state && api.state.subHasFile
+            ? '<div class="srad-sub-ready" data-ready="1">' + ico('check') + '<span>' + esc(t('panel.subs.ready')) + '</span></div>'
+            : '') +
           '<div class="srad-sub-actions">' +
           '<button class="srad-btn" data-act="subs" data-primary="1">' + ico('search') + esc(t('panel.subs.retry')) + '</button>' +
-          '<button class="srad-btn" data-act="sub-attach">' + ico('captions') + esc(t('panel.subs.attach')) + '</button>' +
-          '<button class="srad-btn" data-act="sub-download">' + ico('file-down') + esc(t('panel.subs.download')) + '</button>' +
+          '<button class="srad-btn" data-act="sub-attach"' + (api.state && api.state.subHasFile ? '' : ' disabled') + '>' + ico('captions') + esc(t('panel.subs.attach')) + '</button>' +
+          '<button class="srad-btn" data-act="sub-download"' + (api.state && api.state.subHasFile ? '' : ' disabled') + '>' + ico('file-down') + esc(t('panel.subs.download')) + '</button>' +
           '</div></div>';
         const subRows = [...bodyEl.querySelectorAll('.srad-sub-row')];
         subRows.forEach((el, i) => {
@@ -5789,6 +5813,8 @@
         const by = it.uploader ? (SR.i18n ? t('panel.subs.by') : 'by') + ' ' + it.uploader : '';
         if (by) bits.push('<span class="srad-sup" title="' + esc(by) + '">' + esc(by) + '</span>');
         const picked = (sub.chosen && sub.chosen.index === i) || (i === 0 && sub.chosen) ? 1 : 0;
+        const btnLabel = picked ? t('action.attached') : (i === 0 ? t('action.use') : t('action.pick'));
+        const btnIcon = picked ? ico('check') : '';
         return (
           '<div class="srad-sub-row" data-picked="' + picked + '">' +
           (flag ? '<span class="srad-sflag" aria-hidden="true">' + flag + '</span>' : '') +
@@ -5796,7 +5822,7 @@
           '<b class="srad-sname" title="' + esc(name) + '">' + esc(name) + '</b>' +
           '<small class="srad-smeta">' + bits.join('<i class="srad-sdot" aria-hidden="true">|</i>') + '</small>' +
           '</span>' +
-          '<button class="srad-btn" data-act="sub-pick" data-index="' + i + '">' + esc(i === 0 ? t('action.use') : t('action.pick')) + '</button>' +
+          '<button class="srad-btn" data-act="sub-pick" data-index="' + i + '" data-done="' + picked + '"' + (picked ? ' disabled' : '') + '>' + btnIcon + esc(btnLabel) + '</button>' +
           '</div>'
         );
       }
@@ -5983,6 +6009,26 @@
           api.showAds = !api.showAds;
           fire('set-setting', { key: 'showAds', value: api.showAds });
           render();
+          return;
+        }
+        if (act === 'sub-pick') {
+          const idx = Number(btn.getAttribute('data-index') || 0);
+          if (btn.getAttribute('data-busy') === '1') return;
+          btn.setAttribute('data-busy', '1');
+          btn.setAttribute('disabled', '');
+          const orig = btn.innerHTML;
+          btn.innerHTML = ico('loader') + esc(t('panel.subs.attaching'));
+          // On success the worker broadcasts state and this DOM is replaced
+          // (row shows the attached check). On failure the error toast fires;
+          // restore the label shortly after so the button never looks dead.
+          fire('sub-pick', { id: id || null, index: idx, button: btn });
+          setTimeout(() => {
+            if (btn.isConnected && btn.getAttribute('data-busy') === '1') {
+              btn.removeAttribute('data-busy');
+              btn.removeAttribute('disabled');
+              btn.innerHTML = orig;
+            }
+          }, 3500);
           return;
         }
         if (act === 'subs') {

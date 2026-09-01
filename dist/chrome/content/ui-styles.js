@@ -360,6 +360,9 @@
 .srad-sbadge[data-tone="ok"] { color: var(--sr-ok); background: var(--sr-ok-soft); }
 .srad-sbadge[data-tone="warn"] { color: var(--sr-warn); background: var(--sr-warn-soft); }
 .srad-sbadge[data-tone="q"] { color: var(--sr-accent); background: var(--sr-accent-soft); }
+.srad-sub-ready { display: flex; align-items: center; gap: 7px; margin-top: 9px; font-size: 11px; color: var(--sr-ok); background: var(--sr-ok-soft); border: 1px solid var(--sr-ok); padding: 5px 9px; border-radius: 8px; font-weight: 650; }
+.srad-sub-ready svg { width: 12px; height: 12px; }
+.srad-sub-actions .srad-btn:disabled { opacity: .45; cursor: not-allowed; }
 .srad-sub-actions { display: flex; gap: 6px; margin-top: 9px; flex-wrap: wrap; }
 
 /* ── settings sheet ─────────────────────────────────────── */

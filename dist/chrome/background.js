@@ -2235,7 +2235,17 @@
     const o = opts || {};
     const fetchImpl = o.fetchImpl || (util.fetchImpl ? util.fetchImpl.bind(util) : root.fetch);
     const headers = Object.assign({}, o.headers);
-    const res = await fetchImpl(url, { headers, redirect: 'follow', credentials: o.credentials || 'omit' });
+    // Hard cap so a stalled CDN never leaves the UI hanging with no feedback.
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), o.timeoutMs || 20000);
+    let res;
+    try {
+      res = await fetchImpl(url, { headers, redirect: 'follow', credentials: o.credentials || 'omit', signal: ctrl.signal });
+    } catch (e) {
+      clearTimeout(timer);
+      throw new Error(ctrl.signal.aborted ? 'timeout fetching subtitle file' : 'Failed to fetch subtitle file: ' + String((e && e.message) || e));
+    }
+    clearTimeout(timer);
     if (!res.ok) throw new Error('HTTP ' + res.status + ' on subtitle file');
     const ab = await res.arrayBuffer();
     const bytes = new Uint8Array(ab);
@@ -2869,6 +2879,9 @@
       'panel.subs.attachFail': 'Could not load subtitle: {reason}',
       'panel.subs.noContent': 'Page is not responding - try reloading the page',
       'panel.subs.noPlayer': 'No player element found on this page',
+      'panel.subs.attaching': 'Attaching...',
+      'panel.subs.ready': 'Subtitle ready - click Attach to place it on the player',
+      'panel.subs.networkFail': 'Could not fetch the subtitle file (network). Check your connection/ad blocker, then try again.',
       'panel.subs.retry': 'Search again',
       'action.play': 'Play',
       'action.watchparty': 'Watch Party',
@@ -2997,6 +3010,7 @@
       'panel.subs.by': 'by',
       'panel.subs.downloads': 'downloads',
       'action.use': 'Use',
+      'action.attached': 'Attached',
       'action.pick': 'Pick',
       'action.downloadPlaylist': 'Save playlist',
       'label.ad': 'ad',
@@ -3123,6 +3137,9 @@
       'panel.subs.attachFail': 'Gagal memuat subtitle: {reason}',
       'panel.subs.noContent': 'Halaman tidak merespons - coba muat ulang halamannya',
       'panel.subs.noPlayer': 'Tidak ada elemen player di halaman ini',
+      'panel.subs.attaching': 'Memasang...',
+      'panel.subs.ready': 'Subtitle siap - klik Pasang untuk menempelkannya ke player',
+      'panel.subs.networkFail': 'Gagal mengambil file subtitle (jaringan). Cek koneksi/ublock, lalu coba lagi.',
       'panel.subs.retry': 'Cari lagi',
       'action.play': 'Putar',
       'action.watchparty': 'Nonton Bareng',
@@ -3251,6 +3268,7 @@
       'panel.subs.by': 'oleh',
       'panel.subs.downloads': 'download',
       'action.use': 'Pakai',
+      'action.attached': 'Terpasang',
       'action.pick': 'Ambil',
       'action.downloadPlaylist': 'Simpan playlist',
       'label.ad': 'iklan',
@@ -4685,7 +4703,8 @@
         try {
           const vtt = await SR.subs.resolve(best, settings, {});
           st.pendingSub = { vtt: vtt, name: best.filename || best.name, provider: best.provider, lang: best.langCode || '' };
-          st.sub.chosen = { index: 0, name: best.name };
+          // NOTE: no st.sub.chosen here - "attached" must only appear after an
+          // explicit Use/Pick, never as a side effect of the search itself.
           toastTo(tabId, t('toast.subs', { name: shorten(best.name || best.filename) }), 'ok', { id: 'sub-attach', label: t('panel.subs.attach') });
         } catch (e) {
           st.sub.resolveError = String((e && e.message) || e);
@@ -5808,11 +5827,12 @@
         if (!st.pendingSub) await runSubSearch(tabId);
         if (!st.pendingSub) return { ok: false, reason: 'no subtitle available' };
         await ensureContentAlive(tabId);
-        const att = await api.tabs
+        let att = await api.tabs
           .sendMessage(tabId, { type: 'attach-subtitle', vtt: st.pendingSub.vtt, name: st.pendingSub.name, langCode: st.pendingSub.langCode || 'id' })
           .catch(() => null);
         if (!att) return { ok: false, reason: t('panel.subs.noContent') };
         if (att.applied === 0) return { ok: false, reason: t('panel.subs.noPlayer') };
+        toastTo(tabId, att.applied === 'queued' ? t('panel.subs.attachedQueued') : t('panel.subs.attached', { name: shorten(st.pendingSub.name || '', 30) }), 'ok', { id: 'sub-download', label: t('panel.subs.download') });
         return { ok: true, attached: att.applied };
       }
       case 'sub-download': {
@@ -5820,41 +5840,60 @@
         return { ok: true, id: await api.downloads.download({ url: 'data:text/vtt;charset=utf-8,' + encodeURIComponent(st.pendingSub.vtt), filename: sanitize((st.title && st.title.title) || 'subtitles') + '.id.vtt', saveAs: false, conflictAction: 'uniquify' }) };
       }
       case 'sub-pick': {
-        const it = (st.sub.items || [])[Number(msg.index || 0)];
+        const idx = Number(msg.index || 0);
+        const it = (st.sub.items || [])[idx];
         if (!it) return { ok: false, reason: 'index out of range' };
+        const fetchIt = () => util.withTimeout(SR.subs.resolve(it, settings, {}), 25000);
+        let vtt = null;
         try {
-          const vtt = await SR.subs.resolve(it, settings, {});
-          st.pendingSub = { vtt: vtt, name: it.filename || it.name, provider: it.provider, langCode: it.langCode || 'id' };
-          st.sub.chosen = { index: Number(msg.index || 0), name: it.name };
-          // One click = done: attach straight to the page player (blob URL, no
-          // local download). The toast keeps a Download action for people who
-          // still want the file.
-          let att = await api.tabs
-            .sendMessage(tabId, { type: 'attach-subtitle', vtt: vtt, name: st.pendingSub.name, langCode: st.pendingSub.langCode })
-            .catch(() => null);
-          if (!att) {
-            // Content script dead (tab opened before the extension reloaded):
-            // re-inject it, then retry once before giving up honestly.
-            await ensureContentAlive(tabId);
-            att = await api.tabs
-              .sendMessage(tabId, { type: 'attach-subtitle', vtt: vtt, name: st.pendingSub.name, langCode: st.pendingSub.langCode })
-              .catch(() => null);
-          }
-          const applied = att && att.applied;
-          if (!att) {
-            // Content script unreachable: be honest, offer the manual attach path.
-            toastTo(tabId, t('panel.subs.found') + ': ' + shorten(it.name || it.filename, 30), 'ok', { id: 'sub-attach', label: t('panel.subs.attach') });
-          } else {
-            const done = applied === 'queued' ? t('panel.subs.attachedQueued') : t('panel.subs.attached', { name: shorten(it.name || it.filename, 30) });
-            toastTo(tabId, done, 'ok', { id: 'sub-download', label: t('panel.subs.download') });
-          }
-          broadcast(tabId, 'sub');
-          return { ok: true, attached: !!applied };
+          vtt = await fetchIt();
         } catch (e) {
           const reason = String((e && e.message) || e);
-          toastTo(tabId, t('panel.subs.attachFail', { reason: shorten(reason, 90) }), 'err');
-          return { ok: false, reason: reason };
+          // One retry for transient network hiccups before surfacing the error.
+          if (/fetch|network|load failed|timeout/i.test(reason)) {
+            try {
+              await new Promise((r) => setTimeout(r, 600));
+              vtt = await fetchIt();
+            } catch (e2) {
+              if (!vtt) { /* keep going with the friendly error below */ }
+            }
+          }
+          if (!vtt) {
+            const friendly = /fetch|network|timeout/i.test(reason) ? t('panel.subs.networkFail') : t('panel.subs.attachFail', { reason: shorten(reason, 90) });
+            toastTo(tabId, friendly, 'err', { id: 'sub-pick', label: t('panel.subs.retry'), payload: { index: idx } });
+            return { ok: false, reason: reason };
+          }
         }
+        st.pendingSub = { vtt: vtt, name: it.filename || it.name, provider: it.provider, langCode: it.langCode || 'id' };
+        st.sub.chosen = { index: idx, name: it.name };
+        // One click = done: attach straight to the page player (blob URL, no
+        // local download). The toast keeps a Download action for people who
+        // still want the file.
+        let att = await api.tabs
+          .sendMessage(tabId, { type: 'attach-subtitle', vtt: vtt, name: st.pendingSub.name, langCode: st.pendingSub.langCode })
+          .catch(() => null);
+        if (!att) {
+          // Content script dead (tab opened before the extension reloaded):
+          // re-inject it, then retry once before giving up honestly.
+          await ensureContentAlive(tabId);
+          att = await api.tabs
+            .sendMessage(tabId, { type: 'attach-subtitle', vtt: vtt, name: st.pendingSub.name, langCode: st.pendingSub.langCode })
+            .catch(() => null);
+        }
+        const applied = att && att.applied;
+        if (!att) {
+          // Content script unreachable: be honest, offer the manual attach path.
+          toastTo(tabId, t('panel.subs.found') + ': ' + shorten(it.name || it.filename, 30), 'ok', { id: 'sub-attach', label: t('panel.subs.attach') });
+        } else if (applied === 0) {
+          // Page is alive but has no <video> yet: subtitle is ready, it will
+          // attach on retry; offer download instead of claiming success.
+          toastTo(tabId, t('panel.subs.noPlayer'), 'warn', { id: 'sub-download', label: t('panel.subs.download') });
+        } else {
+          const done = applied === 'queued' ? t('panel.subs.attachedQueued') : t('panel.subs.attached', { name: shorten(it.name || it.filename, 30) });
+          toastTo(tabId, done, 'ok', { id: 'sub-download', label: t('panel.subs.download') });
+        }
+        broadcast(tabId, 'sub');
+        return { ok: true, attached: !!applied };
       }
       case 'sub-download-info':
         return { ok: !!st.pendingSub, sub: st.pendingSub || null, title: st.title || null };

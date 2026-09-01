@@ -7,7 +7,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { bootExtension, DEFAULT_PAGE, MASTER_M3U8, makeNetStub, PRELUDE, readSrc } from './harness.mjs';
+import { bootExtension, DEFAULT_PAGE, MASTER_M3U8, SRT_TEXT, makeNetStub, PRELUDE, readSrc } from './harness.mjs';
 
 const HLS_URL = 'https://stream.cdn-vidlove.net/hls/1516698/master.m3u8?token=9f2';
 const MP4_URL = 'https://cdn.cineplex.test/movie/movie.mp4';
@@ -940,7 +940,7 @@ test('F7b sub-pick failure is never silent: an error toast explains it', async (
   h.dom.window.close();
 });
 
-test('F7c clicking Download with nothing loaded tells you why (no silent buttons)', async () => {
+test('F7c with nothing loaded the Download/Attach buttons are disabled, not dead', async () => {
   const h = await boot({ settings: { autoSubtitle: false } });
   const win = h.dom.window;
   await until(h, () => !!(stateOf(h).title || {}).title, 8000);
@@ -949,14 +949,10 @@ test('F7c clicking Download with nothing loaded tells you why (no silent buttons
   const tab = shadow.querySelector('[data-act="tab"][data-tab="subs"]');
   if (tab) tab.dispatchEvent(new win.MouseEvent('click', { bubbles: true }));
   const dlBtn = shadow.querySelector('[data-act="sub-download"]');
-  assert.ok(dlBtn, 'subs pane Download button exists');
-  dlBtn.dispatchEvent(new win.MouseEvent('click', { bubbles: true }));
-  // the click must produce a visible explanation, not silence
-  await until(h, () => {
-    const t = shadow.querySelectorAll('.srad-toast');
-    return [...t].some((el) => /no subtitle|belum|subtitle/i.test(el.textContent));
-  }, 4000);
-  assert.ok(true, 'Download with nothing loaded explained why');
+  const attBtn = shadow.querySelector('[data-act="sub-attach"]');
+  assert.ok(dlBtn && attBtn, 'subs pane buttons exist');
+  assert.equal(dlBtn.disabled, true, 'Download disabled when no subtitle file is ready');
+  assert.equal(attBtn.disabled, true, 'Attach disabled when no subtitle file is ready');
   h.dom.window.close();
 });
 
@@ -996,5 +992,74 @@ test('F7d re-picking a subtitle SWAPS the track (old language never stays)', asy
   assert.equal(tracks[0].getAttribute('srclang'), 'en', 'track now carries the picked English language');
   assert.notEqual(tracks[0].getAttribute('src'), firstSrc, 'blob URL refreshed (old subtitle content gone)');
   assert.equal((stateOf(h).sub.chosen || {}).index, 1, 'chosen moved to the second row');
+  h.dom.window.close();
+});
+
+/* ------------------------------------------------------------------ *
+ * F8 · Wyzie end-to-end with the REAL response shape (verified live
+ *      against sub.wyzie.io with a user key): search -> pick -> attach
+ *      to the page video -> download as a file. No local file is ever
+ *      required for playback; the blob-URL track is the "without
+ *      download" path and chrome.downloads is the "with download" path.
+ * ------------------------------------------------------------------ */
+const WYZIE_LIVE_SHAPE = [
+  { id: '81111', url: 'https://dl.opensubtitles.org/en/download/subencoding-utf8/src-api/vrf-ddf90b45/file/81111', flagUrl: 'https://flagsapi.com/SA/flat/24.png', format: 'srt', encoding: 'UTF-8', display: 'Arabic', language: 'ar', media: 'Catch Me If You Can', isHearingImpaired: false, source: 'charlie', release: 'Catch Me If You Can (2002)', fileName: '1.SRT', downloadCount: 62018, ai: false },
+  { id: '70511', url: 'https://dl.opensubtitles.org/en/download/subencoding-utf8/src-api/vrf-ddfc0b47/file/70511', flagUrl: 'https://flagsapi.com/US/flat/24.png', format: 'srt', encoding: 'UTF-8', display: 'English', language: 'en', media: 'Catch Me If You Can', isHearingImpaired: false, source: 'charlie', release: 'Catch Me If You Can (2002)', fileName: 'anglais sourd.srt', downloadCount: 37842, ai: false },
+  { id: '75973', url: 'https://dl.opensubtitles.org/en/download/subencoding-utf8/src-api/vrf-de2a0b58/file/75973', flagUrl: 'https://flagsapi.com/BR/flat/24.png', format: 'srt', encoding: 'UTF-8', display: 'Portuguese (BR)', language: 'pb', media: 'Catch Me If You Can', isHearingImpaired: false, source: 'charlie', release: 'Catch Me If You Can (2002)', fileName: 'Catch_Me_If_You_Can_(2002).CD1.ViTE.ShareReactor.srt', downloadCount: 4708, ai: false },
+];
+
+test('F8 wyzie real shape: search -> Use attaches to the page video WITHOUT any local download', async () => {
+  const net = makeNetStub({
+    'sub.wyzie.io/search': { body: JSON.stringify(WYZIE_LIVE_SHAPE), type: 'application/json' },
+    'dl.opensubtitles.org': { body: SRT_TEXT, type: 'application/x-subrip' },
+  });
+  const h = await boot({
+    net,
+    settings: { autoSubtitle: false, subtitleLang: 'all', wyzieApiKey: 'test-wyzie-key', providers: { wyzie: true, subdl: false, opensubtitles: false, yify: false } },
+  });
+  await h.hub.sendFromContent({ type: 'action', payload: { name: 'subs-search', tabId: 1 } });
+  assert.ok(await until(h, () => (stateOf(h).sub || {}).status === 'found', 8000), 'wyzie search found: ' + JSON.stringify(stateOf(h).sub));
+  const items = (stateOf(h).sub || {}).items || [];
+  assert.ok(items.length >= 3, 'rows from the real wyzie shape: ' + items.length);
+  assert.equal(items[0].provider, 'wyzie');
+  assert.equal(items[0].langCode, 'ar', 'language mapped from the response');
+  assert.equal(items[0].downloads, 62018, 'downloadCount mapped');
+  assert.equal(items[0].uploader, 'charlie', 'uploader mapped');
+
+  // Use = pick index 0 -> resolve the file -> attach as a blob <track>.
+  const beforeDl = h.hub.downloads.calls.length;
+  const res = await h.hub.sendFromContent({ type: 'action', payload: { name: 'sub-pick', index: 0, tabId: 1 } });
+  assert.equal(res.ok, true, 'wyzie pick ok: ' + JSON.stringify(res));
+  assert.equal(res.attached, true, 'attached flag set');
+  await settle(h, 150);
+  const track = h.dom.window.document.querySelector('video track[data-srad="1"]');
+  assert.ok(track, '<track> attached to the page player');
+  assert.match(track.src, /^blob:/, 'subtitle rides a blob URL - applied WITHOUT any local download');
+  assert.equal(h.hub.downloads.calls.length, beforeDl, 'no chrome.downloads happened for the Use path');
+  assert.equal((stateOf(h).sub.chosen || {}).index, 0, 'chosen persisted');
+  h.dom.window.close();
+});
+
+test('F8b wyzie real shape: sub-download saves the SAME resolved subtitle as a .vtt file', async () => {
+  const net = makeNetStub({
+    'sub.wyzie.io/search': { body: JSON.stringify(WYZIE_LIVE_SHAPE), type: 'application/json' },
+    'dl.opensubtitles.org': { body: SRT_TEXT, type: 'application/x-subrip' },
+  });
+  const h = await boot({
+    net,
+    settings: { autoSubtitle: false, subtitleLang: 'all', wyzieApiKey: 'test-wyzie-key', providers: { wyzie: true, subdl: false, opensubtitles: false, yify: false } },
+  });
+  await h.hub.sendFromContent({ type: 'action', payload: { name: 'subs-search', tabId: 1 } });
+  assert.ok(await until(h, () => (stateOf(h).sub || {}).status === 'found', 8000), 'search found');
+  const res = await h.hub.sendFromContent({ type: 'action', payload: { name: 'sub-pick', index: 1, tabId: 1 } });
+  assert.equal(res.ok, true, 'pick ok');
+  await settle(h, 150);
+  const dl = await h.hub.sendFromContent({ type: 'action', payload: { name: 'sub-download', tabId: 1 } });
+  assert.equal(dl.ok, true, 'sub-download ok: ' + JSON.stringify(dl));
+  const call = h.hub.downloads.calls[h.hub.downloads.calls.length - 1];
+  assert.ok(call, 'chrome.downloads called');
+  assert.ok(String(call.url).startsWith('data:text/vtt'), 'saved as a vtt data URL');
+  assert.match(call.filename, /\.vtt$/, 'filename ends .vtt');
+  assert.ok(decodeURIComponent(call.url).includes('WEBVTT'), 'the vtt content is the resolved subtitle');
   h.dom.window.close();
 });
