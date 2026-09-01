@@ -6117,6 +6117,18 @@
             if (pk || pt) api.tabs.sendMessage(tabId, { type: 'rules', payload: { pack: pk, patch: pt } }).catch(() => {});
             await broadcast(tabId, 'init');
             setTimeout(() => api.tabs.sendMessage(tabId, { type: 'state', payload: publicState(st), what: 'late' }).catch(() => {}), 2600);
+            // Auto re-attach the last picked subtitle after a full page reload:
+            // pick once, and the captions come back on their own (native track,
+            // in sync with the player - no overlay).
+            if (st.pendingSub) {
+              setTimeout(
+                () =>
+                  api.tabs
+                    .sendMessage(tabId, { type: 'attach-subtitle', vtt: st.pendingSub.vtt, name: st.pendingSub.name, langCode: st.pendingSub.langCode || 'id' })
+                    .catch(() => {}),
+                1500
+              );
+            }
             setTimeout(() => api.tabs.sendMessage(tabId, { type: 'get-title' }).catch(() => {}), 6500);
             return { ok: true, settings: settings, blocked: isBlockedHost(sender.url || '') };
           }

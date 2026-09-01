@@ -215,10 +215,8 @@
       });
       ui.mount();
       ui.render(state);
-      if (pendingAttach) {
-        attachSubtitle(pendingAttach.vtt, pendingAttach.name);
-        pendingAttach = null;
-      }
+      // pendingAttach stays armed: the subtitle watcher keeps it applied to any
+      // (re)created player. It is intentionally NOT consumed/cleared here.
     } catch (e) {
       console.debug('[StreamRadar] UI failed to mount', e);
     }
@@ -384,6 +382,11 @@
   /* ------------------------------------------------------------------ *
    * subtitle application on the current page
    * ------------------------------------------------------------------ */
+  let subWatcher = null;
+
+  /** Native <track> = the player's own subtitle pipeline (same clock as the
+   * video - inherently in sync). NO overlay text, no custom timing engine.
+   * The subtitle stays ARMED so any (re)created player gets it automatically. */
   function attachSubtitle(vttText, name, langCode) {
     if (!doc || !vttText) return 0;
     let url = '';
@@ -392,39 +395,58 @@
     } catch (_) {
       return 0;
     }
-    const lang = String(langCode || 'id').slice(0, 2).toLowerCase();
-    const apply = () => {
-      let n = 0;
-      for (const video of doc.querySelectorAll('video')) {
-        try {
-          // Swap semantics: re-picking a subtitle must REPLACE the previous
-          // Stream Radar track, otherwise the old language stays on screen
-          // while the toast claims the new one is attached.
-          video.querySelectorAll('track[data-srad="1"]').forEach((t) => t.remove());
-          const track = doc.createElement('track');
-          track.kind = 'subtitles';
-          track.label = (name || 'Subtitle') + ' (Stream Radar)';
-          track.srclang = lang;
-          track.default = true;
-          track.setAttribute('data-srad', '1');
-          track.src = url;
-          video.appendChild(track);
-          try {
-            const tt = video.textTracks;
-            for (let i = 0; i < tt.length; i++) if (/Stream Radar/.test(tt[i].label || '')) tt[i].mode = 'showing';
-          } catch (_) {}
-          n++;
-        } catch (_) {}
+    pendingAttach = { vtt: vttText, name: name || 'Subtitle', langCode: langCode || 'id', url: url, at: Date.now() };
+    startSubtitleWatcher();
+    return applySubtitleNow();
+  }
+
+  function applySubtitleNow() {
+    const p = pendingAttach;
+    if (!p || !doc) return 0;
+    const lang = String(p.langCode || 'id').slice(0, 2).toLowerCase();
+    let n = 0;
+    for (const video of doc.querySelectorAll('video')) {
+      try {
+        // Swap semantics: re-picking replaces any previous Stream Radar track.
+        video.querySelectorAll('track[data-srad="1"]').forEach((t) => t.remove());
+        const track = doc.createElement('track');
+        track.kind = 'subtitles';
+        track.label = (p.name || 'Subtitle') + ' (Stream Radar)';
+        track.srclang = lang;
+        track.default = true;
+        track.setAttribute('data-srad', '1');
+        track.src = p.url;
+        video.appendChild(track);
+        forceShowing(video);
+        n++;
+      } catch (_) {}
+    }
+    return n;
+  }
+
+  function forceShowing(video) {
+    try {
+      const tt = video.textTracks;
+      for (let i = 0; i < tt.length; i++) {
+        if (/Stream Radar/.test(tt[i].label || '')) {
+          // 'disabled' = never shown / reset by the player -> force on.
+          // 'hidden' = user or player deliberately hid it -> respect that.
+          if (tt[i].mode !== 'hidden') tt[i].mode = 'showing';
+        }
       }
-      return n;
-    };
-    let n = apply();
-    if (n) return n;
-    let tries = 0;
-    const iv = setInterval(() => {
-      if (apply() || ++tries > 16) clearInterval(iv);
-    }, 1000);
-    return 'queued';
+    } catch (_) {}
+  }
+
+  /** Re-applies the armed subtitle to any player that appears (player re-init,
+   * ad overlay removal, quality switches, SPA swaps) so captions never
+   * silently disappear. Runs only while a subtitle is armed - cheap. */
+  function startSubtitleWatcher() {
+    if (subWatcher) return;
+    subWatcher = setInterval(() => {
+      if (!pendingAttach || !doc || !doc.body) return;
+      applySubtitleNow();
+      for (const video of doc.querySelectorAll('video')) forceShowing(video);
+    }, 1500);
   }
 
   /* ------------------------------------------------------------------ *
@@ -464,7 +486,7 @@
           return;
         case 'attach-subtitle': {
           const r = attachSubtitle(msg.vtt, msg.name, msg.langCode);
-          respond({ ok: true, applied: r }); // raw: number of players or 'queued'
+          respond({ ok: true, applied: r || (pendingAttach ? 'queued' : 0) });
           return true;
         }
         case 'get-title':

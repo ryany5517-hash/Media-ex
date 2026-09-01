@@ -1105,3 +1105,70 @@ test('F9 subtitle results + pick survive a service-worker restart', async () => 
   h.dom.window.close();
   h2.dom.window.close();
 });
+
+/* ------------------------------------------------------------------ *
+ * F10 · native-track injection: picked subtitle is injected straight into
+ *       the player (no overlay -> in sync), auto re-attaches when the
+ *       player is re-created, and comes back after a full page reload.
+ * ------------------------------------------------------------------ */
+test('F10 picked subtitle auto re-attaches when the player is re-created (native track, no overlay)', async () => {
+  const h = await boot({ settings: { autoSubtitle: false } });
+  await h.hub.sendFromContent({ type: 'action', payload: { name: 'subs-search', tabId: 1 } });
+  assert.ok(await until(h, () => (stateOf(h).sub || {}).status === 'found', 8000), 'search found');
+  const res = await h.hub.sendFromContent({ type: 'action', payload: { name: 'sub-pick', index: 0, tabId: 1 } });
+  assert.equal(res.ok, true, 'pick ok');
+  await settle(h, 120);
+  const doc = h.dom.window.document;
+  let video = doc.querySelector('video');
+  assert.ok(video && video.querySelector('track[data-srad="1"]'), 'track attached to the player');
+  assert.match(video.querySelector('track[data-srad="1"]').getAttribute('src'), /^(blob:|data:text\/vtt)/, 'native <track> with a blob URL - player renders it in sync');
+
+  // Simulate a player re-init (ad overlay removed / quality switch / SPA swap):
+  // the old <video> is destroyed and a brand-new one takes its place.
+  const parent = video.parentNode;
+  const fresh = doc.createElement('video');
+  fresh.id = 'player2';
+  parent.appendChild(fresh);
+  video.remove();
+  assert.equal(fresh.querySelector('track[data-srad="1"]'), null, 'fresh player starts without a track');
+
+  // The armed watcher must attach the SAME subtitle to the new player.
+  const got = await until(h, () => fresh.querySelector('track[data-srad="1"]') != null, 8000);
+  assert.ok(got, 'subtitle auto re-attached to the re-created player');
+  assert.match(fresh.querySelector('track[data-srad="1"]').getAttribute('src'), /^(blob:|data:text\/vtt)/, 're-attached via native track');
+  h.dom.window.close();
+});
+
+test('F10b picked subtitle comes back automatically after a full page reload', async () => {
+  const net = makeNetStub({
+    'subdl.com/api/v1/subtitles?': {
+      body: JSON.stringify({
+        results: [
+          { attributes: { id: 4242, name: 'Dune Part Two', filename: 'Dune.2024.id.srt', lang: { code: 'id', name: 'Indonesian' }, format: 'srt', year: '2024', downloadCount: 1500, verified: true } },
+          { attributes: { id: 4243, name: 'Dune Part Two EN', filename: 'Dune.2024.en.srt', lang: { code: 'en', name: 'English' }, format: 'srt', year: '2024', downloadCount: 42, verified: false } },
+        ],
+      }),
+      type: 'application/json',
+    },
+  });
+  const baseSettings = { autoSubtitle: false, subtitleLang: 'all' };
+  const h = await boot({ net, settings: baseSettings });
+  await h.hub.sendFromContent({ type: 'action', payload: { name: 'subs-search', tabId: 1 } });
+  assert.ok(await until(h, () => (stateOf(h).sub || {}).status === 'found', 8000), 'search found');
+  const pick = await h.hub.sendFromContent({ type: 'action', payload: { name: 'sub-pick', index: 1, tabId: 1 } });
+  assert.equal(pick.ok, true, 'picked');
+  await h.wait(2200); // let persist throttle write sub + pendingSub
+  const slim = h.hub.storage['srad:tab:1'];
+  assert.ok(slim && slim.pendingSub, 'pendingSub persisted');
+
+  // "Reload": a fresh page + fresh content script against the same storage.
+  const h2 = await boot({ net, settings: baseSettings, seedStorage: { 'srad:tab:1': slim } });
+  const doc = h2.dom.window.document;
+  const track = await until(h2, () => doc.querySelector('video track[data-srad="1"]') != null, 9000);
+  assert.ok(track, 'subtitle auto-attached after reload without any click');
+  const t = doc.querySelector('video track[data-srad="1"]');
+  assert.match(t.getAttribute('src'), /^(blob:|data:text\/vtt)/, 'native track again');
+  assert.equal(t.getAttribute('srclang'), 'en', 're-attached with the picked language');
+  h.dom.window.close();
+  h2.dom.window.close();
+});
