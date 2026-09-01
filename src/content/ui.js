@@ -432,7 +432,14 @@
           skipped: t('panel.subs.skipped'),
         };
         const providers = sub.providers || {};
-        const rows = (sub.items || []).slice(0, 6).map((it, i) => subRowHtml(it, i, sub)).join('');
+        // Shifting: the picked subtitle always moves to the TOP so you can
+        // always see which one is active at a glance. data-index keeps the
+        // original item index so the worker picks the right row.
+        const all = (sub.items || []).slice(0, 6).map((it, k) => ({ it, k }));
+        const ci = sub.chosen ? sub.chosen.index : -1;
+        let ordered = all;
+        if (ci >= 0 && all[ci]) ordered = [all[ci]].concat(all.filter((x) => x.k !== ci));
+        const rows = ordered.map((x) => subRowHtml(x.it, x.k, sub)).join('');
         bodyEl.innerHTML =
           '<div class="srad-sub-card">' +
           '<div class="srad-sub-head">' + ico('captions') + '<span>' + esc(t('panel.subs.title')) + '</span>' +
@@ -480,7 +487,11 @@
         if (it.hearingImpaired) bits.push('<span class="srad-sbadge" data-tone="q">HI</span>');
         const by = it.uploader ? (SR.i18n ? t('panel.subs.by') : 'by') + ' ' + it.uploader : '';
         if (by) bits.push('<span class="srad-sup" title="' + esc(by) + '">' + esc(by) + '</span>');
-        const picked = (sub.chosen && sub.chosen.index === i) || (i === 0 && sub.chosen) ? 1 : 0;
+        // ONLY the actually-picked row may show as picked. (The old
+        // 'i === 0 && sub.chosen' term marked the first row picked too,
+        // disabling its button - that is the 'blocked button' bug.)
+        const picked = sub.chosen && sub.chosen.index === i ? 1 : 0;
+        if (picked) bits.unshift('<span class="srad-sbadge" data-tone="q">' + ico('check') + esc(t('panel.subs.active')) + '</span>');
         const btnLabel = picked ? t('action.attached') : (i === 0 ? t('action.use') : t('action.pick'));
         const btnIcon = picked ? ico('check') : '';
         return (

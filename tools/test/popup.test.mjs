@@ -171,7 +171,11 @@ test('popup subtitle rows stay STABLE across refreshes (no vanish on 4s poll)', 
     await new Promise((r) => setTimeout(r, 30));
     const rows = win.document.querySelectorAll('#subsList .sub-item');
     assert.equal(rows.length, 3, 'still three rows');
-    assert.equal(rows[2].getAttribute('data-picked'), '1', 'third row marked picked after chosen change');
+    assert.equal(rows[0].getAttribute('data-picked'), '1', 'chosen row SHIFTED to the top after chosen change');
+    assert.equal(rows[0].querySelector('[data-act="sub-pick"]').getAttribute('data-i'), '2', 'top row is the originally-picked index 2');
+    assert.equal(rows[0].querySelector('[data-act="sub-pick"]').disabled, true, 'picked button disabled');
+    assert.match(rows[0].querySelector('[data-act="sub-pick"]').textContent, /Terpasang/, 'picked button shows the attached label');
+    assert.equal(rows[1].querySelector('[data-act="sub-pick"]').disabled, false, 'row 0 not blocked when row 2 is picked');
   } finally {
     dom.window.close();
   }

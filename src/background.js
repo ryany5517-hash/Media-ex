@@ -333,8 +333,12 @@ try {
   }, 320);
 
   async function broadcast(tabId, what) {
-    const st = tabs.get(tabId);
+    let st = tabs.get(tabId);
     if (!st) return;
+    // Hydrate first: after an MV3 worker restart the in-memory tab is fresh
+    // (sub idle/empty); restore() rehydrates sub + pendingSub + entries from
+    // storage so the panel never sees (or re-persists) an empty state.
+    st = (await restore(tabId)) || st;
     const payload = publicState(st);
     try {
       await api.tabs.sendMessage(tabId, { type: 'state', payload: payload, what: what });
@@ -345,6 +349,11 @@ try {
     try {
       api.runtime.sendMessage({ type: 'state-global', tabId: tabId, payload: payload }).catch(() => {});
     } catch (_) {}
+    // Persist on every broadcast: subtitle search results + picks + the
+    // resolved VTT are state too, and without this they never reach storage
+    // (persist is throttled, so this stays cheap). Otherwise a worker restart
+    // leaves the results/pick gone forever.
+    persist(st);
     updateBadge(tabId, st);
   }
 
@@ -362,8 +371,20 @@ try {
   }
 
   const persist = util.throttle(function (st) {
+    if (!st.restored) return; // never clobber stored state before restore ran
     try {
-      api.storage.local.set({ [TAB_PREFIX + st.tabId]: { entries: st.store.serialize(40), title: st.title, url: st.url, savedAt: Date.now() } });
+      // sub + pendingSub survive MV3 worker restarts (idle kill): without them
+      // the results/pick vanish forever once the worker wakes up again.
+      api.storage.local.set({
+        [TAB_PREFIX + st.tabId]: {
+          entries: st.store.serialize(40),
+          title: st.title,
+          url: st.url,
+          sub: st.sub || null,
+          pendingSub: st.pendingSub || null,
+          savedAt: Date.now(),
+        },
+      });
       pushHistory(st);
     } catch (_) {}
   }, 1500);
@@ -431,7 +452,6 @@ try {
     const st = getTab(tabId);
     if (!st) return null;
     if (st.restored) return st;
-    st.restored = true;
     try {
       const stored = await api.storage.local.get(TAB_PREFIX + tabId);
       const slim = stored[TAB_PREFIX + tabId];
@@ -439,8 +459,13 @@ try {
         st.store.restore(slim.entries);
         st.title = slim.title || null;
         st.url = slim.url || '';
+        if (slim.sub) st.sub = Object.assign({}, st.sub, slim.sub);
+        if (slim.pendingSub) st.pendingSub = slim.pendingSub;
       }
     } catch (_) {}
+    // mark only after the read completed so concurrent callers never broadcast
+    // a half-restored state
+    st.restored = true;
     return st;
   }
 

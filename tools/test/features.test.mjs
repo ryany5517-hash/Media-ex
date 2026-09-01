@@ -47,6 +47,7 @@ async function boot(opts = {}) {
       },
       opts.settings || {}
     ),
+    seedStorage: opts.seedStorage || null,
   });
   await ready(h);
   return h;
@@ -1062,4 +1063,45 @@ test('F8b wyzie real shape: sub-download saves the SAME resolved subtitle as a .
   assert.match(call.filename, /\.vtt$/, 'filename ends .vtt');
   assert.ok(decodeURIComponent(call.url).includes('WEBVTT'), 'the vtt content is the resolved subtitle');
   h.dom.window.close();
+});
+
+/* ------------------------------------------------------------------ *
+ * F9 · results survive a worker restart (the "vanish forever" bug):
+ *      sub + pendingSub are persisted and restored with the tab state.
+ * ------------------------------------------------------------------ */
+test('F9 subtitle results + pick survive a service-worker restart', async () => {
+  const net = makeNetStub({
+    'subdl.com/api/v1/subtitles?': {
+      body: JSON.stringify({
+        results: [
+          { attributes: { id: 4242, name: 'Dune Part Two', filename: 'Dune.2024.id.srt', lang: { code: 'id', name: 'Indonesian' }, format: 'srt', year: '2024', downloadCount: 1500, verified: true } },
+          { attributes: { id: 4243, name: 'Dune Part Two EN', filename: 'Dune.2024.en.srt', lang: { code: 'en', name: 'English' }, format: 'srt', year: '2024', downloadCount: 42, verified: false } },
+        ],
+      }),
+      type: 'application/json',
+    },
+  });
+  const h = await boot({ net, settings: { autoSubtitle: false, subtitleLang: 'all' } });
+  await h.hub.sendFromContent({ type: 'action', payload: { name: 'subs-search', tabId: 1 } });
+  assert.ok(await until(h, () => (stateOf(h).sub || {}).status === 'found', 8000), 'search found');
+  const res = await h.hub.sendFromContent({ type: 'action', payload: { name: 'sub-pick', index: 1, tabId: 1 } });
+  assert.equal(res.ok, true, 'picked row 1');
+  await settle(h, 150);
+  // let the 1.5s persist throttle write the tab state
+  await h.wait(2000);
+  const slim = h.hub.storage['srad:tab:1'];
+  assert.ok(slim, 'tab state persisted');
+  assert.equal(slim.sub.chosen.index, 1, 'chosen persisted');
+  assert.ok(Array.isArray(slim.sub.items) && slim.sub.items.length >= 1, 'subtitle items persisted');
+  assert.ok(slim.pendingSub && /^WEBVTT/.test(slim.pendingSub.vtt), 'resolved subtitle vtt persisted');
+
+  // simulate the MV3 worker being killed & waking up fresh: new boot, same storage
+  const h2 = await boot({ settings: { autoSubtitle: false }, seedStorage: { 'srad:tab:1': slim } });
+  const st = await h2.hub.sendFromContent({ type: 'action', payload: { name: 'get-state', tabId: 1 } });
+  assert.equal(st.ok, true, 'fresh worker answers get-state');
+  assert.equal(st.state.sub.chosen.index, 1, 'chosen restored after restart');
+  assert.ok((st.state.sub.items || []).length >= 1, 'results restored after restart');
+  assert.equal(st.state.subHasFile, true, 'pending subtitle restored after restart');
+  h.dom.window.close();
+  h2.dom.window.close();
 });

@@ -351,9 +351,10 @@ function crc32(buf) {
 /* ------------------------------------------------------------------ *
  * boot
  * ------------------------------------------------------------------ */
-export async function bootExtension({ html = DEFAULT_PAGE, url = 'https://67movies.nl/watch/movie/1516698', net, settings, extraBgFiles = [], pageWorld = true, openShadow = true } = {}) {
+export async function bootExtension({ html = DEFAULT_PAGE, url = 'https://67movies.nl/watch/movie/1516698', net, settings, extraBgFiles = [], pageWorld = true, openShadow = true, seedStorage = null } = {}) {
   const { JSDOM } = await import('jsdom');
   const hub = makeHub();
+  if (seedStorage) Object.assign(hub.storage, seedStorage);
   const fetchImpl = net || makeNetStub();
 
   // settings pre-seeded exactly like the options page would write them

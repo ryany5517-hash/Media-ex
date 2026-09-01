@@ -2245,6 +2245,7 @@
       'panel.subs.attaching': 'Attaching...',
       'panel.subs.ready': 'Subtitle ready - click Attach to place it on the player',
       'panel.subs.networkFail': 'Could not fetch the subtitle file (network). Check your connection/ad blocker, then try again.',
+      'panel.subs.active': 'Active',
       'panel.subs.retry': 'Search again',
       'action.play': 'Play',
       'action.watchparty': 'Watch Party',
@@ -2503,6 +2504,7 @@
       'panel.subs.attaching': 'Memasang...',
       'panel.subs.ready': 'Subtitle siap - klik Pasang untuk menempelkannya ke player',
       'panel.subs.networkFail': 'Gagal mengambil file subtitle (jaringan). Cek koneksi/ublock, lalu coba lagi.',
+      'panel.subs.active': 'Dipakai',
       'panel.subs.retry': 'Cari lagi',
       'action.play': 'Putar',
       'action.watchparty': 'Nonton Bareng',
@@ -5274,7 +5276,8 @@
 .srad-sub-list { margin-top: 9px; display: flex; flex-direction: column; gap: 5px; }
 .srad-sub-row { display: flex; align-items: center; gap: 10px; font-size: 12px; padding: 8px 10px; border-radius: 11px; background: var(--sr-surface-2); border: 1px solid var(--sr-line-2); transition: border-color var(--sr-t-fast) ease, background var(--sr-t-fast) ease, transform var(--sr-t-fast) var(--sr-spring), box-shadow var(--sr-t-fast) ease; }
 .srad-sub-row:hover { background: var(--sr-surface-3); border-color: var(--sr-accent-line); transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0, 0, 0, .08); }
-.srad-sub-row[data-picked="1"] { outline: 1px solid var(--sr-accent); background: var(--sr-accent-soft); }
+.srad-sub-row[data-picked="1"] { outline: 1px solid var(--sr-accent); background: var(--sr-accent-soft); box-shadow: inset 3px 0 0 var(--sr-accent); }
+.srad-sub-row[data-picked="1"] .srad-sname { color: var(--sr-accent); }
 .srad-sflag { font-size: 18px; line-height: 1; flex: 0 0 auto; filter: drop-shadow(0 1px 1px rgba(0,0,0,.18)); }
 .srad-smain { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .srad-sname { font-weight: 650; color: var(--sr-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -5807,7 +5810,14 @@
           skipped: t('panel.subs.skipped'),
         };
         const providers = sub.providers || {};
-        const rows = (sub.items || []).slice(0, 6).map((it, i) => subRowHtml(it, i, sub)).join('');
+        // Shifting: the picked subtitle always moves to the TOP so you can
+        // always see which one is active at a glance. data-index keeps the
+        // original item index so the worker picks the right row.
+        const all = (sub.items || []).slice(0, 6).map((it, k) => ({ it, k }));
+        const ci = sub.chosen ? sub.chosen.index : -1;
+        let ordered = all;
+        if (ci >= 0 && all[ci]) ordered = [all[ci]].concat(all.filter((x) => x.k !== ci));
+        const rows = ordered.map((x) => subRowHtml(x.it, x.k, sub)).join('');
         bodyEl.innerHTML =
           '<div class="srad-sub-card">' +
           '<div class="srad-sub-head">' + ico('captions') + '<span>' + esc(t('panel.subs.title')) + '</span>' +
@@ -5855,7 +5865,11 @@
         if (it.hearingImpaired) bits.push('<span class="srad-sbadge" data-tone="q">HI</span>');
         const by = it.uploader ? (SR.i18n ? t('panel.subs.by') : 'by') + ' ' + it.uploader : '';
         if (by) bits.push('<span class="srad-sup" title="' + esc(by) + '">' + esc(by) + '</span>');
-        const picked = (sub.chosen && sub.chosen.index === i) || (i === 0 && sub.chosen) ? 1 : 0;
+        // ONLY the actually-picked row may show as picked. (The old
+        // 'i === 0 && sub.chosen' term marked the first row picked too,
+        // disabling its button - that is the 'blocked button' bug.)
+        const picked = sub.chosen && sub.chosen.index === i ? 1 : 0;
+        if (picked) bits.unshift('<span class="srad-sbadge" data-tone="q">' + ico('check') + esc(t('panel.subs.active')) + '</span>');
         const btnLabel = picked ? t('action.attached') : (i === 0 ? t('action.use') : t('action.pick'));
         const btnIcon = picked ? ico('check') : '';
         return (

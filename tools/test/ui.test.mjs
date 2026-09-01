@@ -247,11 +247,19 @@ test('subs results stay STABLE across identical re-renders (no flicker / no vani
   assert.equal(rows().length, 3, 'still exactly three rows');
   assert.equal(shadow.querySelector('.srad-sub-card'), shadow.querySelector('.srad-sub-card'), 'subs pane not rebuilt');
 
-  // A real change (chosen) re-renders but keeps the row content correct.
+  // A real change (chosen) re-renders: the picked row SHIFTS to the top,
+  // ONLY it shows picked, its button becomes Attached+disabled, and no other
+  // row is blocked (the old first-row-hijack bug).
   ui.render(Object.assign({}, STATE, { sub: Object.assign({}, sub, { chosen: { index: 1 } }) }));
   assert.equal(rows().length, 3, 'still three rows after chosen change');
-  assert.equal(shadow.querySelector('[data-act="sub-pick"][data-index="1"]').disabled, true, 'chosen row button disabled/attached');
-  assert.match(shadow.querySelector('[data-act="sub-pick"][data-index="1"]').textContent, /Attached/, 'chosen row shows Attached');
+  assert.equal(rows()[0].getAttribute('data-picked'), '1', 'picked row is FIRST in the list (shifting)');
+  assert.equal(rows()[0].querySelector('[data-act="sub-pick"]').getAttribute('data-index'), '1', 'picked row keeps its original index');
+  assert.equal(rows()[0].querySelector('[data-act="sub-pick"]').disabled, true, 'picked button disabled');
+  assert.match(rows()[0].querySelector('[data-act="sub-pick"]').textContent, /Attached/, 'picked button shows Attached');
+  const r0btn = rows()[1].querySelector('[data-act="sub-pick"]'); // original index 0, now second
+  assert.equal(r0btn.disabled, false, 'first result button NOT blocked when another row is picked');
+  assert.match(r0btn.textContent, /Use/, 'first result button still says Use');
+  assert.ok(rows()[0].querySelector('.srad-smeta').textContent.includes('Active'), 'picked row shows an Active badge');
   // media tab still renders fine after all that
   ui.setTab('media');
   assert.ok(shadow.querySelector('.srad-item'), 'back on media tab without throwing');

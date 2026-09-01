@@ -346,7 +346,8 @@
 .srad-sub-list { margin-top: 9px; display: flex; flex-direction: column; gap: 5px; }
 .srad-sub-row { display: flex; align-items: center; gap: 10px; font-size: 12px; padding: 8px 10px; border-radius: 11px; background: var(--sr-surface-2); border: 1px solid var(--sr-line-2); transition: border-color var(--sr-t-fast) ease, background var(--sr-t-fast) ease, transform var(--sr-t-fast) var(--sr-spring), box-shadow var(--sr-t-fast) ease; }
 .srad-sub-row:hover { background: var(--sr-surface-3); border-color: var(--sr-accent-line); transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0, 0, 0, .08); }
-.srad-sub-row[data-picked="1"] { outline: 1px solid var(--sr-accent); background: var(--sr-accent-soft); }
+.srad-sub-row[data-picked="1"] { outline: 1px solid var(--sr-accent); background: var(--sr-accent-soft); box-shadow: inset 3px 0 0 var(--sr-accent); }
+.srad-sub-row[data-picked="1"] .srad-sname { color: var(--sr-accent); }
 .srad-sflag { font-size: 18px; line-height: 1; flex: 0 0 auto; filter: drop-shadow(0 1px 1px rgba(0,0,0,.18)); }
 .srad-smain { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .srad-sname { font-weight: 650; color: var(--sr-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
