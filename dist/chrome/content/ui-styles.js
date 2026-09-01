@@ -366,6 +366,17 @@
 .srad-sub-actions .srad-btn:disabled { opacity: .45; cursor: not-allowed; }
 .srad-sub-actions { display: flex; gap: 6px; margin-top: 9px; flex-wrap: wrap; }
 
+/* row action = primary CTA; footer Download stays secondary so it never
+   competes with the "Pakai ini" buttons or the download-count icon */
+.srad-sub-row .srad-btn[data-act="sub-pick"]:not(:disabled) { color: var(--sr-accent-ink); border-color: transparent; background: var(--sr-accent); box-shadow: var(--sr-shadow-1); }
+.srad-sub-row .srad-btn[data-act="sub-pick"]:not(:disabled):hover { filter: brightness(1.04); transform: translateY(-1px); box-shadow: var(--sr-shadow-2); }
+.srad-sub-actions .srad-btn[data-secondary="1"] { opacity: .8; }
+.srad-sub-actions .srad-btn[data-secondary="1"]:hover { opacity: 1; }
+
+/* picked row: the "AKTIF" banner above the row makes it unmistakable */
+.srad-sub-active { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 800; letter-spacing: .02em; color: var(--sr-accent); background: var(--sr-accent-soft); border: 1px solid var(--sr-accent); padding: 4px 9px; border-radius: 8px; margin-bottom: 5px; }
+.srad-sub-active svg { width: 12px; height: 12px; }
+
 /* ── settings sheet ─────────────────────────────────────── */
 .srad-pop {
   position: absolute; inset: 0; z-index: 3; display: flex; flex-direction: column;

@@ -2374,7 +2374,7 @@
       'panel.subs.verified': 'verified',
       'panel.subs.by': 'by',
       'panel.subs.downloads': 'downloads',
-      'action.use': 'Use',
+      'action.use': 'Use this one',
       'action.attached': 'Attached',
       'action.pick': 'Pick',
       'action.downloadPlaylist': 'Save playlist',
@@ -2634,7 +2634,7 @@
       'panel.subs.verified': 'terverifikasi',
       'panel.subs.by': 'oleh',
       'panel.subs.downloads': 'download',
-      'action.use': 'Pakai',
+      'action.use': 'Pakai ini',
       'action.attached': 'Terpasang',
       'action.pick': 'Ambil',
       'action.downloadPlaylist': 'Simpan playlist',
@@ -5362,6 +5362,17 @@
 .srad-sub-actions .srad-btn:disabled { opacity: .45; cursor: not-allowed; }
 .srad-sub-actions { display: flex; gap: 6px; margin-top: 9px; flex-wrap: wrap; }
 
+/* row action = primary CTA; footer Download stays secondary so it never
+   competes with the "Pakai ini" buttons or the download-count icon */
+.srad-sub-row .srad-btn[data-act="sub-pick"]:not(:disabled) { color: var(--sr-accent-ink); border-color: transparent; background: var(--sr-accent); box-shadow: var(--sr-shadow-1); }
+.srad-sub-row .srad-btn[data-act="sub-pick"]:not(:disabled):hover { filter: brightness(1.04); transform: translateY(-1px); box-shadow: var(--sr-shadow-2); }
+.srad-sub-actions .srad-btn[data-secondary="1"] { opacity: .8; }
+.srad-sub-actions .srad-btn[data-secondary="1"]:hover { opacity: 1; }
+
+/* picked row: the "AKTIF" banner above the row makes it unmistakable */
+.srad-sub-active { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 800; letter-spacing: .02em; color: var(--sr-accent); background: var(--sr-accent-soft); border: 1px solid var(--sr-accent); padding: 4px 9px; border-radius: 8px; margin-bottom: 5px; }
+.srad-sub-active svg { width: 12px; height: 12px; }
+
 /* ── settings sheet ─────────────────────────────────────── */
 .srad-pop {
   position: absolute; inset: 0; z-index: 3; display: flex; flex-direction: column;
@@ -5923,7 +5934,7 @@
           '<div class="srad-sub-actions">' +
           '<button class="srad-btn" data-act="subs" data-primary="1">' + ico('search') + esc(t('panel.subs.retry')) + '</button>' +
           '<button class="srad-btn" data-act="sub-attach"' + (api.state && api.state.subHasFile ? '' : ' disabled') + '>' + ico('captions') + esc(t('panel.subs.attach')) + '</button>' +
-          '<button class="srad-btn" data-act="sub-download"' + (api.state && api.state.subHasFile ? '' : ' disabled') + '>' + ico('file-down') + esc(t('panel.subs.download')) + '</button>' +
+          '<button class="srad-btn" data-act="sub-download" data-secondary="1"' + (api.state && api.state.subHasFile ? '' : ' disabled') + '>' + ico('file-down') + esc(t('panel.subs.download')) + '</button>' +
           '</div></div>';
         const subRows = [...bodyEl.querySelectorAll('.srad-sub-row')];
         // Entrance animation ONLY for genuinely new rows; re-renders of the same
@@ -5955,13 +5966,21 @@
         // 'i === 0 && sub.chosen' term marked the first row picked too,
         // disabling its button - that is the 'blocked button' bug.)
         const picked = sub.chosen && sub.chosen.index === i ? 1 : 0;
-        if (picked) bits.unshift('<span class="srad-sbadge" data-tone="q">' + ico('check') + esc(t('panel.subs.active')) + '</span>');
-        // One action for every row (Use/Pick were identical actions - the two
-        // labels only confused). The picked row flips to "Attached".
+        // The picked row must be UNMISTAKABLE: a full-width badge above the
+        // row ("AKTIF: sedang dipakai di player") + the row itself highlighted.
+        if (picked) {
+          bits.unshift('<span class="srad-sbadge" data-tone="q">' + ico('check') + esc(t('panel.subs.active')) + '</span>');
+        }
+        // One action for every row: "Pakai" (id) / "Use" (en). The picked row
+        // flips to "Terpasang" (Attached) - that is the ONLY disabled one.
         const btnLabel = picked ? t('action.attached') : t('action.use');
         const btnIcon = picked ? ico('check') : '';
+        const banner = picked
+          ? '<div class="srad-sub-active" data-picked="1">' + ico('check') + '<span>' + esc(t('panel.subs.active') + ': ' + name) + '</span></div>'
+          : '';
         return (
           '<div class="srad-sub-row" data-picked="' + picked + '">' +
+          banner +
           (flag ? '<span class="srad-sflag" aria-hidden="true">' + flag + '</span>' : '') +
           '<span class="srad-smain">' +
           '<b class="srad-sname" title="' + esc(name) + '">' + esc(name) + '</b>' +

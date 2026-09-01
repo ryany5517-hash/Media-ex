@@ -253,6 +253,7 @@ test('subs results stay STABLE across identical re-renders (no flicker / no vani
   ui.render(Object.assign({}, STATE, { sub: Object.assign({}, sub, { chosen: { index: 1 } }) }));
   assert.equal(rows().length, 3, 'still three rows after chosen change');
   assert.equal(rows()[0].getAttribute('data-picked'), '1', 'picked row is FIRST in the list (shifting)');
+  assert.ok(rows()[0].querySelector('.srad-sub-active'), 'picked row shows the active banner');
   assert.equal(rows()[0].querySelector('[data-act="sub-pick"]').getAttribute('data-index'), '1', 'picked row keeps its original index');
   assert.equal(rows()[0].querySelector('[data-act="sub-pick"]').disabled, true, 'picked button disabled');
   assert.match(rows()[0].querySelector('[data-act="sub-pick"]').textContent, /Attached/, 'picked button shows Attached');
